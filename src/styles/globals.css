@@ -1,0 +1,624 @@
+/*
+ * Atrium global stylesheet (app-shell, design v4 "Control Room"). Imported once, by src/app/layout.tsx.
+ * Tailwind 4 reads the shell tokens through @theme so every subsystem uses utilities such as
+ * bg-bg-hi, text-fg-2, shadow-window, type-title-2, type-label, font-mono.
+ * The default Tailwind palette, shadows, radii and type scale are removed on purpose:
+ * build-rules.md allows no one-off colours, shadows or sizes. Every radius utility is 0 (square
+ * shell); only `rounded-full` stays round (status dots and avatars).
+ */
+@import "tailwindcss";
+@import "./tokens.css";
+@import "./canvas-theme.css";
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where(:root[data-theme="dark"] *) {
+    @slot;
+  }
+}
+@custom-variant touch (@media (pointer: coarse));
+@custom-variant reduced-motion (&:where([data-motion="reduce"] *));
+
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --radius-*: initial;
+  --text-*: initial;
+  --font-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 900px;
+  --breakpoint-lg: 1100px;
+  --breakpoint-xl: 1440px;
+
+  /* Square shell: v3 radius names stay valid and all measure 0. */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+
+  --ease-fade: cubic-bezier(0.2, 0, 0, 1);
+  --ease-sweep: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-glow: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-tick: cubic-bezier(0.2, 0, 0, 1);
+  --ease-data: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* Mode-dependent values reference the runtime tokens, so they switch with light and dark. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-hi: var(--bg-hi);
+  --color-bg-sunk: var(--bg-sunk);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-titlebar: var(--titlebar);
+  --color-titlebar-fg: var(--titlebar-fg);
+  --color-accent: var(--accent);
+  --color-accent-hi: var(--accent-hi);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-ink: var(--accent-ink);
+  --color-sky: var(--sky);
+  --color-sky-hi: var(--sky-hi);
+  --color-sky-ink: var(--sky-ink);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-bad: var(--bad);
+  --color-bad-confirm-fg: var(--bad-confirm-fg);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  /* v3 names (aliases) */
+  --color-bg-raised: var(--bg-raised);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-muted-glass: var(--fg-muted-glass);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-danger-confirm-fg: var(--danger-confirm-fg);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --shadow-0: var(--shadow-0);
+  --shadow-window: var(--shadow-window);
+  --shadow-window-sm: var(--shadow-window-sm);
+  --shadow-lifted: var(--shadow-lifted);
+  --shadow-pressed: var(--shadow-pressed);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-window-gold: var(--shadow-window-gold);
+  --shadow-window-gold-sm: var(--shadow-window-gold-sm);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+  --shadow-4: var(--shadow-4);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-numeric);
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-feature-settings: var(--font-features);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    font: var(--type-body);
+    font-family: var(--font-ui);
+    font-feature-settings: var(--font-features);
+    letter-spacing: var(--type-body-tracking);
+    word-spacing: var(--type-word-spacing);
+    background: var(--bg);
+    color: var(--fg);
+    overflow-x: clip;
+  }
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  /* Focus: a 2px accent-ink outline 3px outside the element, keyboard focus only, never removed. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent-ink);
+    outline-offset: 3px;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  /* Tabular numbers wherever data is shown */
+  .tabular,
+  [data-numeric],
+  table,
+  time,
+  code,
+  kbd,
+  samp {
+    font-variant-numeric: tabular-nums;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-numeric);
+  }
+}
+
+/* ---- Type (design v4 type table). Size, line height, weight and tracking as longhands; the label,
+   caption and readout styles also set their family (mono, mono, UI with tabular numbers). ---- */
+@utility type-display {
+  font-weight: var(--type-display-weight);
+  font-size: var(--type-display-size);
+  line-height: var(--type-display-line);
+  letter-spacing: var(--type-display-tracking);
+}
+@utility type-title-1 {
+  font-weight: var(--type-title-1-weight);
+  font-size: var(--type-title-1-size);
+  line-height: var(--type-title-1-line);
+  letter-spacing: var(--type-title-1-tracking);
+}
+@utility type-title-2 {
+  font-weight: var(--type-title-2-weight);
+  font-size: var(--type-title-2-size);
+  line-height: var(--type-title-2-line);
+  letter-spacing: var(--type-title-2-tracking);
+}
+@utility type-title-3 {
+  font-weight: var(--type-title-3-weight);
+  font-size: var(--type-title-3-size);
+  line-height: var(--type-title-3-line);
+  letter-spacing: var(--type-title-3-tracking);
+}
+@utility type-body-lg {
+  font-weight: var(--type-body-lg-weight);
+  font-size: var(--type-body-lg-size);
+  line-height: var(--type-body-lg-line);
+  letter-spacing: var(--type-body-lg-tracking);
+  word-spacing: var(--type-word-spacing);
+}
+@utility type-body {
+  font-weight: var(--type-body-weight);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  letter-spacing: var(--type-body-tracking);
+  word-spacing: var(--type-word-spacing);
+}
+@utility type-label {
+  font-family: var(--font-numeric);
+  font-weight: var(--type-label-weight);
+  font-size: var(--type-label-size);
+  line-height: var(--type-label-line);
+  letter-spacing: var(--type-label-tracking);
+}
+@utility type-caption {
+  font-family: var(--font-numeric);
+  font-weight: var(--type-caption-weight);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  letter-spacing: var(--type-caption-tracking);
+}
+@utility type-readout {
+  font-weight: var(--type-readout-weight);
+  font-size: var(--type-readout-size);
+  line-height: var(--type-readout-line);
+  letter-spacing: var(--type-readout-tracking);
+  font-variant-numeric: tabular-nums;
+}
+@utility type-callout {
+  font-weight: var(--type-callout-weight);
+  font-size: var(--type-callout-size);
+  line-height: var(--type-callout-line);
+  letter-spacing: var(--type-callout-tracking);
+  word-spacing: var(--type-word-spacing);
+}
+
+/* ---- Windows (design v4 "Windows"): title bar plus a body with a 1px strong border and the hard
+   window shadow. A window never casts a shadow inside another window. ---- */
+@utility window {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-hi);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-window);
+}
+@utility window-sm {
+  box-shadow: var(--shadow-window-sm);
+}
+/* The v3 glass utilities now draw a paper window body (no blur: floating glass is the only glass). */
+@utility glass-thin {
+  background-color: var(--bg-hi);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+}
+@utility glass-regular {
+  background-color: var(--bg-hi);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+}
+@utility glass-thick {
+  background-color: var(--bg-hi);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+}
+@utility text-glass-muted {
+  color: var(--fg-2);
+}
+.elevated-2 {
+  box-shadow: var(--shadow-window-sm);
+}
+.elevated-3 {
+  box-shadow: var(--shadow-window);
+}
+.elevated-4 {
+  box-shadow: var(--shadow-overlay);
+}
+/* No shadowed window inside another window: inner panels become flat. */
+:is([data-window], [data-glass]) :is([data-window], [data-glass], .window, .elevated-2, .elevated-3) {
+  box-shadow: none;
+}
+
+/* The floating glass (design v4 "Glass Materials"): switcher, draft preview bar, control confirm and
+   toasts over an app. Opaque with reduce transparency (system or switch) or no blur support. */
+@utility glass-float {
+  background-color: var(--glass-float-fill);
+  -webkit-backdrop-filter: var(--glass-float-filter);
+  backdrop-filter: var(--glass-float-filter);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-window-sm);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-float {
+    background-color: var(--glass-float-opaque) !important;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-float {
+    background-color: var(--glass-float-opaque) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+:root[data-transparency="reduce"] .glass-float {
+  background-color: var(--glass-float-opaque) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* A mono tag on an ink block: [04] Controls and actions. */
+@utility tag {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: var(--font-numeric);
+  font-size: var(--type-label-size);
+  line-height: 1;
+  letter-spacing: var(--type-label-tracking);
+  background: var(--fg);
+  color: var(--bg);
+}
+
+/* Static grain over a surface (the sky band fallback and the shader's texture). */
+.grain {
+  position: relative;
+  isolation: isolate;
+}
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  mix-blend-mode: multiply;
+  background-image: var(--grain-tile);
+  background-size: 160px 160px;
+  z-index: 1;
+}
+:root[data-theme="dark"] .grain::after {
+  mix-blend-mode: overlay;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .grain::after {
+    mix-blend-mode: overlay;
+  }
+}
+
+/* The sky band's speckle (app-shell round 5, premium-feel r3): two layers of 1px grains drawn at 1x,
+   with alpha that fades in and out (not thresholded), on large tiles of different sizes so the field
+   does not visibly repeat across the band. Gold grains are sparse over the blue and thicken toward the
+   gold end; pale grains only show over the warm end. */
+[data-sky-band].grain::after {
+  background-image: var(--sky-grain-tile);
+  background-size: 704px 232px;
+}
+[data-sky-speckle] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: var(--sky-speckle-opacity);
+}
+[data-sky-speckle="gold"] {
+  background-image: var(--sky-speckle-gold);
+  background-size: 768px 256px;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.9) 45%, #000 85%);
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.9) 45%, #000 85%);
+}
+[data-sky-speckle="sky"] {
+  background-image: var(--sky-speckle-sky);
+  background-size: 640px 208px;
+  background-position: 97px 41px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 45%, #000 85%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 45%, #000 85%, #000 100%);
+}
+
+/* The hairline grid ground (80px cells). */
+.hairline-grid {
+  background-image:
+    linear-gradient(to right, var(--hairline-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hairline-grid) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+/* ---- Motion helpers. Only transform and opacity animate. ---- */
+@keyframes atrium-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes atrium-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The doorway glow (door, 4.8s): an opacity pulse of a gold halo behind the doorway. */
+@keyframes atrium-door {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes atrium-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+/* The sky drift (40s): the static gradient layer slides sideways and back. */
+@keyframes atrium-sky {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-12%);
+  }
+}
+
+.atrium-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-sunk);
+}
+.atrium-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--bg-hi), transparent);
+  transform: translateX(-100%);
+  animation: atrium-shimmer 1.6s cubic-bezier(0.2, 0, 0, 1) infinite;
+  will-change: transform;
+}
+[data-door-glow] {
+  animation: atrium-door 4.8s ease-in-out infinite;
+}
+.live-dot {
+  animation: atrium-live 1.8s ease-in-out infinite;
+}
+[data-sky-drift] {
+  animation: atrium-sky 40s linear infinite;
+  will-change: transform;
+}
+
+/* Reduced motion: no shimmer, a steady lit doorway, a static sky, a steady live dot. */
+@media (prefers-reduced-motion: reduce) {
+  .atrium-skeleton::after,
+  .live-dot,
+  [data-sky-drift] {
+    animation: none !important;
+  }
+  [data-door-glow] {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+:root[data-motion="reduce"] :is(.live-dot, [data-sky-drift]) {
+  animation: none !important;
+}
+:root[data-motion="reduce"] .atrium-skeleton::after {
+  animation: none !important;
+}
+:root[data-motion="reduce"] [data-door-glow] {
+  animation: none !important;
+  opacity: 1 !important;
+}
+/* Reduce transparency also freezes the sky band. */
+:root[data-transparency="reduce"] [data-sky-drift] {
+  animation: none !important;
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-sky-drift] {
+    animation: none !important;
+  }
+}
+
+/* Status marks: shape, not colour alone (filled circle, triangle, square). */
+.status-mark {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+}
+.status-mark[data-state="up"] {
+  border-radius: 9999px;
+  background: var(--ok);
+}
+.status-mark[data-state="warn"] {
+  background: var(--warn);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.status-mark[data-state="down"] {
+  background: var(--bad);
+}
+.status-mark[data-state="unknown"] {
+  border-radius: 9999px;
+  border: 1.5px solid var(--fg-3);
+}
+
+/* The shell content column (design v4 Note 1): centred, at most --screen-max wide, padded by the
+   gutter or the side safe area, whichever is larger (landscape phones). The sky band's mark and crumb
+   use it too, so a screen has one left edge. */
+@utility screen-x {
+  width: 100%;
+  max-width: var(--screen-max);
+  margin-inline: auto;
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+}
+
+/* Safe-area helpers for the phone bottom bar and toasts */
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Light sweep: components render lit at first paint once the sweep has played this session,
+   and always under reduced motion (no sweep, all components together). */
+:root[data-swept] [data-settle],
+:root[data-motion="reduce"] [data-settle] {
+  opacity: 1 !important;
+  transform: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-settle] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Toasts over a viewed app use the floating glass (AppToaster sets the attribute). */
+:root[data-toast-surface="float"] [data-toast] {
+  background-color: var(--glass-float-fill);
+  -webkit-backdrop-filter: var(--glass-float-filter);
+  backdrop-filter: var(--glass-float-filter);
+}
+:root[data-toast-surface="float"][data-transparency="reduce"] [data-toast] {
+  background-color: var(--glass-float-opaque);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-toast-surface="float"] [data-toast] {
+    background-color: var(--glass-float-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ---- Phones and touch ---- */
+
+/* iOS zooms the page when a field under 16px takes focus: every text field is 16px on touch. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Touch (Fix 10): every top bar control is at least 44 x 44, and the Ctrl K key hint (meaningless
+   without a keyboard) becomes the plain search icon. */
+@media (pointer: coarse) {
+  [data-shell="topbar"] [data-brand],
+  [data-shell="topbar"] [data-tab],
+  [data-shell="topbar"] [data-account-trigger] {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+  [data-shell="topbar"] [data-search-hint] {
+    width: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+    border-color: transparent !important;
+    background: transparent !important;
+  }
+  [data-shell="topbar"] [data-search-keys] {
+    display: none !important;
+  }
+  [data-shell="topbar"] [data-search-icon] {
+    display: inline !important;
+  }
+}
+
+/* While a text field has focus on a phone, the bottom bar steps aside for the on-screen keyboard. */
+@media (max-width: 639.98px) {
+  :root[data-typing] [data-shell="tabbar"] {
+    display: none;
+  }
+  :root[data-typing] [data-shell="content"] {
+    padding-bottom: 0;
+  }
+}
+
+/* Bottom sheets sit above the on-screen keyboard (ShellGlobals keeps --keyboard-inset current). */
+[data-sheet][data-side="bottom"] {
+  bottom: var(--keyboard-inset, 0px);
+  max-height: calc(85dvh - var(--keyboard-inset, 0px));
+}
+
+/* Top-layer dialogs (ControlConfirm): no UA border, padding or rounded corners. */
+dialog[data-shell-dialog] {
+  padding: 0;
+  margin: auto;
+  border: 0;
+  background: transparent;
+  max-width: calc(100vw - 32px);
+  overflow: visible;
+}
+dialog[data-shell-dialog]::backdrop {
+  background: rgba(21, 19, 15, 0.4);
+}

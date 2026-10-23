@@ -1,0 +1,558 @@
+{
+  "appliesTo": {
+    "package": "prometheus"
+  },
+  "atriumRecipe": "1",
+  "author": "Atrium",
+  "description": "Proxmox guests, nodes, storage and backups from the Proxmox VE exporter.",
+  "id": "prometheus/proxmox",
+  "name": "Proxmox (pve-exporter)",
+  "reads": [
+    {
+      "description": "Every Proxmox VM and container with node, state, CPU, memory, disk, uptime and backup.",
+      "group": "Proxmox",
+      "id": "pve-guests",
+      "label": "VMs and containers",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "refreshSec": 30,
+      "request": {
+        "expr": "pve_guest_info{template!=\"1\"}",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{label:name}"
+          },
+          {
+            "key": "id",
+            "label": "Id",
+            "value": "{label:id}"
+          },
+          {
+            "key": "node",
+            "label": "Node",
+            "value": "{label:node}"
+          },
+          {
+            "key": "type",
+            "label": "Type",
+            "map": {
+              "lxc": "Container",
+              "qemu": "VM"
+            },
+            "value": "{label:type}"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "pve_up{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "pve_cpu_usage_ratio{id=~\"qemu/.*|lxc/.*\"} * 100"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "100 * pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"} / pve_memory_size_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "memoryUsed",
+            "label": "Memory used",
+            "value": {
+              "query": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "disk",
+            "label": "Disk used",
+            "value": {
+              "query": "pve_disk_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "uptime",
+            "label": "Uptime",
+            "main": true,
+            "value": {
+              "query": "pve_uptime_seconds{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "key": "backedUp",
+            "label": "Backed up",
+            "map": {
+              "1": "No",
+              "": "Yes"
+            },
+            "value": {
+              "query": "pve_not_backed_up_info"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Detail",
+            "value": "{col:type} on {label:node}"
+          }
+        ],
+        "key": [
+          "id"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "pve_guest_info{template!=\"1\"}",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "One Proxmox VM or container (or every one) with its state, CPU, memory and uptime.",
+      "group": "Proxmox",
+      "id": "pve-guest",
+      "label": "A VM or container",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "params": {
+        "properties": {
+          "guest": {
+            "title": "VM or container",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "pve-guests",
+              "every": true,
+              "label": "name",
+              "value": "id"
+            }
+          }
+        },
+        "required": [
+          "guest"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "pve_guest_info{ {{match:guest:id}} template!=\"1\"}",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{label:name}"
+          },
+          {
+            "key": "id",
+            "label": "Id",
+            "value": "{label:id}"
+          },
+          {
+            "key": "node",
+            "label": "Node",
+            "value": "{label:node}"
+          },
+          {
+            "key": "type",
+            "label": "Type",
+            "map": {
+              "lxc": "Container",
+              "qemu": "VM"
+            },
+            "value": "{label:type}"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "pve_up{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "pve_cpu_usage_ratio{id=~\"qemu/.*|lxc/.*\"} * 100"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "100 * pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"} / pve_memory_size_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "memoryUsed",
+            "label": "Memory used",
+            "value": {
+              "query": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "disk",
+            "label": "Disk used",
+            "value": {
+              "query": "pve_disk_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "uptime",
+            "label": "Uptime",
+            "main": true,
+            "value": {
+              "query": "pve_uptime_seconds{id=~\"qemu/.*|lxc/.*\"}"
+            }
+          },
+          {
+            "key": "backedUp",
+            "label": "Backed up",
+            "map": {
+              "1": "No",
+              "": "Yes"
+            },
+            "value": {
+              "query": "pve_not_backed_up_info"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Detail",
+            "value": "{col:type} on {label:node}"
+          }
+        ],
+        "key": [
+          "id"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "pve_guest_info{ {{match:guest:id}} template!=\"1\"}",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "Each Proxmox node with its state, CPU, memory and uptime.",
+      "group": "Proxmox",
+      "id": "pve-nodes",
+      "label": "Proxmox nodes",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "refreshSec": 30,
+      "request": {
+        "expr": "pve_node_info",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{label:name}"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "pve_up{id=~\"node/.*\"}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "pve_cpu_usage_ratio{id=~\"node/.*\"} * 100"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "100 * pve_memory_usage_bytes{id=~\"node/.*\"} / pve_memory_size_bytes{id=~\"node/.*\"}"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "uptime",
+            "label": "Uptime",
+            "main": true,
+            "value": {
+              "query": "pve_uptime_seconds{id=~\"node/.*\"}"
+            }
+          }
+        ],
+        "key": [
+          "id"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "pve_node_info",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "Each Proxmox storage with its node, type, state and space used.",
+      "group": "Proxmox",
+      "id": "pve-storage",
+      "label": "Proxmox storage",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "refreshSec": 60,
+      "request": {
+        "expr": "pve_storage_info",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "storage",
+            "label": "Storage",
+            "main": true,
+            "value": "{label:storage}"
+          },
+          {
+            "key": "node",
+            "label": "Node",
+            "value": "{label:node}"
+          },
+          {
+            "key": "type",
+            "label": "Type",
+            "value": "{label:plugintype}"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "pve_up{id=~\"storage/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "used",
+            "label": "Used",
+            "value": {
+              "query": "pve_disk_usage_bytes{id=~\"storage/.*\"}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "size",
+            "label": "Size",
+            "main": true,
+            "value": {
+              "query": "pve_disk_size_bytes{id=~\"storage/.*\"}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "usedPct",
+            "label": "Used %",
+            "main": true,
+            "value": {
+              "query": "100 * pve_disk_usage_bytes{id=~\"storage/.*\"} / pve_disk_size_bytes{id=~\"storage/.*\"}"
+            }
+          }
+        ],
+        "key": [
+          "id"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "refresh": [
+          60,
+          30
+        ],
+        "rows": "pve_storage_info",
+        "sort": {
+          "by": "usedPct",
+          "desc": true
+        }
+      }
+    },
+    {
+      "description": "Proxmox VMs and containers that are in no backup job.",
+      "group": "Proxmox",
+      "id": "pve-not-backed-up",
+      "label": "Guests with no backup",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "refreshSec": 300,
+      "request": {
+        "expr": "pve_not_backed_up_info * on(id) group_left(name, node, type) pve_guest_info",
+        "kind": "promql"
+      },
+      "shape": "status",
+      "x-atrium-prometheus": {
+        "detail": "In no backup job, on {label:node}",
+        "kind": "status",
+        "name": "{label:name}",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "query": "pve_not_backed_up_info * on(id) group_left(name, node, type) pve_guest_info",
+        "refresh": [
+          300,
+          60
+        ],
+        "state": "down"
+      }
+    },
+    {
+      "description": "CPU or memory of every Proxmox VM and container as a chart, one line per guest.",
+      "format": "percent",
+      "group": "Proxmox",
+      "id": "pve-guests-history",
+      "label": "Guests over time",
+      "needs": "the Proxmox exporter (prometheus-pve-exporter)",
+      "params": {
+        "properties": {
+          "hours": {
+            "default": 6,
+            "maximum": 720,
+            "minimum": 1,
+            "title": "Hours to show",
+            "type": "number"
+          },
+          "measure": {
+            "default": "cpu",
+            "enum": [
+              "cpu",
+              "memory"
+            ],
+            "title": "Measure",
+            "type": "string",
+            "x-atrium-labels": {
+              "cpu": "CPU",
+              "memory": "Memory"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "refreshSec": 60,
+      "request": {
+        "expr": "pve_cpu_usage_ratio * 100 * on(id) group_left(name) pve_guest_info",
+        "kind": "promql"
+      },
+      "shape": "series",
+      "x-atrium-prometheus": {
+        "format": "percent",
+        "kind": "series",
+        "name": "{label:name}",
+        "needs": {
+          "anyMetric": [
+            "pve_up"
+          ]
+        },
+        "query": {
+          "cases": {
+            "cpu": "pve_cpu_usage_ratio * 100 * on(id) group_left(name) pve_guest_info",
+            "memory": "100 * pve_memory_usage_bytes / pve_memory_size_bytes * on(id) group_left(name) pve_guest_info"
+          },
+          "param": "measure"
+        },
+        "refresh": [
+          60,
+          30
+        ]
+      }
+    }
+  ],
+  "source": "builtin",
+  "version": "1.1.0"
+}

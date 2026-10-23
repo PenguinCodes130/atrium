@@ -1,0 +1,18 @@
+node_modules/
+.next/
+.next-*/
+/data/
+test-results/
+playwright-report/
+*.tsbuildinfo
+next-env.d.ts
+
+# E2E evidence logs (contain local paths)
+tests/**/evidence/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+/evidence/

@@ -1,0 +1,5 @@
+{ "data": [
+  { "id": "qemu/101", "type": "qemu", "vmid": 101, "name": "homeassistant", "node": "pve1", "status": "running", "uptime": 400000, "cpu": 0.0734, "maxcpu": 2, "mem": 2147483648, "maxmem": 4294967296, "disk": 0, "maxdisk": 34359738368 },
+  { "id": "lxc/200", "type": "lxc", "vmid": 200, "name": "pihole", "node": "pve1", "status": "stopped", "uptime": 0, "cpu": 0, "maxcpu": 1, "mem": 0, "maxmem": 536870912, "disk": 1073741824, "maxdisk": 8589934592 },
+  { "id": "storage/pve1/local", "type": "storage", "node": "pve1", "storage": "local", "plugintype": "dir", "status": "available", "disk": 21474836480, "maxdisk": 107374182400, "shared": 0 }
+] }

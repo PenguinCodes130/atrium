@@ -1,0 +1,25 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "rss",
+  "name": "RSS / news",
+  "version": "1.0.0",
+  "author": "Atrium",
+  "description": "The latest items from any RSS or Atom feed, newest first.",
+  "icon": "icon.svg",
+  "permissions": [{ "kind": "network", "hosts": "configured" }],
+  "config": {
+    "type": "object",
+    "required": ["baseUrl"],
+    "properties": {
+      "baseUrl": { "type": "string", "title": "Feed URL", "description": "The full address of the RSS or Atom feed, for example https://hnrss.org/frontpage.", "format": "uri" },
+      "limit": { "type": "number", "title": "Items to show", "default": 20 },
+      "verifyTls": { "type": "boolean", "title": "Verify TLS", "default": true }
+    }
+  },
+  "secrets": [],
+  "endpoints": [
+    { "id": "items", "label": "Feed items", "description": "Title, link and published time of each item, newest first.", "shape": "table", "defaultRefreshSec": 900, "minRefreshSec": 300 }
+  ],
+  "detect": { "probe": { "path": "/", "match": "<rss|<feed[\\s>]" } }
+}

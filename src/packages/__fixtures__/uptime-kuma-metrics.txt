@@ -1,0 +1,8 @@
+# HELP monitor_status Monitor Status (1 = UP, 0= DOWN, 2= PENDING, 3= MAINTENANCE)
+# TYPE monitor_status gauge
+monitor_status{monitor_name="Home Assistant",monitor_type="http",monitor_url="http://10.0.0.5:8123",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="NAS",monitor_type="ping",monitor_url="https://",monitor_hostname="10.0.0.3",monitor_port="null"} 0
+monitor_status{monitor_name="Backup job",monitor_type="push",monitor_url="https://",monitor_hostname="null",monitor_port="null"} 2
+monitor_status{monitor_name="Printer",monitor_type="ping",monitor_url="https://",monitor_hostname="10.0.0.9",monitor_port="null"} 3
+# HELP app_version The service version
+app_version{version="2.0.2",major="2",minor="0",patch="2"} 1

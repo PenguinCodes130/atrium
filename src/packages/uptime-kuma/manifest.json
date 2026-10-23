@@ -1,0 +1,28 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "uptime-kuma",
+  "name": "Uptime Kuma",
+  "version": "1.0.0",
+  "author": "Atrium",
+  "homepage": "https://uptime.kuma.pet",
+  "description": "Every monitor's status: up, down, pending or in maintenance.",
+  "icon": "icon.svg",
+  "permissions": [{ "kind": "network", "hosts": "configured" }, { "kind": "secret", "key": "apiKey" }],
+  "config": {
+    "type": "object",
+    "required": ["baseUrl"],
+    "properties": {
+      "baseUrl": { "type": "string", "title": "Uptime Kuma URL", "description": "The address you open Uptime Kuma at, for example http://10.0.0.8:3001.", "format": "uri" },
+      "apiUser": { "type": "string", "title": "User name", "description": "Leave blank when using an API key.", "default": "" },
+      "verifyTls": { "type": "boolean", "title": "Verify TLS", "default": true }
+    }
+  },
+  "secrets": [
+    { "key": "apiKey", "label": "API key", "hint": "In Uptime Kuma open Settings, API Keys and add a key. Atrium reads the /metrics page with it and changes nothing.", "auth": { "as": "basic", "userKey": "apiUser" } }
+  ],
+  "endpoints": [
+    { "id": "monitors", "label": "Monitors", "description": "Each monitor as up, down, warn (pending) or unknown (maintenance).", "shape": "status", "defaultRefreshSec": 30, "minRefreshSec": 10 }
+  ],
+  "detect": { "probe": { "path": "/", "match": "Uptime Kuma" } }
+}

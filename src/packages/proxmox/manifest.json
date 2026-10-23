@@ -1,0 +1,168 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "proxmox",
+  "name": "Proxmox VE",
+  "version": "1.1.0",
+  "author": "Atrium",
+  "homepage": "https://www.proxmox.com/en/proxmox-virtual-environment",
+  "description": "Node status, CPU and memory per node, and every VM and container.",
+  "icon": "icon.svg",
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    },
+    {
+      "kind": "secret",
+      "key": "token"
+    }
+  ],
+  "config": {
+    "type": "object",
+    "required": [
+      "baseUrl"
+    ],
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "title": "Proxmox URL",
+        "description": "The address of one node's web UI, usually port 8006, for example https://10.0.0.4:8006.",
+        "format": "uri"
+      },
+      "verifyTls": {
+        "type": "boolean",
+        "title": "Verify TLS",
+        "description": "Proxmox ships a self-signed certificate. Turn this off to accept it on purpose.",
+        "default": true
+      }
+    }
+  },
+  "secrets": [
+    {
+      "key": "token",
+      "label": "API token",
+      "hint": "In Proxmox open Datacenter, Permissions, API Tokens and add a token. Enter its Token ID (USER@REALM!TOKENID) and the secret Proxmox shows once. Give it the PVEAuditor role on / (the Sys.Audit and VM.Audit privileges), which can only read.",
+      "auth": {
+        "as": "proxmox-token"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "nodes",
+      "label": "Node status",
+      "description": "Each node in the cluster, online or offline.",
+      "shape": "status",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "Nodes"
+    },
+    {
+      "id": "node-cpu",
+      "label": "Node CPU",
+      "description": "CPU use of one node, in percent.",
+      "params": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "node": {
+            "type": "string",
+            "title": "Node name",
+            "x-atrium-choices": {
+              "endpointId": "nodes",
+              "value": "label",
+              "label": "label",
+              "detail": "detail"
+            }
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 15,
+      "minRefreshSec": 5,
+      "group": "Nodes"
+    },
+    {
+      "id": "node-memory",
+      "label": "Node memory",
+      "description": "Memory use of one node, in percent.",
+      "params": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "node": {
+            "type": "string",
+            "title": "Node name",
+            "x-atrium-choices": {
+              "endpointId": "nodes",
+              "value": "label",
+              "label": "label",
+              "detail": "detail"
+            }
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 15,
+      "minRefreshSec": 5,
+      "group": "Nodes"
+    },
+    {
+      "id": "guests",
+      "label": "VMs and containers",
+      "description": "Every VM and container with its node, state, CPU, memory, disk and uptime.",
+      "shape": "table",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "VMs and containers"
+    },
+    {
+      "id": "guest",
+      "label": "A VM or container",
+      "description": "One VM or container (or every one) with its state, CPU, memory, disk and uptime.",
+      "params": {
+        "type": "object",
+        "required": [
+          "guest"
+        ],
+        "properties": {
+          "guest": {
+            "type": "string",
+            "title": "VM or container",
+            "x-atrium-choices": {
+              "endpointId": "guests",
+              "value": "id",
+              "label": "name",
+              "detail": "detail",
+              "every": true
+            }
+          }
+        }
+      },
+      "shape": "table",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "VMs and containers"
+    },
+    {
+      "id": "storage",
+      "label": "Storage",
+      "description": "Every storage with its node, type, state, used and free space.",
+      "shape": "table",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Storage"
+    }
+  ],
+  "detect": {
+    "probe": {
+      "path": "/",
+      "match": "Proxmox Virtual Environment|pve-manager"
+    }
+  }
+}

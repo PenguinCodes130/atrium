@@ -1,0 +1,343 @@
+/*
+ * Atrium app-shell tokens. Source: stages/01-architecture/output/atrium-design-v4.md, section 1
+ * (FROZEN v4, direction B "Control Room"). Owned by app-shell. Other subsystems read these through
+ * Tailwind utilities (globals.css @theme) or var(--token). User themes never change these values.
+ *
+ * Mode resolution: system preference by default; <html data-theme="light|dark"> overrides it.
+ * Reduce transparency: system preference or <html data-transparency="reduce">.
+ * Reduced motion: system preference or <html data-motion="reduce">.
+ *
+ * The v3 names other subsystems already use (--bg-raised, --fg-muted, --success, --danger, glass
+ * fills ...) are kept as aliases of the v4 roles at the end of each block, so every screen picks up
+ * the new look without changing its classes.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Type families. next/font sets --font-inter-tight and --font-geist-mono on <html>. */
+  --font-ui: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-numeric: var(--font-geist-mono), ui-monospace, monospace;
+  --font-features: "ss01", "cv11";
+
+  /* Type scale (design v4 "Type"): size / line height, weight, tracking. */
+  --type-display-size: 72px;
+  --type-display-line: 64px;
+  --type-display-weight: 600;
+  /* Settings r3 SFR (gauntlet w2-r2 item 8): -0.048em made the "rn" in "Good morning" touch. */
+  --type-display-tracking: -0.04em;
+  --type-title-1-size: 44px;
+  --type-title-1-line: 42px;
+  --type-title-1-weight: 600;
+  --type-title-1-tracking: -0.04em;
+  --type-title-2-size: 30px;
+  --type-title-2-line: 32px;
+  --type-title-2-weight: 600;
+  --type-title-2-tracking: -0.035em;
+  --type-title-3-size: 20px;
+  --type-title-3-line: 24px;
+  --type-title-3-weight: 600;
+  --type-title-3-tracking: -0.02em;
+  --type-body-lg-size: 18px;
+  --type-body-lg-line: 25px;
+  --type-body-lg-weight: 500;
+  --type-body-lg-tracking: -0.015em;
+  --type-body-size: 15px;
+  --type-body-line: 22px;
+  --type-body-weight: 400;
+  --type-body-tracking: -0.01em;
+  /* Settings r3 SFR (gauntlet w2-r2 item 8): Inter Tight's word space collapses at 15px with negative
+     tracking ("Backtothemes"); about 1.2px more per space keeps two-word labels two words. */
+  --type-word-spacing: 0.08em;
+  --type-label-size: 12px;
+  --type-label-line: 16px;
+  --type-label-weight: 400;
+  --type-label-tracking: -0.01em;
+  --type-caption-size: 11px;
+  --type-caption-line: 15px;
+  --type-caption-weight: 400;
+  --type-caption-tracking: 0em;
+  --type-readout-size: 36px;
+  --type-readout-line: 36px;
+  --type-readout-weight: 600;
+  --type-readout-tracking: -0.05em;
+  /* Not in the v4 table: kept for screens built on v3 (13/18, 500, Inter Tight). */
+  --type-callout-size: 13px;
+  --type-callout-line: 18px;
+  --type-callout-weight: 500;
+  --type-callout-tracking: -0.01em;
+
+  /* Font shorthands */
+  --type-display: var(--type-display-weight) var(--type-display-size) / var(--type-display-line) var(--font-ui);
+  --type-title-1: var(--type-title-1-weight) var(--type-title-1-size) / var(--type-title-1-line) var(--font-ui);
+  --type-title-2: var(--type-title-2-weight) var(--type-title-2-size) / var(--type-title-2-line) var(--font-ui);
+  --type-title-3: var(--type-title-3-weight) var(--type-title-3-size) / var(--type-title-3-line) var(--font-ui);
+  --type-body-lg: var(--type-body-lg-weight) var(--type-body-lg-size) / var(--type-body-lg-line) var(--font-ui);
+  --type-body: var(--type-body-weight) var(--type-body-size) / var(--type-body-line) var(--font-ui);
+  --type-label: var(--type-label-weight) var(--type-label-size) / var(--type-label-line) var(--font-numeric);
+  --type-caption: var(--type-caption-weight) var(--type-caption-size) / var(--type-caption-line) var(--font-numeric);
+  --type-readout: var(--type-readout-weight) var(--type-readout-size) / var(--type-readout-line) var(--font-ui);
+  --type-callout: var(--type-callout-weight) var(--type-callout-size) / var(--type-callout-line) var(--font-ui);
+
+  /* Spacing (4px base) */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-28: 112px;
+  --gutter: 40px; /* screen gutter (16 on phones) */
+  --window-pad: 20px; /* window body padding (16 on phones) */
+  --section-gap: 48px;
+  /* The shell content column (design v4 Note 1: one left edge per screen). The sky band's mark and
+     crumb and every screen's content sit in it (the screen-x utility). 64rem, as integrations' screens. */
+  --screen-max: 1024px;
+
+  /* Radius: square everywhere in the shell */
+  --radius-shell: 0px;
+
+  /* Shell frame */
+  --topbar-height: 52px;
+  --tabbar-height: 60px;
+  --skyband-height: 120px;
+  --titlebar-height: 28px;
+  --toast-width: 360px;
+
+  /* Palette, light (design v4 "Palette") */
+  --bg: #f3efe4;
+  --bg-hi: #fbf9f3;
+  --bg-sunk: #e9e3d3;
+  --fg: #15130f;
+  --fg-2: #3b372f;
+  --fg-3: #5f5a4f;
+  --line: rgba(21, 19, 15, 0.16);
+  --line-strong: #15130f;
+  --titlebar: #15130f;
+  --titlebar-fg: rgba(243, 239, 228, 0.9);
+  --accent: #e9b949;
+  --accent-hi: #f6d98b;
+  --accent-fg: #15130f;
+  --accent-ink: #8e6416;
+  --sky: #a9c8e4;
+  --sky-hi: #d6e5f2;
+  --sky-ink: #2d5a85;
+  --ok: #2f7a4d;
+  --warn: #b5770c;
+  --warn-ink: #8f5c05;
+  --bad: #b23b25;
+  --bad-confirm-fg: #fbf9f3;
+  --paper: #f3efe4; /* the paper colour in both modes (title bar text, tags) */
+  --ink: #15130f; /* the ink colour in both modes */
+
+  /* Elevation (design v4 "Elevation"): hard offset shadows, ink in light and gold in dark */
+  --shadow-ink: #15130f;
+  --shadow-0: none;
+  --shadow-window: 6px 6px 0 0 var(--shadow-ink);
+  --shadow-window-sm: 3px 3px 0 0 var(--shadow-ink);
+  --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+  --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+  --shadow-soft: 0 24px 64px rgba(21, 19, 15, 0.22);
+  --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+  /* Ink-tone windows are lit from behind in both modes. */
+  --shadow-window-gold: 6px 6px 0 0 rgba(233, 185, 73, 0.9);
+  --shadow-window-gold-sm: 3px 3px 0 0 rgba(233, 185, 73, 0.9);
+
+  /* Floating glass (design v4 "Glass Materials"): the only glass left in the shell */
+  --glass-float-fill: rgba(251, 249, 243, 0.86);
+  --glass-float-opaque: #fbf9f3;
+  --glass-float-filter: blur(18px) saturate(140%);
+
+  /* Light motif */
+  /* Opening sweep (design v4 Note 1): normal blend on light surfaces, peak 0.45, 1px gold leading edge. */
+  --sweep-band: rgba(246, 217, 139, 0.45);
+  --sweep-edge: rgba(233, 185, 73, 0.6);
+  --sweep-blend: normal;
+  --sweep-opacity: 1;
+  --sky-from: var(--sky);
+  --sky-to: var(--accent-hi);
+  /* The sky band's warm right end (pale gold light; in dark a low warm glow, not a muddy mix). */
+  --sky-band-warm: color-mix(in srgb, var(--accent-hi) 45%, var(--bg));
+  --sky-band-sun: color-mix(in srgb, var(--accent-hi) 70%, var(--bg));
+  --mark-color: var(--fg);
+  --grain-tile: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.08 0 0 0 0 0.07 0 0 0 0 0.05 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --hairline-grid: rgba(21, 19, 15, 0.07);
+  /* Sky band speckle (app-shell round 5, premium-feel r3): 1px grains drawn at 1x whose alpha fades in
+     and out (slope 5, not a hard threshold). Gold grains mix two noise frequencies; pale grains warm the
+     gold end. Tiles are large and of different sizes, and each noise has its own frequency, so no
+     horizontal offset under 600px correlates above 0.3 (measured 0.16 to 0.30). */
+  --sky-speckle-gold: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='768' height='256'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.965 0 0 0 0 0.851 0 0 0 0 0.545 0 0 0 5 -2.95'/%3E%3C/filter%3E%3Cfilter id='m' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.66' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.965 0 0 0 0 0.851 0 0 0 0 0.545 0 0 0 5 -2.95'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3Crect width='100%25' height='100%25' filter='url(%23m)'/%3E%3C/svg%3E");
+  --sky-speckle-sky: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='208'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.98 0 0 0 0 0.96 0 0 0 0 0.9 0 0 0 5 -3.0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* The band's own fine grain: the --grain-tile texture on a large 704x232 tile at a lower frequency,
+     so it does not line up with the speckle's repeat. */
+  --sky-grain-tile: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='704' height='232'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.08 0 0 0 0 0.07 0 0 0 0 0.05 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --sky-speckle-opacity: 0.9;
+
+  /* ---- v3 names, aliased to v4 roles (screens built on v3 keep working) ---- */
+  --bg-raised: var(--bg-hi);
+  --bg-raised-96: var(--bg-hi);
+  --fg-muted: var(--fg-2);
+  --fg-subtle: var(--fg-3);
+  --fg-muted-glass: var(--fg-2);
+  --success: var(--ok);
+  --warning: var(--warn-ink);
+  --danger: var(--bad);
+  --info: var(--sky-ink);
+  --danger-confirm-fg: var(--bad-confirm-fg);
+  --shadow-1: none;
+  --shadow-2: var(--shadow-window-sm);
+  --shadow-3: var(--shadow-window);
+  --shadow-4: var(--shadow-overlay);
+  --glow-color: var(--accent);
+  --page-gutter: var(--gutter);
+  --panel-padding: var(--window-pad);
+  --widget-gap: 24px;
+  --sidebar-width: 0px;
+  --rail-width: 0px;
+}
+
+/* Dark values. Applied by system preference unless data-theme="light", or forced by data-theme="dark". */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15130f;
+    --bg-hi: #1d1a15;
+    --bg-sunk: #2a261f;
+    --fg: #f3efe4;
+    --fg-2: #cfc8b8;
+    --fg-3: #a39c8c;
+    --line: rgba(243, 239, 228, 0.16);
+    --line-strong: rgba(243, 239, 228, 0.45);
+    --titlebar: #2a261f;
+    --titlebar-fg: rgba(243, 239, 228, 0.85);
+    --accent-ink: #f0c962;
+    --sky: #2d5a85;
+    --sky-hi: #24496c;
+    --sky-ink: #7fa8cf;
+    --ok: #5dbb82;
+    --warn: #e0a23a;
+    --warn-ink: #e0a23a;
+    --bad: #f07a62;
+    --bad-confirm-fg: #15130f;
+    --shadow-ink: rgba(233, 185, 73, 0.9);
+    --shadow-soft: 0 24px 64px rgba(0, 0, 0, 0.55);
+    --glass-float-fill: rgba(29, 26, 21, 0.86);
+    --glass-float-opaque: #1d1a15;
+    --glass-float-filter: blur(18px) saturate(130%);
+    --sweep-band: rgba(246, 217, 139, 0.32);
+    --sweep-blend: screen;
+    --sweep-opacity: 0.45;
+    --hairline-grid: rgba(243, 239, 228, 0.06);
+  --sky-speckle-opacity: 0.27;
+    --sky-speckle-opacity: 0.27;
+    /* Values that use var() are recomputed here so they resolve with the dark roles. */
+    --shadow-window: 6px 6px 0 0 var(--shadow-ink);
+    --shadow-window-sm: 3px 3px 0 0 var(--shadow-ink);
+    --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+    --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+    --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+    --sky-from: var(--sky);
+    --mark-color: var(--fg);
+    --sky-band-warm: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    --sky-band-sun: color-mix(in srgb, var(--accent) 38%, var(--bg));
+    --bg-raised: var(--bg-hi);
+    --bg-raised-96: var(--bg-hi);
+    --fg-muted: var(--fg-2);
+    --fg-subtle: var(--fg-3);
+    --fg-muted-glass: var(--fg-2);
+    --success: var(--ok);
+    --warning: var(--warn-ink);
+    --danger: var(--bad);
+    --info: var(--sky-ink);
+    --danger-confirm-fg: var(--bad-confirm-fg);
+    --shadow-2: var(--shadow-window-sm);
+    --shadow-3: var(--shadow-window);
+    --shadow-4: var(--shadow-overlay);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15130f;
+  --bg-hi: #1d1a15;
+  --bg-sunk: #2a261f;
+  --fg: #f3efe4;
+  --fg-2: #cfc8b8;
+  --fg-3: #a39c8c;
+  --line: rgba(243, 239, 228, 0.16);
+  --line-strong: rgba(243, 239, 228, 0.45);
+  --titlebar: #2a261f;
+  --titlebar-fg: rgba(243, 239, 228, 0.85);
+  --accent-ink: #f0c962;
+  --sky: #2d5a85;
+  --sky-hi: #24496c;
+  --sky-ink: #7fa8cf;
+  --ok: #5dbb82;
+  --warn: #e0a23a;
+  --warn-ink: #e0a23a;
+  --bad: #f07a62;
+  --bad-confirm-fg: #15130f;
+  --shadow-ink: rgba(233, 185, 73, 0.9);
+  --shadow-soft: 0 24px 64px rgba(0, 0, 0, 0.55);
+  --glass-float-fill: rgba(29, 26, 21, 0.86);
+  --glass-float-opaque: #1d1a15;
+  --glass-float-filter: blur(18px) saturate(130%);
+  --sweep-band: rgba(246, 217, 139, 0.32);
+  --sweep-blend: screen;
+  --sweep-opacity: 0.45;
+  --hairline-grid: rgba(243, 239, 228, 0.06);
+  --sky-speckle-opacity: 0.27;
+  --shadow-window: 6px 6px 0 0 var(--shadow-ink);
+  --shadow-window-sm: 3px 3px 0 0 var(--shadow-ink);
+  --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+  --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+  --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+  --sky-from: var(--sky);
+  --mark-color: var(--fg);
+  --sky-band-warm: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  --sky-band-sun: color-mix(in srgb, var(--accent) 38%, var(--bg));
+  --bg-raised: var(--bg-hi);
+  --bg-raised-96: var(--bg-hi);
+  --fg-muted: var(--fg-2);
+  --fg-subtle: var(--fg-3);
+  --fg-muted-glass: var(--fg-2);
+  --success: var(--ok);
+  --warning: var(--warn-ink);
+  --danger: var(--bad);
+  --info: var(--sky-ink);
+  --danger-confirm-fg: var(--bad-confirm-fg);
+  --shadow-2: var(--shadow-window-sm);
+  --shadow-3: var(--shadow-window);
+  --shadow-4: var(--shadow-overlay);
+}
+
+/* Phones (under 640px): display 44/42, title-1 32/32, title-2 24/26; 16px gutter and window padding;
+   the sky band is 72px. */
+@media (max-width: 639.98px) {
+  :root {
+    --type-display-size: 44px;
+    --type-display-line: 42px;
+    --type-title-1-size: 32px;
+    --type-title-1-line: 32px;
+    --type-title-2-size: 24px;
+    --type-title-2-line: 26px;
+    --gutter: 16px;
+    --window-pad: 16px;
+    --skyband-height: 72px;
+  }
+}
+
+/* Landscape phones and other short viewports (Fix 10): the 52px top bar plus a 64px band take at most
+   30% of a 390px height (116px, 29.7%). */
+@media (max-height: 499.98px) {
+  :root {
+    --skyband-height: 64px;
+  }
+}

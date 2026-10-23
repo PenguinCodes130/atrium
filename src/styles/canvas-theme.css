@@ -1,0 +1,424 @@
+/*
+ * Canvas theme layer (app-shell). Source: atrium-design-v4.md section 2 (the v4 Theme type and the four
+ * built-in themes), with the shell role names of design v4 section 1 re-declared inside the canvas.
+ *
+ * User themes style ONLY the app canvas, `[data-atrium-canvas]`, rendered by the Canvas primitive
+ * (src/features/shell/canvas.tsx) inside its shell-owned clipping frame `[data-atrium-canvas-frame]`.
+ * themeCanvasCss() (src/features/shell/theme.ts) writes the theme's `--theme-*` properties as the
+ * canvas's own rule; this file maps them onto:
+ *   - the canvas root: wallpaper (colour, gradient, image or animated sky; blur, position), grain, dim,
+ *     canvas text colour, body font and the tone (light, dark, or auto following the viewer);
+ *   - the shell colour roles and type tokens, re-declared INSIDE the canvas only (`--accent`, `--fg`,
+ *     `--line`, `--titlebar`, status colours, fonts and the type scale ...), so every shell primitive
+ *     placed on the canvas (Button, Window, Glow, the empty room, skeletons) follows the app theme while
+ *     the shell outside it does not;
+ *   - `.canvas-surface` (component frames), `.canvas-grid` (gap), headings, controls and `[data-canvas-nav]`
+ *     (the app chrome's nav), which read only theme tokens.
+ *
+ * Cascade layers, in order: atrium-shell-guard, atrium-theme, atrium-custom. Custom CSS is emitted
+ * into atrium-custom by scopeCustomCss(). For !important declarations an EARLIER layer wins, so the
+ * guard's pins on the frame and the canvas root and the reduce-transparency fallback always hold.
+ */
+@layer atrium-shell-guard, atrium-theme, atrium-custom;
+
+@layer atrium-shell-guard {
+  /* The shell-owned clipping frame (Fix 1): nothing the canvas root paints or pushes escapes it, so app
+     CSS can never cover the sky band or widen the shell page. Custom CSS cannot select the frame. */
+  [data-atrium-canvas-frame] {
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: clip !important;
+    contain: paint !important;
+    isolation: isolate !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+    filter: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  /* The canvas root stays in its slot: it cannot move, grow, paint outside its box or escape the frame.
+     The scoper drops these properties on root selectors too; this is the second layer. */
+  [data-atrium-canvas] {
+    position: relative !important;
+    inset: auto !important;
+    z-index: 0 !important;
+    isolation: isolate !important;
+    contain: layout paint !important;
+    transform: none !important;
+    float: none !important;
+    flex: 1 1 auto !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+    -webkit-box-reflect: none !important;
+    border-image: none !important;
+    zoom: 1 !important;
+  }
+  /* A separate rule: Lightning CSS folds translate/scale/rotate into transform when they share one. */
+  :where([data-atrium-canvas]) {
+    translate: none !important;
+    scale: none !important;
+    rotate: none !important;
+  }
+
+  /* Reduce transparency (system setting, in-app switch, or no backdrop-filter support): theme glass
+     turns opaque, built from the theme surface colour, and the wallpaper blur goes to 0. */
+  :root[data-transparency="reduce"] [data-atrium-canvas] .canvas-surface {
+    background-color: var(--theme-surface) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  :root[data-transparency="reduce"] [data-atrium-canvas] [data-canvas-wallpaper] {
+    filter: none !important;
+    inset: 0 !important;
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    [data-atrium-canvas] .canvas-surface {
+      background-color: var(--theme-surface) !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+    [data-atrium-canvas] [data-canvas-wallpaper] {
+      filter: none !important;
+      inset: 0 !important;
+    }
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-atrium-canvas] .canvas-surface {
+      background-color: var(--theme-surface) !important;
+    }
+  }
+}
+
+@layer atrium-theme {
+  [data-atrium-canvas] {
+    /* Defaults: Control Room (themeToCssVars(controlRoom).base); the canvas's own rule overrides them. */
+    --theme-wallpaper: #f3efe4;
+    --theme-wallpaper-blur: 0px;
+    --theme-wallpaper-dim: 0;
+    --theme-wallpaper-grain: 0.08;
+    --theme-wallpaper-position: center;
+    --theme-surface: #fbf9f3;
+    --theme-surface-text: #15130f;
+    --theme-surface-muted: #3b372f;
+    --theme-canvas-text: #15130f;
+    --theme-accent: #e9b949;
+    --theme-accent-text: #15130f;
+    --theme-accent-ink: oklch(0.52 0.125 82.2);
+    --theme-ok: #2f7a4d;
+    --theme-warn: #b5770c;
+    --theme-bad: #b23b25;
+    --theme-info: #2d5a85;
+    --theme-line: #15130f29;
+    --theme-surface-opacity: 1;
+    --theme-surface-fill: #fbf9f3;
+    --theme-surface-blur: 0px;
+    --theme-border-width: 1px;
+    --theme-border-color: #15130f;
+    --theme-shadow-kind: hard;
+    --theme-shadow-offset: 6px;
+    --theme-shadow: 6px 6px 0 0 #15130f;
+    --theme-title-bars: 1;
+    --theme-font-display: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+    --theme-font-body: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+    --theme-font-mono: var(--font-geist-mono), ui-monospace, monospace;
+    --theme-type-scale: 1;
+    --theme-numbers: tabular-nums;
+    --theme-heading-tracking: -0.04em;
+    --theme-heading-weight: 600;
+    --theme-radius: 0px;
+    --theme-control-radius: 0px;
+    --theme-gap: 24px;
+    --theme-pad: 20px;
+    --theme-pad-phone: 16px;
+    --theme-density: comfortable;
+    --theme-motion-enter: sweep;
+    --theme-chrome-bg: #f3efe4;
+    --theme-chrome-text: #15130f;
+    --theme-chrome-active-fill: #15130f;
+    --theme-chrome-active-text: #f3efe4;
+    --theme-chrome-style: boxed-tabs;
+    --theme-glow: color-mix(in oklab, #e9b949 35%, transparent);
+    --theme-room-shaft: color-mix(in oklab, #e9b949 12%, transparent);
+    --theme-room-shaft-dim: color-mix(in oklab, #e9b949 5%, transparent);
+
+    /* Shell colour roles, re-declared for everything inside the canvas. Shell primitives sit on
+       surfaces, so their text roles are the surface text; text placed straight on the wallpaper uses
+       the canvas text (the root colour below). */
+    --fg: var(--theme-surface-text);
+    --fg-2: var(--theme-surface-muted);
+    --fg-3: color-mix(in oklab, var(--theme-surface-text) 66%, var(--theme-surface));
+    --fg-muted: var(--fg-2);
+    --fg-muted-glass: var(--fg-2);
+    --fg-subtle: var(--fg-3);
+    --bg-hi: var(--theme-surface);
+    --bg-raised: var(--theme-surface);
+    --bg-raised-96: var(--theme-surface);
+    --bg-sunk: color-mix(in oklab, var(--theme-surface-text) 7%, var(--theme-surface));
+    --line: var(--theme-line);
+    --line-strong: var(--theme-border-color);
+    --accent: var(--theme-accent);
+    --accent-fg: var(--theme-accent-text);
+    --accent-ink: var(--theme-accent-ink);
+    --accent-hi: color-mix(in oklab, var(--theme-accent) 60%, white);
+    --ok: var(--theme-ok);
+    --warn: var(--theme-warn);
+    --warn-ink: var(--theme-warn);
+    --bad: var(--theme-bad);
+    --sky-ink: var(--theme-info);
+    --success: var(--ok);
+    --warning: var(--warn-ink);
+    --danger: var(--bad);
+    --info: var(--sky-ink);
+    --glow-color: var(--theme-glow);
+    --room-shaft: var(--theme-room-shaft);
+    --room-shaft-dim: var(--theme-room-shaft-dim);
+    --canvas-text: var(--theme-canvas-text);
+    --canvas-muted: var(--theme-surface-muted);
+    --canvas-line: var(--theme-border-color);
+    --canvas-accent: var(--theme-accent);
+    /* Hard shadows follow the theme's shadow (none, soft or hard with its offset). */
+    --shadow-window: var(--theme-shadow);
+    --shadow-window-sm: var(--theme-shadow);
+
+    /* Fonts and the type scale: the type tokens are re-declared so they resolve with the theme. */
+    --font-ui: var(--theme-font-body);
+    --font-numeric: var(--theme-font-mono);
+    --type-display-size: calc(72px * var(--theme-type-scale));
+    --type-display-line: calc(64px * var(--theme-type-scale));
+    --type-title-1-size: calc(44px * var(--theme-type-scale));
+    --type-title-1-line: calc(42px * var(--theme-type-scale));
+    --type-title-2-size: calc(30px * var(--theme-type-scale));
+    --type-title-2-line: calc(32px * var(--theme-type-scale));
+    --type-title-3-size: calc(20px * var(--theme-type-scale));
+    --type-title-3-line: calc(24px * var(--theme-type-scale));
+    --type-body-lg-size: calc(18px * var(--theme-type-scale));
+    --type-body-lg-line: calc(25px * var(--theme-type-scale));
+    --type-body-size: calc(15px * var(--theme-type-scale));
+    --type-body-line: calc(22px * var(--theme-type-scale));
+    --type-label-size: calc(12px * var(--theme-type-scale));
+    --type-label-line: calc(16px * var(--theme-type-scale));
+    --type-caption-size: calc(11px * var(--theme-type-scale));
+    --type-caption-line: calc(15px * var(--theme-type-scale));
+    --type-readout-size: calc(36px * var(--theme-type-scale));
+    --type-readout-line: calc(36px * var(--theme-type-scale));
+    --type-display: var(--type-display-weight) var(--type-display-size) / var(--type-display-line) var(--theme-font-display);
+    --type-title-1: var(--type-title-1-weight) var(--type-title-1-size) / var(--type-title-1-line) var(--theme-font-display);
+    --type-title-2: var(--type-title-2-weight) var(--type-title-2-size) / var(--type-title-2-line) var(--theme-font-display);
+    --type-title-3: var(--type-title-3-weight) var(--type-title-3-size) / var(--type-title-3-line) var(--theme-font-display);
+    --type-body-lg: var(--type-body-lg-weight) var(--type-body-lg-size) / var(--type-body-lg-line) var(--font-ui);
+    --type-body: var(--type-body-weight) var(--type-body-size) / var(--type-body-line) var(--font-ui);
+    --type-callout: var(--type-callout-weight) var(--type-callout-size) / var(--type-callout-line) var(--font-ui);
+    --type-label: var(--type-label-weight) var(--type-label-size) / var(--type-label-line) var(--font-numeric);
+    --type-caption: var(--type-caption-weight) var(--type-caption-size) / var(--type-caption-line) var(--font-numeric);
+    --type-readout: var(--type-readout-weight) var(--type-readout-size) / var(--type-readout-line) var(--theme-font-display);
+
+    display: flex;
+    flex-direction: column;
+    color: var(--theme-canvas-text);
+    font-family: var(--theme-font-body);
+    overflow: hidden;
+    /* Canvas text keeps whole word gaps in every theme (components final pass, gauntlet w2-r3 item 5).
+       The shell body's negative tracking (-0.01em, globals.css) stops here, so app text is set at the
+       font's own tracking; the shell's word spacing (0.08em, tokens.css) is kept, because without it
+       Control Room's Inter Tight reads "connectProxmoxVE" (2.9px gaps at 14px). Headings keep the
+       theme's own heading tracking. */
+    --type-body-tracking: normal;
+    --type-body-lg-tracking: normal;
+    letter-spacing: normal;
+    word-spacing: var(--type-word-spacing);
+  }
+  @media (max-width: 639.98px) {
+    [data-atrium-canvas] {
+      --type-display-size: calc(44px * var(--theme-type-scale));
+      --type-display-line: calc(42px * var(--theme-type-scale));
+      --type-title-1-size: calc(32px * var(--theme-type-scale));
+      --type-title-1-line: calc(32px * var(--theme-type-scale));
+      --type-title-2-size: calc(24px * var(--theme-type-scale));
+      --type-title-2-line: calc(26px * var(--theme-type-scale));
+    }
+  }
+
+  /* Headings use the display family, the theme's heading weight and tracking. */
+  [data-atrium-canvas] :is(h1, h2, h3, h4, .type-display, .type-title-1, .type-title-2, .type-title-3, .type-readout) {
+    font-family: var(--theme-font-display);
+    font-weight: var(--theme-heading-weight);
+    letter-spacing: var(--theme-heading-tracking);
+  }
+  /* Controls take the theme's control radius (the shell's are square). */
+  [data-atrium-canvas] :is(button, input, select, textarea, [role="switch"], [data-button]) {
+    border-radius: var(--theme-control-radius);
+  }
+
+  /* Tone: light or dark roles inside the canvas, whatever the shell mode. `auto` follows the viewer:
+     light roles by default, dark roles under the viewer's dark preference (or Atrium forced dark). */
+  [data-atrium-canvas]:is([data-canvas-tone="light"], [data-canvas-tone="auto"]) {
+    color-scheme: light;
+    --bg: color-mix(in oklab, var(--theme-surface) 92%, var(--theme-surface-text));
+    --titlebar: var(--theme-surface-text);
+    --titlebar-fg: color-mix(in oklab, var(--theme-surface) 90%, transparent);
+    --bad-confirm-fg: #fbf9f3;
+    --sky: #a9c8e4;
+    --shadow-ink: var(--theme-surface-text);
+    --shadow-soft: 0 24px 64px rgba(21, 19, 15, 0.22);
+    --glass-float-fill: rgba(251, 249, 243, 0.86);
+    --glass-float-opaque: #fbf9f3;
+    --sweep-band: rgba(246, 217, 139, 0.45);
+    --sweep-edge: rgba(233, 185, 73, 0.6);
+    --sweep-blend: normal;
+    --sweep-opacity: 1;
+    --grain-blend: multiply;
+    --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+    --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+    --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+    --danger-confirm-fg: var(--bad-confirm-fg);
+    --shadow-2: var(--shadow-window-sm);
+    --shadow-3: var(--shadow-window);
+    --shadow-4: var(--shadow-overlay);
+  }
+  [data-atrium-canvas][data-canvas-tone="dark"],
+  :root[data-theme="dark"] [data-atrium-canvas][data-canvas-tone="auto"] {
+    color-scheme: dark;
+    --bg: color-mix(in oklab, var(--theme-surface) 85%, black);
+    --titlebar: color-mix(in oklab, var(--theme-surface-text) 9%, var(--theme-surface));
+    --titlebar-fg: color-mix(in oklab, var(--theme-surface-text) 85%, transparent);
+    --bad-confirm-fg: #15130f;
+    --sky: #2d5a85;
+    --shadow-ink: color-mix(in oklab, var(--theme-accent) 90%, transparent);
+    --shadow-soft: 0 24px 64px rgba(0, 0, 0, 0.55);
+    --glass-float-fill: rgba(29, 26, 21, 0.86);
+    --glass-float-opaque: #1d1a15;
+    --sweep-band: rgba(246, 217, 139, 0.32);
+    --sweep-blend: screen;
+    --sweep-opacity: 0.45;
+    --grain-blend: overlay;
+    --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+    --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+    --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+    --danger-confirm-fg: var(--bad-confirm-fg);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) [data-atrium-canvas][data-canvas-tone="auto"] {
+      color-scheme: dark;
+      --bg: color-mix(in oklab, var(--theme-surface) 85%, black);
+      --titlebar: color-mix(in oklab, var(--theme-surface-text) 9%, var(--theme-surface));
+      --titlebar-fg: color-mix(in oklab, var(--theme-surface-text) 85%, transparent);
+      --bad-confirm-fg: #15130f;
+      --sky: #2d5a85;
+      --shadow-ink: color-mix(in oklab, var(--theme-accent) 90%, transparent);
+      --shadow-soft: 0 24px 64px rgba(0, 0, 0, 0.55);
+      --glass-float-fill: rgba(29, 26, 21, 0.86);
+      --glass-float-opaque: #1d1a15;
+      --sweep-band: rgba(246, 217, 139, 0.32);
+      --sweep-blend: screen;
+      --sweep-opacity: 0.45;
+      --grain-blend: overlay;
+      --shadow-lifted: 10px 10px 0 0 var(--shadow-ink);
+      --shadow-pressed: 2px 2px 0 0 var(--shadow-ink);
+      --shadow-overlay: var(--shadow-soft), var(--shadow-window);
+      --danger-confirm-fg: var(--bad-confirm-fg);
+    }
+  }
+
+  /* Wallpaper: its own layer so an image can be blurred (oversized to hide the edge bleed) and dimmed. */
+  [data-atrium-canvas] > [data-canvas-wallpaper] {
+    position: absolute;
+    inset: calc(var(--theme-wallpaper-blur) * -2);
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    background: var(--theme-wallpaper);
+    background-position: var(--theme-wallpaper-position);
+    background-size: cover;
+    background-repeat: no-repeat;
+    filter: blur(var(--theme-wallpaper-blur));
+  }
+  /* The animated sky wallpaper: the two-colour gradient on a wider layer drifting with `sky` (40s);
+     static under reduced motion or reduce transparency (globals.css freezes [data-sky-drift]). */
+  [data-atrium-canvas] [data-canvas-sky] {
+    position: absolute;
+    inset: 0 -16% 0 0;
+    background: var(--theme-wallpaper);
+  }
+  [data-atrium-canvas] > [data-canvas-grain] {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: var(--theme-wallpaper-grain);
+    mix-blend-mode: var(--grain-blend, multiply);
+    background-image: var(--grain-tile);
+    background-size: var(--grain-size, 180px) var(--grain-size, 180px);
+  }
+  [data-atrium-canvas] > [data-canvas-dim] {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: oklch(0 0 0);
+    opacity: var(--theme-wallpaper-dim);
+  }
+  [data-atrium-canvas] > [data-canvas-content] {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* Numbers follow the theme: tabular or proportional. */
+  [data-atrium-canvas] :is(.tabular, [data-numeric], table, time, code, kbd, samp) {
+    font-variant-numeric: var(--theme-numbers);
+  }
+
+  /* Component frame: theme surface, radius, border, shadow and padding. Shell radius is untouched. */
+  .canvas-surface {
+    position: relative;
+    background-color: var(--theme-surface-fill);
+    -webkit-backdrop-filter: blur(var(--theme-surface-blur));
+    backdrop-filter: blur(var(--theme-surface-blur));
+    border: var(--theme-border-width) solid var(--theme-border-color);
+    border-radius: var(--theme-radius);
+    box-shadow: var(--theme-shadow);
+    padding: var(--theme-pad);
+    color: var(--theme-surface-text);
+  }
+  .canvas-surface.canvas-surface-flush {
+    padding: 0;
+  }
+  .canvas-grid {
+    gap: var(--theme-gap);
+  }
+  @media (max-width: 639.98px) {
+    .canvas-surface {
+      padding: var(--theme-pad-phone);
+    }
+  }
+
+  /* The app chrome's nav (app-builder renders it with data-canvas-nav): colours from theme.chrome,
+     the item look from chrome.style on the canvas root. */
+  [data-atrium-canvas] [data-canvas-nav] {
+    background: var(--theme-chrome-bg);
+    color: var(--theme-chrome-text);
+  }
+  [data-atrium-canvas] [data-canvas-nav] :is([aria-current="page"], [data-active]) {
+    background: var(--theme-chrome-active-fill);
+    color: var(--theme-chrome-active-text);
+  }
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav] :is(a, button) {
+    border: 1px solid var(--theme-border-color);
+    border-radius: var(--theme-control-radius);
+  }
+  [data-atrium-canvas][data-canvas-chrome="pills"] [data-canvas-nav] :is(a, button) {
+    border-radius: 999px;
+  }
+  [data-atrium-canvas][data-canvas-chrome="underline"] [data-canvas-nav] :is([aria-current="page"], [data-active]) {
+    background: transparent;
+    color: var(--theme-chrome-text);
+    box-shadow: inset 0 -2px 0 var(--theme-chrome-active-fill);
+  }
+}

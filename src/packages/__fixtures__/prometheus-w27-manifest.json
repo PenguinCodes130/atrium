@@ -1,0 +1,1378 @@
+{
+ "atriumApi": "1",
+ "kind": "code",
+ "id": "prometheus",
+ "name": "Prometheus",
+ "version": "1.1.0",
+ "author": "Atrium",
+ "homepage": "https://prometheus.io",
+ "description": "Your machines' CPU, memory, disks and network, containers, Proxmox, disk health and alerts from Prometheus, plus any metric or your own PromQL.",
+ "icon": "icon.svg",
+ "permissions": [
+  {
+   "kind": "network",
+   "hosts": "configured"
+  },
+  {
+   "kind": "secret",
+   "key": "password"
+  },
+  {
+   "kind": "secret",
+   "key": "token"
+  }
+ ],
+ "config": {
+  "type": "object",
+  "required": [
+   "baseUrl"
+  ],
+  "properties": {
+   "baseUrl": {
+    "type": "string",
+    "title": "Prometheus URL",
+    "description": "The address you open Prometheus at, for example http://10.0.0.7:9090.",
+    "format": "uri"
+   },
+   "authMode": {
+    "type": "string",
+    "title": "Login",
+    "description": "Most Prometheus servers on a LAN need no login. Pick one only if yours sits behind Basic auth or a bearer token.",
+    "enum": [
+     "none",
+     "basic",
+     "bearer"
+    ],
+    "x-atrium-labels": {
+     "none": "No login",
+     "basic": "Username and password (Basic auth)",
+     "bearer": "Bearer token"
+    },
+    "default": "none",
+    "x-atrium-secrets": {
+     "none": [],
+     "basic": [
+      "password"
+     ],
+     "bearer": [
+      "token"
+     ]
+    }
+   },
+   "username": {
+    "type": "string",
+    "title": "Username",
+    "description": "The Basic auth username in front of Prometheus.",
+    "x-atrium-show-when": {
+     "authMode": "basic"
+    }
+   },
+   "verifyTls": {
+    "type": "boolean",
+    "title": "Verify TLS",
+    "description": "Turn off only for a self-signed certificate on your LAN.",
+    "default": true
+   }
+  }
+ },
+ "secrets": [
+  {
+   "key": "password",
+   "label": "Password",
+   "hint": "The Basic auth password for the username above, from your reverse proxy or Prometheus web config (basic_auth_users).",
+   "auth": {
+    "as": "basic",
+    "userKey": "username"
+   }
+  },
+  {
+   "key": "token",
+   "label": "Bearer token",
+   "hint": "The token your proxy or Prometheus expects in an Authorization: Bearer header. Atrium sends it only to this Prometheus address.",
+   "auth": {
+    "as": "bearer"
+   }
+  }
+ ],
+ "endpoints": [
+  {
+   "id": "machine-cpu",
+   "label": "CPU in use",
+   "description": "How busy one machine's processors are, in percent.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-memory",
+   "label": "Memory in use",
+   "description": "How much of one machine's memory is in use, in percent.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-memory-bytes",
+   "label": "Memory used",
+   "description": "How much memory one machine uses, in GB.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-disk",
+   "label": "Disk in use",
+   "description": "How full one disk of a machine is, in percent.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "mount": {
+      "type": "string",
+      "title": "Disk",
+      "description": "Which mounted disk. Most machines have one, mounted at /.",
+      "default": "/",
+      "x-atrium-choices": {
+       "endpointId": "mounts",
+       "value": "mount",
+       "label": "mount",
+       "detail": "detail",
+       "params": {
+        "machine": "machine"
+       }
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-network",
+   "label": "Network traffic",
+   "description": "Bytes per second one machine sends or receives on its network cards.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "direction": {
+      "type": "string",
+      "title": "Direction",
+      "enum": [
+       "in",
+       "out"
+      ],
+      "x-atrium-labels": {
+       "in": "Coming in",
+       "out": "Going out"
+      },
+      "default": "in"
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-load",
+   "label": "Load average",
+   "description": "How many tasks wait for the processors, on average.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "period": {
+      "type": "string",
+      "title": "Over",
+      "enum": [
+       "1",
+       "5",
+       "15"
+      ],
+      "x-atrium-labels": {
+       "1": "1 minute",
+       "5": "5 minutes",
+       "15": "15 minutes"
+      },
+      "default": "5"
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-uptime",
+   "label": "Uptime",
+   "description": "How long one machine has been running since it last started.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-temperature",
+   "label": "Temperature",
+   "description": "The hottest sensor of one machine, in degrees Celsius.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "temperature sensors (hwmon or thermal zones in node-exporter)"
+  },
+  {
+   "id": "machine-updates",
+   "label": "Pending updates",
+   "description": "How many package updates wait on one machine.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "the apt textfile collector in node-exporter"
+  },
+  {
+   "id": "machine-up",
+   "label": "Up or down",
+   "description": "Whether Prometheus can reach one machine right now.",
+   "shape": "status",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 10,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-summary",
+   "label": "Everything about a machine",
+   "description": "One row with CPU, memory, disk, network, load, uptime and temperature of one machine (or every machine).",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-disks",
+   "label": "Every disk of a machine",
+   "description": "Each mounted disk of one machine with its size, used and free space.",
+   "shape": "table",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machine-history",
+   "label": "Over time",
+   "description": "One measure of one machine (or every machine) as a chart over the last hours.",
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "measure": {
+      "type": "string",
+      "title": "Measure",
+      "enum": [
+       "cpu",
+       "memory",
+       "disk",
+       "netIn",
+       "netOut",
+       "load5",
+       "temperature"
+      ],
+      "x-atrium-labels": {
+       "cpu": "CPU in use",
+       "memory": "Memory in use",
+       "disk": "Disk in use (/)",
+       "netIn": "Network in",
+       "netOut": "Network out",
+       "load5": "Load (5 min)",
+       "temperature": "Temperature"
+      },
+      "default": "cpu"
+     },
+     "hours": {
+      "type": "number",
+      "title": "Hours to show",
+      "minimum": 1,
+      "maximum": 720,
+      "default": 6
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "mounts",
+   "label": "Disks of a machine",
+   "description": "The mounted disks of one machine, for picking a disk.",
+   "shape": "table",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Pick one of your machines, or every machine.",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": false
+      }
+     }
+    },
+    "required": [
+     "machine"
+    ]
+   },
+   "advanced": true,
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines",
+   "label": "Machines",
+   "description": "Every machine with node-exporter: name, address, system, cores, memory and whether it is up.",
+   "shape": "table",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "All machines",
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines-overview",
+   "label": "Machines overview",
+   "description": "One row per machine with CPU, memory, disk, network in and out, load, uptime and temperature. Good for a card for each machine.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 30,
+   "group": "All machines",
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines-up",
+   "label": "Machines up or down",
+   "description": "Every machine, up or down, the ones that are down first.",
+   "shape": "status",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 10,
+   "group": "All machines",
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines-disks",
+   "label": "Every disk on every machine",
+   "description": "Each mounted disk of every machine, the fullest first.",
+   "shape": "table",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "All machines",
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines-history",
+   "label": "One measure, every machine",
+   "description": "One measure as a chart with one line per machine.",
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "All machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "measure": {
+      "type": "string",
+      "title": "Measure",
+      "enum": [
+       "cpu",
+       "memory",
+       "disk",
+       "netIn",
+       "netOut",
+       "load5",
+       "temperature"
+      ],
+      "x-atrium-labels": {
+       "cpu": "CPU in use",
+       "memory": "Memory in use",
+       "disk": "Disk in use (/)",
+       "netIn": "Network in",
+       "netOut": "Network out",
+       "load5": "Load (5 min)",
+       "temperature": "Temperature"
+      },
+      "default": "cpu"
+     },
+     "hours": {
+      "type": "number",
+      "title": "Hours to show",
+      "minimum": 1,
+      "maximum": 720,
+      "default": 6
+     }
+    }
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "machines-top",
+   "label": "Busiest machines",
+   "description": "The machines with the highest value of one measure.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "All machines",
+   "params": {
+    "type": "object",
+    "properties": {
+     "measure": {
+      "type": "string",
+      "title": "Measure",
+      "enum": [
+       "cpu",
+       "memory",
+       "disk",
+       "netIn",
+       "netOut",
+       "load5",
+       "temperature"
+      ],
+      "x-atrium-labels": {
+       "cpu": "CPU in use",
+       "memory": "Memory in use",
+       "disk": "Disk in use (/)",
+       "netIn": "Network in",
+       "netOut": "Network out",
+       "load5": "Load (5 min)",
+       "temperature": "Temperature"
+      },
+      "default": "cpu"
+     },
+     "count": {
+      "type": "number",
+      "title": "How many",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 5
+     }
+    }
+   },
+   "needs": "node-exporter on your machines"
+  },
+  {
+   "id": "containers",
+   "label": "Containers",
+   "description": "Every container cAdvisor sees, with its image, CPU, memory and how long it has run.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Containers",
+   "needs": "cAdvisor (container metrics)"
+  },
+  {
+   "id": "container-cpu",
+   "label": "Container CPU",
+   "description": "How much processor one container uses, in percent of one core.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Containers",
+   "params": {
+    "type": "object",
+    "properties": {
+     "container": {
+      "type": "string",
+      "title": "Container",
+      "x-atrium-choices": {
+       "endpointId": "containers",
+       "value": "name",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "container"
+    ]
+   },
+   "needs": "cAdvisor (container metrics)"
+  },
+  {
+   "id": "container-memory",
+   "label": "Container memory",
+   "description": "How much memory one container uses.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Containers",
+   "params": {
+    "type": "object",
+    "properties": {
+     "container": {
+      "type": "string",
+      "title": "Container",
+      "x-atrium-choices": {
+       "endpointId": "containers",
+       "value": "name",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "container"
+    ]
+   },
+   "needs": "cAdvisor (container metrics)"
+  },
+  {
+   "id": "containers-count",
+   "label": "Containers running",
+   "description": "How many containers cAdvisor saw in the last minute.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Containers",
+   "needs": "cAdvisor (container metrics)"
+  },
+  {
+   "id": "container-history",
+   "label": "Container over time",
+   "description": "One container's CPU or memory (or every container's) as a chart.",
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Containers",
+   "params": {
+    "type": "object",
+    "properties": {
+     "container": {
+      "type": "string",
+      "title": "Container",
+      "x-atrium-choices": {
+       "endpointId": "containers",
+       "value": "name",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "measure": {
+      "type": "string",
+      "title": "Measure",
+      "enum": [
+       "cpu",
+       "memory"
+      ],
+      "x-atrium-labels": {
+       "cpu": "CPU",
+       "memory": "Memory"
+      },
+      "default": "cpu"
+     },
+     "hours": {
+      "type": "number",
+      "title": "Hours to show",
+      "minimum": 1,
+      "maximum": 720,
+      "default": 6
+     }
+    },
+    "required": [
+     "container"
+    ]
+   },
+   "needs": "cAdvisor (container metrics)"
+  },
+  {
+   "id": "pve-guests",
+   "label": "VMs and containers",
+   "description": "Every Proxmox VM and container with node, state, CPU, memory, disk, uptime and backup.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Proxmox",
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "pve-guest",
+   "label": "A VM or container",
+   "description": "One Proxmox VM or container (or every one) with its state, CPU, memory and uptime.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Proxmox",
+   "params": {
+    "type": "object",
+    "properties": {
+     "guest": {
+      "type": "string",
+      "title": "VM or container",
+      "x-atrium-choices": {
+       "endpointId": "pve-guests",
+       "value": "id",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     }
+    },
+    "required": [
+     "guest"
+    ]
+   },
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "pve-nodes",
+   "label": "Proxmox nodes",
+   "description": "Each Proxmox node with its state, CPU, memory and uptime.",
+   "shape": "table",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Proxmox",
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "pve-storage",
+   "label": "Proxmox storage",
+   "description": "Each Proxmox storage with its node, type, state and space used.",
+   "shape": "table",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Proxmox",
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "pve-not-backed-up",
+   "label": "Guests with no backup",
+   "description": "Proxmox VMs and containers that are in no backup job.",
+   "shape": "status",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Proxmox",
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "pve-guests-history",
+   "label": "Guests over time",
+   "description": "CPU or memory of every Proxmox VM and container as a chart, one line per guest.",
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Proxmox",
+   "params": {
+    "type": "object",
+    "properties": {
+     "measure": {
+      "type": "string",
+      "title": "Measure",
+      "enum": [
+       "cpu",
+       "memory"
+      ],
+      "x-atrium-labels": {
+       "cpu": "CPU",
+       "memory": "Memory"
+      },
+      "default": "cpu"
+     },
+     "hours": {
+      "type": "number",
+      "title": "Hours to show",
+      "minimum": 1,
+      "maximum": 720,
+      "default": 6
+     }
+    }
+   },
+   "needs": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  {
+   "id": "targets",
+   "label": "Every scrape target",
+   "description": "Every target Prometheus scrapes, up or down, the ones that are down first.",
+   "shape": "status",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 10,
+   "group": "Alerts"
+  },
+  {
+   "id": "alerts",
+   "label": "Firing alerts",
+   "description": "Alerts firing or pending in Prometheus right now, the worst first. Empty means nothing is firing.",
+   "shape": "status",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Alerts"
+  },
+  {
+   "id": "alerts-count",
+   "label": "Firing alerts count",
+   "description": "How many alerts are firing.",
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Alerts"
+  },
+  {
+   "id": "disk-health",
+   "label": "Disk health",
+   "description": "Every disk's own health check (SMART and NVMe), with temperature and life left.",
+   "shape": "status",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Disks",
+   "needs": "smartmon or the NVMe textfile collector in node-exporter"
+  },
+  {
+   "id": "disks-smart",
+   "label": "Disk details",
+   "description": "Each disk with model, serial, health, temperature, hours powered on and life left.",
+   "shape": "table",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Disks",
+   "needs": "smartmon or the NVMe textfile collector in node-exporter"
+  },
+  {
+   "id": "explore-value",
+   "label": "A metric, now",
+   "description": "Any metric your Prometheus holds, picked from a list, as one number (or one row per label value).",
+   "params": {
+    "type": "object",
+    "required": [
+     "metric"
+    ],
+    "properties": {
+     "metric": {
+      "type": "string",
+      "title": "Metric",
+      "description": "Search the metrics your Prometheus holds.",
+      "x-atrium-choices": {
+       "endpointId": "metrics",
+       "value": "name",
+       "label": "name",
+       "detail": "description"
+      }
+     },
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Only this machine (optional).",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "filterLabel": {
+      "type": "string",
+      "title": "Only where label",
+      "x-atrium-choices": {
+       "endpointId": "metric-labels",
+       "value": "label",
+       "label": "label",
+       "detail": "detail",
+       "params": {
+        "metric": "metric"
+       }
+      }
+     },
+     "filterValue": {
+      "type": "string",
+      "title": "is",
+      "x-atrium-choices": {
+       "endpointId": "metric-label-values",
+       "value": "value",
+       "label": "name",
+       "params": {
+        "metric": "metric",
+        "label": "filterLabel"
+       }
+      }
+     },
+     "how": {
+      "type": "string",
+      "title": "Show it",
+      "enum": [
+       "asis",
+       "rate",
+       "sum",
+       "sumRate",
+       "avg",
+       "max",
+       "min",
+       "p95"
+      ],
+      "x-atrium-labels": {
+       "asis": "As is",
+       "rate": "Per second",
+       "sum": "Total across all",
+       "sumRate": "Total per second across all",
+       "avg": "Average across all",
+       "max": "Highest",
+       "min": "Lowest",
+       "p95": "95th percentile (histograms)"
+      },
+      "default": "asis"
+     },
+     "splitBy": {
+      "type": "string",
+      "title": "One row per",
+      "x-atrium-choices": {
+       "endpointId": "metric-labels",
+       "value": "label",
+       "label": "label",
+       "detail": "detail",
+       "params": {
+        "metric": "metric"
+       }
+      }
+     }
+    }
+   },
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 15,
+   "group": "Pick a metric"
+  },
+  {
+   "id": "explore-history",
+   "label": "A metric over time",
+   "description": "Any metric your Prometheus holds, picked from a list, as a chart.",
+   "params": {
+    "type": "object",
+    "required": [
+     "metric"
+    ],
+    "properties": {
+     "metric": {
+      "type": "string",
+      "title": "Metric",
+      "description": "Search the metrics your Prometheus holds.",
+      "x-atrium-choices": {
+       "endpointId": "metrics",
+       "value": "name",
+       "label": "name",
+       "detail": "description"
+      }
+     },
+     "machine": {
+      "type": "string",
+      "title": "Machine",
+      "description": "Only this machine (optional).",
+      "x-atrium-choices": {
+       "endpointId": "machines",
+       "value": "instance",
+       "label": "name",
+       "detail": "detail",
+       "every": true
+      }
+     },
+     "filterLabel": {
+      "type": "string",
+      "title": "Only where label",
+      "x-atrium-choices": {
+       "endpointId": "metric-labels",
+       "value": "label",
+       "label": "label",
+       "detail": "detail",
+       "params": {
+        "metric": "metric"
+       }
+      }
+     },
+     "filterValue": {
+      "type": "string",
+      "title": "is",
+      "x-atrium-choices": {
+       "endpointId": "metric-label-values",
+       "value": "value",
+       "label": "name",
+       "params": {
+        "metric": "metric",
+        "label": "filterLabel"
+       }
+      }
+     },
+     "how": {
+      "type": "string",
+      "title": "Show it",
+      "enum": [
+       "asis",
+       "rate",
+       "sum",
+       "sumRate",
+       "avg",
+       "max",
+       "min",
+       "p95"
+      ],
+      "x-atrium-labels": {
+       "asis": "As is",
+       "rate": "Per second",
+       "sum": "Total across all",
+       "sumRate": "Total per second across all",
+       "avg": "Average across all",
+       "max": "Highest",
+       "min": "Lowest",
+       "p95": "95th percentile (histograms)"
+      },
+      "default": "asis"
+     },
+     "splitBy": {
+      "type": "string",
+      "title": "One row per",
+      "x-atrium-choices": {
+       "endpointId": "metric-labels",
+       "value": "label",
+       "label": "label",
+       "detail": "detail",
+       "params": {
+        "metric": "metric"
+       }
+      }
+     },
+     "hours": {
+      "type": "number",
+      "title": "Hours to show",
+      "minimum": 1,
+      "maximum": 720,
+      "default": 6
+     }
+    }
+   },
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 30,
+   "group": "Pick a metric"
+  },
+  {
+   "id": "metrics",
+   "label": "Metrics",
+   "description": "Every metric name your Prometheus holds, with Prometheus's own description.",
+   "shape": "table",
+   "defaultRefreshSec": 600,
+   "minRefreshSec": 120,
+   "group": "Pick a metric",
+   "advanced": true
+  },
+  {
+   "id": "metric-labels",
+   "label": "Labels of a metric",
+   "description": "The labels one metric carries, with how many values each has.",
+   "params": {
+    "type": "object",
+    "required": [
+     "metric"
+    ],
+    "properties": {
+     "metric": {
+      "type": "string",
+      "title": "Metric",
+      "description": "Search the metrics your Prometheus holds.",
+      "x-atrium-choices": {
+       "endpointId": "metrics",
+       "value": "name",
+       "label": "name",
+       "detail": "description"
+      }
+     }
+    }
+   },
+   "shape": "table",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Pick a metric",
+   "advanced": true
+  },
+  {
+   "id": "metric-label-values",
+   "label": "Values of a label",
+   "description": "The values one label of one metric takes.",
+   "params": {
+    "type": "object",
+    "required": [
+     "metric",
+     "label"
+    ],
+    "properties": {
+     "metric": {
+      "type": "string",
+      "title": "Metric",
+      "description": "Search the metrics your Prometheus holds.",
+      "x-atrium-choices": {
+       "endpointId": "metrics",
+       "value": "name",
+       "label": "name",
+       "detail": "description"
+      }
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "x-atrium-choices": {
+       "endpointId": "metric-labels",
+       "value": "label",
+       "label": "label",
+       "params": {
+        "metric": "metric"
+       }
+      }
+     }
+    }
+   },
+   "shape": "table",
+   "defaultRefreshSec": 300,
+   "minRefreshSec": 60,
+   "group": "Pick a metric",
+   "advanced": true
+  },
+  {
+   "id": "query",
+   "label": "Custom PromQL: one number",
+   "description": "A PromQL query you write, evaluated now. One series gives one value; several give one row each.",
+   "params": {
+    "type": "object",
+    "required": [
+     "query"
+    ],
+    "properties": {
+     "query": {
+      "type": "string",
+      "title": "PromQL query",
+      "examples": [
+       "count(up)",
+       "sum(up == 0)",
+       "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100"
+      ],
+      "placeholder": "count(up)"
+     },
+     "unit": {
+      "type": "string",
+      "title": "Unit",
+      "placeholder": "%"
+     }
+    }
+   },
+   "shape": "stat",
+   "defaultRefreshSec": 30,
+   "minRefreshSec": 5,
+   "group": "Advanced",
+   "advanced": true
+  },
+  {
+   "id": "range",
+   "label": "Custom PromQL: over time",
+   "description": "A PromQL query you write, over a time window, as a chart.",
+   "params": {
+    "type": "object",
+    "required": [
+     "query"
+    ],
+    "properties": {
+     "query": {
+      "type": "string",
+      "title": "PromQL query",
+      "examples": [
+       "up",
+       "rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])",
+       "node_memory_MemAvailable_bytes"
+      ],
+      "placeholder": "rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])"
+     },
+     "rangeSec": {
+      "type": "number",
+      "title": "Window in seconds",
+      "default": 3600
+     },
+     "stepSec": {
+      "type": "number",
+      "title": "Step in seconds",
+      "default": 60
+     },
+     "unit": {
+      "type": "string",
+      "title": "Unit"
+     }
+    }
+   },
+   "shape": "series",
+   "defaultRefreshSec": 60,
+   "minRefreshSec": 15,
+   "group": "Advanced",
+   "advanced": true
+  }
+ ],
+ "detect": {
+  "probe": {
+   "path": "/-/healthy",
+   "match": "Prometheus"
+  }
+ }
+}

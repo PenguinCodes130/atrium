@@ -1,0 +1,74 @@
+// The Insert tab's catalogue (design v4 "The Builder", spec 3.1.1 and 3.3.1): every built-in type by
+// category with a ready node, then saved library components. The code category is folded by default.
+import type { ComponentCategory, ComponentNode, ComponentType, LibraryComponent, Principal } from "@/core/contracts";
+import { META } from "./catalogue/meta";
+import { newId } from "./ids";
+import { instanceNodeFor } from "./library-instance";
+
+export type InsertGroup = { category: ComponentCategory | "library"; title: string; folded: boolean; items: { type: ComponentType; title: string; summary: string; node: ComponentNode; containsCode?: boolean; /** Insert's own id when two items share a type (Card for each is a repeat). */ insertId?: string }[] };
+
+/** The Insert id and node name of the Card for each starter. */
+export const CARD_FOR_EACH = "card-for-each";
+const ORDER: ComponentCategory[] = ["layout", "data", "content", "control", "code"];
+const TITLES: Record<ComponentCategory | "library", string> = { layout: "Layout", data: "Data", content: "Content", control: "Controls", code: "Code", library: "Library" };
+
+let libraryCatalogue: ((principal: Principal) => LibraryComponent[]) | undefined;
+/** The library server module registers this, so the Insert tab lists saved components. */
+export function registerLibraryCatalogue(fn: (principal: Principal) => LibraryComponent[]): void {
+  libraryCatalogue = fn;
+}
+
+/** A fresh node of a type, with its defaults and a new id. */
+export function newNode(type: keyof typeof META): ComponentNode {
+  const meta = META[type];
+  const node: ComponentNode = { id: newId("c"), type, props: structuredClone(meta.defaults), ...(meta.container ? { children: [] } : {}), ...(type === "html" ? { name: "HTML block" } : {}) };
+  // A new chart lands landscape: 6 columns by 32 rows of 8px (about 240px of chart window, Fix 6).
+  const size = NEW_SIZE[type];
+  if (size) {
+    node.slot = { x: 0, y: 0, ...size.slot };
+    Object.assign(node.props, size.props ?? {});
+  }
+  return node;
+}
+
+/**
+ * Default sizes for new nodes whose content needs room (the builder reads node.slot's w and h on insert).
+ * Boxes are exact (operator, 2026-10-19), so each size is the type's measured content height at its
+ * default width plus the cell's gap, rounded up with one row to spare. Types not listed fit 3 by 16.
+ */
+export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h: number }; props?: Record<string, number | string> }>> = {
+  chart: { slot: { w: 6, h: 35 }, props: { height: 150 } },
+  stat: { slot: { w: 3, h: 24 } },
+  status: { slot: { w: 3, h: 22 } },
+  table: { slot: { w: 3, h: 38 } },
+  list: { slot: { w: 3, h: 30 } },
+  gauge: { slot: { w: 3, h: 32 } },
+  progress: { slot: { w: 3, h: 21 } },
+  image: { slot: { w: 3, h: 25 } },
+  // 200px default height, same allowance as image; a new video shows whole, like pictures (media layout 3.1).
+  video: { slot: { w: 3, h: 30 }, props: { fit: "contain" } },
+}
+
+export function insertCatalogue(principal: Principal, opts: { library?: LibraryComponent[] } = {}): InsertGroup[] {
+  if (principal.kind === "guest" || principal.role === "viewer") return [];
+  const groups: InsertGroup[] = ORDER.map((category) => ({
+    category,
+    title: TITLES[category],
+    folded: category === "code",
+    items: Object.values(META)
+      .filter((m) => m.category === category)
+      .map((m) => ({ type: m.type, title: m.title, summary: m.docs.summary, node: newNode(m.type) })),
+  }));
+  // Card for each (data ease spec 3.2): a ready Repeat whose rows are picked next, one card per row.
+  groups[0]!.items.unshift({ type: "repeat", insertId: CARD_FOR_EACH, title: "Card for each", summary: "One ready card per row of a list, such as one per machine.", node: { ...newNode("repeat"), name: "Card for each", props: { columns: 3, max: 50, empty: "Nothing to show" }, slot: { x: 0, y: 0, w: 12, h: 24 } } });
+  const lib = opts.library ?? libraryCatalogue?.(principal) ?? [];
+  if (lib.length) {
+    groups.push({
+      category: "library",
+      title: TITLES.library,
+      folded: false,
+      items: lib.map((c) => ({ type: `lib:${c.id}` as ComponentType, title: c.name, summary: c.description ?? "", node: instanceNodeFor(c), containsCode: c.containsCode })),
+    });
+  }
+  return groups;
+}

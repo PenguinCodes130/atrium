@@ -1,0 +1,4 @@
+{ "data": [
+  { "node": "pve1", "status": "online", "cpu": 0.0734, "maxcpu": 16, "mem": 25769803776, "maxmem": 68719476736, "uptime": 812345, "type": "node" },
+  { "node": "pve2", "status": "offline", "type": "node" }
+] }

@@ -1,0 +1,4 @@
+[
+  { "id": 3, "provider": "letsencrypt", "nice_name": "home.example", "domain_names": ["*.home.example", "home.example"], "expires_on": "2026-12-20 08:15:00" },
+  { "id": 4, "provider": "other", "nice_name": "lab cert", "domain_names": ["lab.example"], "expires_on": "2026-11-01 00:00:00" }
+]

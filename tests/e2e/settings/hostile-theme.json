@@ -1,0 +1,100 @@
+{
+  "atriumTheme": "2",
+  "id": "evil}red}; :root{--bg:#f00} </style><script>x</script>{",
+  "name": "Evil red}; :root{--bg:#f00} </style><script>x</script>{",
+  "author": "red}; :root{--bg:#f00} </style><script>x</script>{",
+  "version": "red}; :root{--bg:#f00} </style><script>x</script>{",
+  "mode": "red}; :root{--bg:#f00} </style><script>x</script>{",
+  "tokens": {
+    "wallpaper": {
+      "kind": "gradient",
+      "value": "linear-gradient(red, blue)}red}; :root{--bg:#f00} </style><script>x</script>{",
+      "colors": [
+        "red}; :root{--bg:#f00} </style><script>x</script>{",
+        "red}; :root{--bg:#f00} </style><script>x</script>{"
+      ],
+      "blurPx": 999,
+      "dim": 9,
+      "grain": -4,
+      "position": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    },
+    "color": {
+      "surface": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "surfaceText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "surfaceMuted": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "canvasText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "accent": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "accentText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "ok": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "warn": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "bad": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "info": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "line": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    },
+    "surface": {
+      "material": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "opacity": 7,
+      "blurPx": 900,
+      "border": {
+        "widthPx": 9,
+        "color": "red}; :root{--bg:#f00} </style><script>x</script>{"
+      },
+      "shadow": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "shadowOffsetPx": 99,
+      "titleBars": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    },
+    "type": {
+      "display": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "body": "Inter Tight\"; } :root{x",
+      "mono": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "scale": 2,
+      "numbers": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "headingTracking": 5,
+      "headingWeight": 9999
+    },
+    "shape": {
+      "radiusPx": 400,
+      "controlRadiusPx": 99999
+    },
+    "space": {
+      "gapPx": -50,
+      "padPx": 900,
+      "density": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    },
+    "motion": {
+      "enter": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "lightDrift": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    },
+    "chrome": {
+      "background": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "text": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "activeFill": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "activeText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "style": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    }
+  },
+  "dark": {
+    "color": {
+      "surface": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "surfaceText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "surfaceMuted": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "canvasText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "accent": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "accentText": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "ok": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "warn": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "bad": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "info": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "line": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    }
+  },
+  "fonts": [
+    {
+      "family": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "file": "/uploads/x.woff2}red}; :root{--bg:#f00} </style><script>x</script>{",
+      "weight": "red}; :root{--bg:#f00} </style><script>x</script>{",
+      "style": "red}; :root{--bg:#f00} </style><script>x</script>{"
+    }
+  ],
+  "customCss": "@import url(https://evil.example/x.css);\nbody{display:none!important}\n:root{--bg:#ff0000;--fg:#00ff00}\nhtml{filter:invert(1)}\n[data-top-bar],[data-app-switcher],dialog,[data-toaster],[data-draft-preview-bar]{display:none;background:red;transform:scale(3);z-index:2147483647}\n.x{position:fixed;inset:0;z-index:999999;background:url(https://evil.example/a.png)}\n[data-atrium-canvas]{margin:-500px;width:300vw;box-shadow:0 0 0 9999px red}\n.card{color:blue}"
+}

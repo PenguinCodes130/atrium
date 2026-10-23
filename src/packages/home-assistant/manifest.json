@@ -1,0 +1,463 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "home-assistant",
+  "name": "Home Assistant",
+  "version": "1.0.1",
+  "author": "Atrium",
+  "homepage": "https://www.home-assistant.io",
+  "description": "Your lights, switches, scenes and sensors, with lamp toggles and scene buttons for your apps.",
+  "icon": "icon.svg",
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    },
+    {
+      "kind": "secret",
+      "key": "token"
+    },
+    {
+      "kind": "command",
+      "ids": [
+        "light.turn_on",
+        "light.turn_off",
+        "light.toggle",
+        "switch.turn_on",
+        "switch.turn_off",
+        "switch.toggle",
+        "scene.turn_on",
+        "script.turn_on"
+      ]
+    }
+  ],
+  "config": {
+    "type": "object",
+    "required": [
+      "baseUrl"
+    ],
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "title": "Base URL",
+        "description": "The address of Home Assistant, usually port 8123, for example http://10.0.0.20:8123.",
+        "format": "uri"
+      },
+      "verifyTls": {
+        "type": "boolean",
+        "title": "Verify TLS",
+        "default": true
+      }
+    }
+  },
+  "secrets": [
+    {
+      "key": "token",
+      "label": "Long-lived access token",
+      "hint": "In Home Assistant, open your profile, then Security, then Create token",
+      "auth": {
+        "as": "bearer"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "sensor",
+      "label": "A sensor",
+      "description": "One sensor's number with its unit, such as a temperature, power or humidity (or every sensor as a list).",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Sensor",
+            "pattern": "^([a-z_]+\\.[a-z0-9_]+|\\*)$",
+            "examples": [
+              "sensor.living_room_temperature"
+            ],
+            "x-atrium-choices": {
+              "endpointId": "sensors",
+              "value": "entity_id",
+              "label": "name",
+              "detail": "detail",
+              "every": true
+            }
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 5,
+      "group": "Sensors"
+    },
+    {
+      "id": "sensors",
+      "label": "Sensors",
+      "description": "Every entity that reports a number, with its value, unit and kind.",
+      "shape": "table",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "Sensors"
+    },
+    {
+      "id": "states",
+      "label": "Entities",
+      "description": "Every entity with its name, domain and state. Filter by domain (light, switch, sensor) or area.",
+      "params": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "title": "Domain",
+            "pattern": "^[a-z_]+$",
+            "examples": [
+              "light",
+              "switch",
+              "sensor"
+            ]
+          },
+          "area": {
+            "type": "string",
+            "title": "Area",
+            "pattern": "^[a-z0-9_]+$",
+            "examples": [
+              "living_room"
+            ],
+            "x-atrium-choices": {
+              "endpointId": "areas",
+              "value": "id",
+              "label": "name"
+            }
+          }
+        }
+      },
+      "shape": "table",
+      "defaultRefreshSec": 10,
+      "minRefreshSec": 5,
+      "group": "Entities"
+    },
+    {
+      "id": "entity",
+      "label": "One entity",
+      "description": "One entity's state as a status.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+            "examples": [
+              "light.living_room"
+            ],
+            "x-atrium-choices": {
+              "endpointId": "states",
+              "value": "entity_id",
+              "label": "name",
+              "detail": "entity_id"
+            }
+          }
+        }
+      },
+      "shape": "status",
+      "defaultRefreshSec": 10,
+      "minRefreshSec": 5,
+      "group": "Entities"
+    },
+    {
+      "id": "history",
+      "label": "History",
+      "description": "An entity's numeric history over a number of hours.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "pattern": "^[a-z_]+\\.[a-z0-9_]+$",
+            "examples": [
+              "sensor.living_room_temperature"
+            ],
+            "x-atrium-choices": {
+              "endpointId": "sensors",
+              "value": "entity_id",
+              "label": "name",
+              "detail": "detail"
+            }
+          },
+          "hours": {
+            "type": "number",
+            "title": "Hours",
+            "minimum": 1,
+            "maximum": 168,
+            "default": 24
+          }
+        }
+      },
+      "shape": "series",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Over time"
+    },
+    {
+      "id": "areas",
+      "label": "Areas",
+      "description": "Every area with its id and name.",
+      "shape": "table",
+      "defaultRefreshSec": 300,
+      "minRefreshSec": 60,
+      "group": "Entities",
+      "advanced": true
+    },
+    {
+      "id": "unavailable",
+      "label": "Unavailable entities",
+      "description": "Entities Home Assistant cannot reach right now (unavailable or unknown), with since when.",
+      "shape": "table",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 15,
+      "group": "Entities"
+    }
+  ],
+  "commands": [
+    {
+      "id": "light.turn_on",
+      "label": "Turn a light on",
+      "description": "Turns a light on, with an optional brightness, colour temperature or RGB colour.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The light entity, for example light.living_room.",
+            "pattern": "^light\\.[a-z0-9_]+$"
+          },
+          "brightnessPct": {
+            "type": "integer",
+            "title": "Brightness (%)",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "colorTempK": {
+            "type": "integer",
+            "title": "Colour temperature (K)",
+            "minimum": 1500,
+            "maximum": 9000
+          },
+          "rgb": {
+            "type": "array",
+            "title": "RGB colour",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "light.turn_off",
+      "label": "Turn a light off",
+      "description": "Turns a light off.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The light entity, for example light.living_room.",
+            "pattern": "^light\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "light.toggle",
+      "label": "Toggle a light",
+      "description": "Turns a light on if it is off, or off if it is on.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The light entity, for example light.living_room.",
+            "pattern": "^light\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "switch.turn_on",
+      "label": "Turn a switch on",
+      "description": "Turns a switch on.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The switch entity, for example switch.living_room.",
+            "pattern": "^switch\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "switch.turn_off",
+      "label": "Turn a switch off",
+      "description": "Turns a switch off.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The switch entity, for example switch.living_room.",
+            "pattern": "^switch\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "switch.toggle",
+      "label": "Toggle a switch",
+      "description": "Turns a switch on if it is off, or off if it is on.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The switch entity, for example switch.living_room.",
+            "pattern": "^switch\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "scene.turn_on",
+      "label": "Activate a scene",
+      "description": "Activates a scene.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The scene entity, for example scene.living_room.",
+            "pattern": "^scene\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "low"
+    },
+    {
+      "id": "script.turn_on",
+      "label": "Run a script",
+      "description": "Runs a Home Assistant script. A script can do anything, so only the owner may place it.",
+      "params": {
+        "type": "object",
+        "required": [
+          "entityId"
+        ],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "title": "Entity",
+            "description": "The script entity, for example script.living_room.",
+            "pattern": "^script\\.[a-z0-9_]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "target": {
+        "endpointId": "states",
+        "field": "entity_id"
+      },
+      "risk": "medium",
+      "ownerOnly": true
+    }
+  ],
+  "detect": {
+    "probe": {
+      "path": "/manifest.json",
+      "match": "\"name\"\\s*:\\s*\"Home Assistant\""
+    }
+  }
+}

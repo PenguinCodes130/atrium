@@ -1,0 +1,364 @@
+/* Atrium components inside a user app (design v4 section 2): they read only --theme-* tokens, so the
+   app's theme decides their look. Lives in the atrium-theme layer so style overrides and node CSS
+   (atrium-custom, from scopeCustomCss) always win. Reduced motion is honoured here and in Motion. */
+@layer atrium-shell-guard, atrium-theme, atrium-custom;
+
+/* Containment for every node box (gauntlet w2-r1 Fix 2, w2-r2 Fixes 1, 2, 7 and 9): node CSS is
+   selector-scoped by the sanitiser, and here it is also paint-, hit- and layout-scoped. The guard layer
+   comes first, so its !important pins beat anything in atrium-custom (an earlier layer's !important
+   wins, also over custom !important). The node's own box is pinned whatever value reaches it, literal or
+   through var() or env(): it always generates a box (display, so `display: contents` cannot remove the
+   clip), it is the containing block for fixed and absolute descendants (contain: layout, so
+   `position: var(--x, fixed)` stays inside), it clips its descendants, and it cannot move, grow, pad or
+   animate itself out of its slot. Descendants are clipped at the node's box plus a margin: 12px on nodes
+   that carry their own CSS or a style override (less than half the narrowest grid gap, so they never
+   reach a neighbour), 104px on plain nodes (they hold no CSS of their own; the room is for the shadows
+   their child nodes draw, which reach at most 96px, see style/compile.ts SHADOW_REACH_MAX). A styled
+   node's window shadow is drawn by the node box itself, outside its clip (theme layer below and the
+   node-box rules from compileStyle), so a Style panel shadow is never cut. */
+@layer atrium-shell-guard {
+  [data-atrium-canvas] [data-node], .atr-render-root [data-node] {
+    display: block !important;
+    isolation: isolate !important;
+    contain: layout !important;
+    overflow: clip !important;
+    overflow-clip-margin: 104px !important;
+    position: relative !important;
+    inset: auto !important;
+    z-index: auto !important;
+    float: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    zoom: 1 !important;
+    animation: none !important;
+    writing-mode: horizontal-tb !important;
+    /* Final pass (w2-r3 item 3): no border on the node box (it would stretch the row past the cap; borders
+       go on parts), and the box is sized with its border, so a content-box trick cannot add to it. */
+    box-sizing: border-box !important;
+    border-width: 0 !important;
+    /* Final pass (w2-r3 item 1): the tokens the node box itself paints with (its window shadow and radius,
+       and the theme colours a Style panel node-box shadow names) always come from the parent, never from
+       the node's own CSS. Node CSS also cannot write --theme-* at all (style/node-css-policy.ts). */
+    --atr-node-shadow: inherit !important;
+    --atr-node-radius: inherit !important;
+    --theme-shadow: inherit !important;
+    --theme-radius: inherit !important;
+    --theme-surface: inherit !important;
+    --theme-surface-text: inherit !important;
+    --theme-surface-muted: inherit !important;
+    --theme-canvas-text: inherit !important;
+    --theme-accent: inherit !important;
+    --theme-accent-text: inherit !important;
+    --theme-ok: inherit !important;
+    --theme-warn: inherit !important;
+    --theme-bad: inherit !important;
+    --theme-info: inherit !important;
+    --theme-line: inherit !important;
+  }
+  /* Exact boxes (operator, 2026-10-19): a node directly in a fixed-row cell may shrink to the box it was
+     drawn at (its content scrolls in the root part, components.css theme layer). Still a pin: the more
+     specific rule in this first layer beats the min-height above and anything node CSS writes. */
+  :is([data-atrium-canvas], .atr-render-root) .atr-grid[data-fixed-rows] > .atr-cell > [data-node] {
+    min-height: 0 !important;
+  }
+  /* A node that fills a grid cell is the cell's flex column (layout.tsx). */
+  [data-atrium-canvas] .atr-cell > [data-node], .atr-render-root .atr-cell > [data-node] {
+    display: flex !important;
+  }
+  [data-atrium-canvas] [data-node][data-node-styled], .atr-render-root [data-node][data-node-styled] {
+    overflow-clip-margin: 12px !important;
+  }
+  /* Runaway heights (w2-r2 Fix 9): the root's own height and padding are pinned above; a styled
+     component (not a page layout: grid, stack, section, tabs, repeat, and not the HTML block, whose
+     height is its own prop) also stops at one and a half screens or 1200px, whichever is taller, whatever its
+     CSS does to the parts inside. Plain components grow with their content, as a long table does. */
+  :is([data-atrium-canvas], .atr-render-root) [data-node][data-node-styled]:not([data-type="grid"], [data-type="stack"], [data-type="section"], [data-type="tabs"], [data-type="repeat"], [data-type="html"]) {
+    max-height: max(150vh, 1200px) !important;
+  }
+  /* The HTML block sizes itself (at most 4000px, sandbox/bridge.ts MAX_AUTO_HEIGHT); with its own CSS it
+     stops just past that, so its CSS cannot stretch the page either (final pass, w2-r3 item 3). Layout
+     nodes (grid, stack, section, tabs, repeat) take no node CSS at all (style/node-css-policy.ts), and
+     their Style panel sizes are bounded (style/compile.ts LAYOUT_LIMITS). */
+  :is([data-atrium-canvas], .atr-render-root) [data-node][data-node-styled][data-type="html"] {
+    max-height: max(150vh, 4200px) !important;
+  }
+}
+
+@layer atrium-theme {
+  .atr-render-root { container: atrium-page / inline-size; color: var(--theme-canvas-text, inherit); font-family: var(--theme-font-body, inherit); }
+  /* Whole word gaps in every theme (final pass, w2-r3 item 5): component text is set at the font's own
+     tracking, not the shell body's -0.01em it would inherit (globals.css), and with the shell's word
+     spacing (--type-word-spacing, 0.08em in tokens.css; the canvas resets that token to normal, so the
+     value is written here). Inter Tight at 14px otherwise reads "connectProxmoxVE". Headings and values
+     keep their own theme tracking. */
+  .atr-render-root { letter-spacing: normal; word-spacing: 0.08em; }
+  /* The node box's window shadow and radius (w2-r3 item 1): resolved here, above every node, from the
+     theme; the guard pins both on each node box to the parent's value, so no node's CSS can change them. */
+  :is([data-atrium-canvas], .atr-render-root) { --atr-node-shadow: var(--theme-shadow, none); --atr-node-radius: var(--theme-radius, 0px); }
+  .atr-node { position: relative; min-width: 0; }
+  .atr-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .atr-cell > .atr-node { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .atr-cell > .atr-node > [data-slot="root"] { flex: 1 1 auto; }
+  /* Exact boxes (layout.tsx GridView): the node fills its fixed cell and its content scrolls inside the
+     root part; the root's own shadow stays outside the clip, in the cell's padding. */
+  .atr-grid[data-fixed-rows] > .atr-cell > .atr-node > [data-slot="root"] { min-height: 0; overflow: auto; }
+  /* A styled node's window shadow is drawn by the node box, outside the node's 12px clip (w2-r2 Fix 7):
+     the theme shadow moves from the root part to the node box (same box, same radius). A Style panel
+     shadow does the same through the node-box rule compileStyle writes, which wins (atrium-custom). */
+  .atr-node[data-node-styled]:not(.atr-card .atr-node):has(> [data-slot="root"].canvas-surface) { box-shadow: var(--atr-node-shadow, none); border-radius: var(--atr-node-radius, 0px); }
+  .atr-node[data-node-styled] > [data-slot="root"].canvas-surface { box-shadow: none; }
+
+  /* No window inside a window (design v4 "Windows", w2-r2 Fix 4): a window inside a card
+     is a well, sunk, with no border, shadow or title bar of its own; the outer window's bar carries the
+     rolled-up status. */
+  .atr-card .atr-node .canvas-surface { background-color: var(--bg-sunk, color-mix(in oklab, var(--theme-surface-text) 7%, var(--theme-surface))); border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  [data-canvas-titlebars="on"] .atr-card .atr-node .atr-titlebar { display: none; }
+  [data-canvas-titlebars="on"] .atr-card .atr-node .atr-marks { top: 8px; }
+  .atr-grid { display: grid; row-gap: 0; --atr-colgap: var(--theme-gap, 16px); }
+  /* Rows are 8px units, so the row gap is the cell's own bottom padding: the theme gap plus the hard
+     shadow's offset, so a card's shadow never sits under the next row (gauntlet w2-r1 Fix 9). */
+  .atr-cell { padding-bottom: var(--theme-gap, 16px); }
+  [data-canvas-shadow="hard"] .atr-cell { padding-bottom: calc(var(--theme-gap, 16px) + var(--theme-shadow-offset, 0px)); }
+  .atr-grid[data-empty] { min-height: 0 !important; }
+  /* A7.6: an HTML block that fills the window ends at the window's edge, with no gap under it. */
+  .atr-grid > .atr-cell[data-fill-cell] { padding-bottom: 0; }
+  .atr-stack { display: flex; gap: var(--theme-gap, 16px); }
+  .atr-repeat { display: grid; gap: var(--theme-gap, 16px); }
+  .atr-section { display: flex; flex-direction: column; gap: calc(var(--theme-gap, 16px) / 2); }
+  .atr-section-title { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking, -0.02em); font-size: calc(22px * var(--theme-type-scale, 1)); color: var(--theme-canvas-text); }
+  .atr-section-desc { margin: 0; color: var(--theme-surface-muted); font-size: calc(14px * var(--theme-type-scale, 1)); }
+  .atr-section-body { display: flex; flex-direction: column; gap: var(--theme-gap, 16px); }
+
+  .atr-surface { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .atr-card { display: flex; flex-direction: column; gap: 12px; }
+  .atr-card-title h3 { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(17px * var(--theme-type-scale, 1)); }
+  .atr-card-title p { margin: 2px 0 0; color: var(--theme-surface-muted); font-size: calc(13px * var(--theme-type-scale, 1)); }
+  .atr-card-body { display: flex; flex-direction: column; gap: 12px; }
+
+  .atr-tablist { display: flex; gap: 4px; border-bottom: 1px solid var(--theme-line); margin-bottom: 12px; overflow-x: auto; }
+  .atr-tablist [role="tab"] { appearance: none; border: 0; background: transparent; color: var(--theme-canvas-text); padding: 8px 12px; font: inherit; font-size: calc(14px * var(--theme-type-scale, 1)); cursor: pointer; border-bottom: 2px solid transparent; min-height: 36px; }
+  .atr-tablist [role="tab"][aria-selected="true"] { border-bottom-color: var(--theme-accent); font-weight: 600; }
+
+  /* data components */
+  .atr-data { position: relative; }
+  .atr-marks { position: absolute; top: 8px; right: 10px; display: inline-flex; align-items: center; gap: 8px; z-index: 1; font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); }
+  .atr-stale { appearance: none; border: 0; background: none; padding: 2px; display: inline-flex; align-items: center; gap: 4px; color: var(--theme-surface-muted); cursor: default; font: inherit; }
+  .atr-stale-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--theme-warn); }
+  .atr-stale-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .atr-stale:hover .atr-stale-word, .atr-stale:focus-visible .atr-stale-word { position: static; width: auto; height: auto; clip-path: none; }
+  .atr-failed-wrap { position: relative; display: inline-flex; }
+  .atr-failed { appearance: none; border: 0; background: none; padding: 2px; color: var(--theme-warn); cursor: help; display: inline-flex; }
+  .atr-tip { position: absolute; right: 0; top: calc(100% + 6px); width: max-content; max-width: 240px; padding: 8px 10px; background: var(--theme-surface); color: var(--theme-surface-text); border: 1px solid var(--theme-border-color); box-shadow: 0 8px 24px rgb(0 0 0 / 0.18); font-family: var(--theme-font-body); font-size: 12px; line-height: 1.35; display: none; flex-direction: column; gap: 4px; text-align: left; }
+  .atr-failed-wrap:hover .atr-tip, .atr-failed:focus-visible + .atr-tip { display: flex; }
+  .atr-updated { font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); }
+  /* States sit at the top of the body, so the no-data text of neighbouring windows lines up (Fix 5). */
+  .atr-state { display: flex; flex-direction: column; gap: 4px; justify-content: flex-start; min-height: 64px; }
+  .atr-state-title { font-weight: 600; font-size: calc(14px * var(--theme-type-scale, 1)); }
+  .atr-state-detail { color: var(--theme-surface-muted); font-size: 12px; }
+  /* Every empty and no-data state sits on the window body padding, also in the flush table (Fix 5). */
+  .canvas-surface-flush > .atr-state { padding: var(--theme-pad, 20px); }
+  @media (max-width: 639.98px) { .canvas-surface-flush > .atr-state { padding: var(--theme-pad-phone, 16px); } }
+  /* Under a title bar a padded window's body starts right below the bar (the bar takes the top padding). */
+  [data-canvas-titlebars="on"] .canvas-surface-flush > .atr-state { padding-top: 0; }
+  .atr-state-link { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; color: var(--theme-accent-ink, var(--theme-accent)); font-size: 13px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+  .atr-state-link:hover { text-decoration-thickness: 2px; }
+  .atr-state-mismatch .atr-state-title { font-weight: 500; }
+  .atr-state-blocked .atr-state-title { color: var(--theme-surface-muted); font-weight: 500; }
+  .atr-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+  .atr-skeleton span { display: block; height: 12px; background: color-mix(in oklab, var(--theme-surface-text) 10%, transparent); animation: atr-shimmer 1.6s ease-in-out infinite; }
+  .atr-skeleton span:first-child { height: 28px; }
+
+  .atr-stat { display: flex; flex-direction: column; gap: 4px; container-type: inline-size; }
+  .atr-stat-line { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .atr-stat-value { overflow-wrap: anywhere; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(40px * var(--theme-type-scale, 1)); line-height: 1; font-variant-numeric: var(--theme-numbers, tabular-nums); }
+  /* Words never break inside: the size steps down with the tile width, then ellipsis (Fix 10). */
+  .atr-stat-value[data-text-value] { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; font-size: clamp(14px, calc(100cqi / (var(--atr-chars, 6) * 0.8)), calc(40px * var(--theme-type-scale, 1))); }
+  .atr-stat-unit { font-size: calc(16px * var(--theme-type-scale, 1)); color: var(--theme-surface-muted); }
+  .atr-stat-label { font-family: var(--theme-font-mono); font-size: calc(12px * var(--theme-type-scale, 1)); color: var(--theme-surface-muted); }
+  .atr-stat-delta { font-size: 12px; color: var(--theme-surface-muted); font-variant-numeric: tabular-nums; }
+  .atr-stat[data-level="warn"] .atr-stat-value { color: var(--theme-warn); }
+  .atr-stat[data-level="bad"] .atr-stat-value { color: var(--theme-bad); }
+  .atr-level-word { font-family: var(--theme-font-mono); font-size: 11px; text-transform: lowercase; padding: 1px 5px; border: 1px solid currentColor; }
+  .atr-stat[data-level="warn"] .atr-level-word, [data-level="warn"] > .atr-level-word { color: var(--theme-warn); }
+  .atr-stat[data-level="bad"] .atr-level-word, [data-level="bad"] > .atr-level-word { color: var(--theme-bad); }
+  .atr-center { text-align: center; display: block; }
+
+  .atr-table-wrap { overflow-x: auto; }
+  .atr-table { width: 100%; border-collapse: collapse; font-size: calc(13px * var(--theme-type-scale, 1)); }
+  .atr-table th { text-align: left; font-family: var(--theme-font-mono); font-weight: 400; font-size: 11px; color: var(--theme-surface-muted); padding: 10px 12px 6px; border-bottom: 1px solid var(--theme-line); }
+  .atr-table td { padding: 7px 12px; border-bottom: 1px solid var(--theme-line); }
+  .atr-table [data-type="number"] { text-align: right; font-variant-numeric: var(--theme-numbers, tabular-nums); }
+  .atr-count { margin: 0; padding: 6px 12px 10px; font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); }
+  .atr-num { font-variant-numeric: var(--theme-numbers, tabular-nums); }
+  .atr-link { color: var(--theme-accent-ink, var(--theme-accent)); text-decoration: underline; text-underline-offset: 3px; }
+  .atr-link-inert { color: var(--theme-surface-muted); text-decoration: line-through; cursor: not-allowed; }
+  .atr-muted { color: var(--theme-surface-muted); margin: 0; font-size: 13px; }
+
+  .atr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .atr-list li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--theme-line); font-size: calc(14px * var(--theme-type-scale, 1)); }
+  .atr-list li:last-child { border-bottom: 0; }
+  .atr-list-detail { color: var(--theme-surface-muted); font-variant-numeric: tabular-nums; }
+
+  /* status: shape, word and colour (never colour alone) */
+  .atr-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .atr-status[data-layout="grid"] { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .atr-status li { display: flex; align-items: center; gap: 8px; font-size: calc(14px * var(--theme-type-scale, 1)); flex-wrap: wrap; }
+  /* The label takes the room and the state word stays inline at the right (Fix 15). */
+  .atr-status li > [data-slot="label"], .atr-status li > a { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .atr-state-word { font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); flex: none; margin-left: auto; white-space: nowrap; }
+  .atr-status-detail { flex-basis: 100%; padding-left: 18px; font-size: 12px; color: var(--theme-surface-muted); }
+  .atr-shape { width: 10px; height: 10px; flex: none; display: inline-block; background: var(--theme-surface-muted); }
+  .atr-shape[data-state="up"] { border-radius: 50%; background: var(--theme-ok); }
+  .atr-shape[data-state="warn"] { width: 0; height: 0; background: none; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--theme-warn); }
+  .atr-shape[data-state="down"] { background: var(--theme-bad); }
+  .atr-shape[data-state="unknown"] { background: none; border: 2px solid var(--theme-surface-muted); border-radius: 50%; }
+  .atr-status-inline { display: inline-flex; align-items: center; gap: 6px; }
+
+  .atr-gauge { position: relative; display: grid; place-items: center; width: 100%; max-width: 180px; margin: 0 auto; }
+  .atr-gauge svg { width: 100%; height: auto; }
+  .atr-gauge-track { stroke: color-mix(in oklab, var(--theme-surface-text) 12%, transparent); }
+  .atr-gauge-fill { stroke: var(--theme-accent); transition: stroke-dasharray 240ms cubic-bezier(0.2, 0, 0, 1); }
+  .atr-gauge[data-level="warn"] .atr-gauge-fill { stroke: var(--theme-warn); }
+  .atr-gauge[data-level="bad"] .atr-gauge-fill { stroke: var(--theme-bad); }
+  .atr-gauge-value { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); font-size: calc(26px * var(--theme-type-scale, 1)); font-variant-numeric: tabular-nums; }
+  .atr-gauge-value small { font-size: 12px; margin-left: 2px; color: var(--theme-surface-muted); }
+  .atr-gauge > .atr-level-word { position: absolute; bottom: 4px; }
+  .atr-progress-head { display: flex; justify-content: space-between; gap: 8px; font-size: calc(13px * var(--theme-type-scale, 1)); }
+  .atr-progress { height: 10px; background: color-mix(in oklab, var(--theme-surface-text) 12%, transparent); border-radius: var(--theme-control-radius, 0px); overflow: hidden; }
+  .atr-progress-fill { display: block; height: 100%; width: 100%; transform-origin: left center; background: var(--theme-accent); transition: transform 240ms cubic-bezier(0.2, 0, 0, 1); }
+  .atr-progress[data-level="warn"] .atr-progress-fill { background: var(--theme-warn); }
+  .atr-progress[data-level="bad"] .atr-progress-fill { background: var(--theme-bad); }
+
+  .atr-chart { margin: 0; }
+  .atr-chart svg { display: block; width: 100%; }
+  .atr-axis text { font-family: var(--theme-font-mono); font-size: 10px; fill: var(--theme-surface-muted); }
+  .atr-gridline { stroke: var(--theme-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .atr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12px; }
+  .atr-legend ul { list-style: none; display: contents; margin: 0; padding: 0; }
+  .atr-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .atr-legend-count { font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); }
+  .atr-more { appearance: none; border: 1px solid var(--theme-line); background: transparent; color: inherit; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; border-radius: var(--theme-control-radius, 0px); min-height: 28px; }
+
+  /* content */
+  .atr-heading { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); color: var(--theme-canvas-text); line-height: 1.05; }
+  .atr-heading[data-level="1"] { font-size: calc(40px * var(--theme-type-scale, 1)); }
+  .atr-heading[data-level="2"] { font-size: calc(28px * var(--theme-type-scale, 1)); }
+  .atr-heading[data-level="3"] { font-size: calc(20px * var(--theme-type-scale, 1)); }
+  .atr-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--theme-canvas-text); font-size: calc(15px * var(--theme-type-scale, 1)); line-height: 1.5; }
+  .atr-text[data-size="sm"] { font-size: calc(13px * var(--theme-type-scale, 1)); }
+  .atr-text[data-size="lg"] { font-size: calc(18px * var(--theme-type-scale, 1)); }
+  .atr-text[data-muted] { color: var(--theme-surface-muted); }
+  .atr-image { display: block; width: 100%; border-radius: var(--theme-radius, 0px); }
+  .atr-image-placeholder { display: grid; place-items: center; background: color-mix(in oklab, var(--theme-surface-text) 8%, transparent); color: var(--theme-surface-muted); }
+  .atr-icon { display: inline-flex; color: var(--theme-canvas-text); }
+  .atr-divider { border: 0; border-top: 1px solid var(--theme-line); width: 100%; }
+  .atr-clock { display: flex; flex-direction: column; gap: 2px; color: var(--theme-canvas-text); }
+  .atr-clock-time { font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(44px * var(--theme-type-scale, 1)); line-height: 1; font-variant-numeric: tabular-nums; }
+  .atr-clock-date { font-family: var(--theme-font-mono); font-size: 12px; color: var(--theme-surface-muted); }
+
+  /* controls */
+  .atr-control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .atr-button { appearance: none; min-height: 44px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-weight: 600; font-size: calc(15px * var(--theme-type-scale, 1)); border-radius: var(--theme-control-radius, 0px); border: var(--theme-border-width, 1px) solid var(--theme-border-color); cursor: pointer; background: var(--theme-surface); color: var(--theme-surface-text); transition: transform 120ms cubic-bezier(0.2, 0, 0, 1); }
+  .atr-button[data-variant="primary"] { background: var(--theme-accent); color: var(--theme-accent-text); }
+  .atr-button:active:not(:disabled) { transform: translate(2px, 2px); }
+  .atr-button:disabled, .atr-toggle:disabled, .atr-control[data-disabled] input, .atr-control[data-disabled] select { opacity: 0.45; cursor: not-allowed; }
+  .atr-button[data-pending] { cursor: progress; }
+  .atr-spinner { width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: atr-spin 700ms linear infinite; }
+  .atr-toggle { appearance: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 6px 2px; background: none; border: 0; color: var(--theme-canvas-text); font: inherit; font-size: calc(15px * var(--theme-type-scale, 1)); cursor: pointer; text-align: left; }
+  .atr-toggle-track { position: relative; flex: none; width: 46px; height: 26px; border: 1px solid var(--theme-border-color); background: var(--theme-surface); border-radius: var(--theme-control-radius, 0px); }
+  .atr-toggle[data-state="on"] .atr-toggle-track { background: var(--theme-accent); }
+  .atr-toggle-thumb { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: var(--theme-surface-text); border-radius: var(--theme-control-radius, 0px); }
+  .atr-toggle[data-pending] .atr-toggle-track { opacity: 0.7; }
+  .atr-slider-head, .atr-select { font-size: calc(14px * var(--theme-type-scale, 1)); color: var(--theme-canvas-text); }
+  .atr-slider-head { display: flex; justify-content: space-between; gap: 8px; }
+  .atr-slider-track { position: relative; height: 32px; display: flex; align-items: center; }
+  .atr-slider-track input { width: 100%; accent-color: var(--theme-accent); min-height: 32px; margin: 0; }
+  .atr-slider-fill { display: none; }
+  .atr-select select { display: block; width: 100%; min-height: 40px; margin-top: 4px; font: inherit; padding: 0 10px; color: var(--theme-surface-text); background: var(--theme-surface); border: 1px solid var(--theme-border-color); border-radius: var(--theme-control-radius, 0px); }
+  .atr-control-msg { font-size: 12px; color: var(--theme-bad); }
+  .atr-render-root :focus-visible { outline: 2px solid var(--theme-accent-ink, var(--theme-accent)); outline-offset: 3px; }
+
+  /* html block */
+  .atr-html iframe { display: block; width: 100%; border: 0; background: transparent; color-scheme: normal; }
+  .atr-html-escaped { padding: 16px; border: 1px dashed var(--theme-bad); color: var(--theme-bad); font-size: 14px; }
+
+  /* Window title bars (design v4 "Windows"; theme surface.titleBars, gauntlet w2-r1 Fix 4): hidden unless
+     the canvas says titlebars on. 28px, mono label, door glyph, path on the left, status on the right. */
+  .atr-titlebar { display: none; }
+  [data-canvas-titlebars="on"] .atr-titlebar {
+    display: flex; align-items: center; gap: 8px; flex: none; height: 28px; padding: 0 10px; min-width: 0;
+    margin: calc(-1 * var(--theme-pad, 16px)) calc(-1 * var(--theme-pad, 16px)) 0;
+    background: var(--titlebar, var(--theme-surface-text)); color: var(--titlebar-fg, var(--theme-surface));
+    font-family: var(--theme-font-mono); font-size: 12px; line-height: 16px; letter-spacing: -0.01em;
+    border-radius: var(--theme-radius, 0px) var(--theme-radius, 0px) 0 0;
+  }
+  [data-canvas-titlebars="on"] .canvas-surface-flush > .atr-titlebar { margin: 0; }
+  @media (max-width: 639.98px) {
+    [data-canvas-titlebars="on"] .canvas-surface:not(.canvas-surface-flush) > .atr-titlebar { margin: calc(-1 * var(--theme-pad-phone, 12px)) calc(-1 * var(--theme-pad-phone, 12px)) 0; }
+  }
+  .atr-titlebar-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .atr-titlebar-status { flex: none; display: inline-flex; align-items: center; gap: 6px; opacity: 0.9; }
+  .atr-titlebar-legend { flex: none; display: inline-flex; align-items: center; gap: 10px; margin: 0; padding: 0; list-style: none; }
+  .atr-titlebar-legend li { display: inline-flex; align-items: center; gap: 4px; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .atr-titlebar-legend svg { flex: none; }
+  /* With title bars on, a chart's legend sits in the bar (Fix 6); the body keeps it only when there are more series than the bar shows. */
+  [data-canvas-titlebars="on"] .atr-chart-root[data-legend-in-bar] > .atr-legend { display: none; }
+  .atr-titlebar-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--theme-ok); }
+  .atr-titlebar-status[data-tone="warn"] .atr-titlebar-dot { background: var(--theme-warn); border-radius: 0; }
+  .atr-titlebar-status[data-tone="bad"] .atr-titlebar-dot { background: var(--theme-bad); border-radius: 0; }
+  .atr-titlebar-status[data-tone="off"] .atr-titlebar-dot { background: transparent; border: 1px solid currentColor; }
+  [data-canvas-titlebars="on"] .atr-marks { top: 36px; }
+  [data-canvas-titlebars="on"] .atr-card > .atr-card-title h3 { font-size: calc(15px * var(--theme-type-scale, 1)); }
+
+  /* Library cards (Fix 4 and 12): the card's own window carries the only title bar, with a neutral sample state. */
+  [data-library-preview] [data-canvas-titlebars="on"] .atr-titlebar { display: none; }
+  [data-library-preview] [data-canvas-titlebars="on"] .atr-marks { top: 8px; }
+  [data-library-preview] .canvas-surface, [data-library-preview] .atr-node { box-shadow: none; }
+
+  /* New data components in edit mode show sample values, marked (Fix 7). */
+  .atr-sample-bar { order: 2; flex: none; display: flex; align-items: center; gap: 6px; margin-top: 6px; white-space: nowrap; font-family: var(--theme-font-mono); font-size: 11px; }
+  /* Narrow components (operator, 2026-10-19): the bar stays inside its component; the link truncates. */
+  .atr-sample-bar { min-width: 0; max-width: 100%; overflow: hidden; }
+  .atr-sample-bar > .atr-sample-action { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .atr-sample-tag { padding: 0 5px; line-height: 16px; border: 1px dashed currentColor; color: var(--theme-surface-muted); background: var(--theme-surface); }
+  .atr-sample-action { appearance: none; border: 0; background: var(--theme-surface); color: var(--theme-accent-ink, var(--theme-accent)); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0 2px; min-height: 20px; }
+  [data-sample] [data-slot="root"] { opacity: 0.78; }
+
+  /* edit-mode marks */
+  /* A7.3: a layer hidden on the device being edited is gone from the canvas too (operator, 2026-10-20);
+     selected from Layers it shows faintly with a dashed outline so it can still be edited. */
+  .atr-node[data-hidden-device]:not([data-selected]) { visibility: hidden; }
+  .atr-node[data-hidden-device] { outline: 1px dashed var(--theme-surface-muted); outline-offset: -1px; }
+  .atr-hidden-tag { position: absolute; top: -9px; left: 6px; z-index: 3; font-family: var(--theme-font-mono); font-size: 10px; line-height: 16px; padding: 0 5px; background: var(--theme-surface-text); color: var(--theme-surface); }
+  .atr-binding-warning { position: absolute; top: -9px; right: 6px; z-index: 3; display: inline-flex; align-items: center; gap: 4px; max-width: 70%; font-family: var(--theme-font-mono); font-size: 10px; line-height: 16px; padding: 0 5px; background: var(--theme-warn); color: #15130f; }
+  .atr-binding-warning-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .atr-unknown { font-size: 13px; color: var(--theme-surface-muted); }
+}
+
+/* Touch: every interactive element a component renders is at least 44 x 44 (design v4 section 6, Fix 8). */
+@media (pointer: coarse) {
+  @layer atrium-theme {
+    .atr-render-root :is(a.atr-link, .atr-tablist [role="tab"], .atr-select select, .atr-slider-track input, .atr-more, .atr-stale, .atr-failed, .atr-button, .atr-toggle) { min-height: 44px; min-width: 44px; }
+    .atr-render-root a.atr-link { display: inline-flex; align-items: center; }
+    .atr-render-root a.atr-state-link { min-height: 44px; min-width: 44px; }
+    .atr-render-root .atr-slider-track { height: 44px; }
+  }
+}
+
+@keyframes atr-shimmer { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes atr-spin { to { transform: rotate(360deg); } }
+@keyframes atr-anim-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+@keyframes atr-anim-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes atr-anim-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes atr-anim-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .atr-render-root *, .atr-render-root *::before, .atr-render-root *::after { animation: none !important; transition: none !important; }
+}
+:root[data-motion="reduce"] .atr-render-root *, :root[data-motion="reduce"] .atr-render-root *::before, :root[data-motion="reduce"] .atr-render-root *::after { animation: none !important; transition: none !important; }

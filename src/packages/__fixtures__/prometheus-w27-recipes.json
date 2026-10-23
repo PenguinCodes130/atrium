@@ -1,0 +1,2162 @@
+[
+ {
+  "id": "machine-cpu",
+  "label": "CPU in use",
+  "description": "How busy one machine's processors are, in percent.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "cpu"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "CPU in use",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-memory",
+  "label": "Memory in use",
+  "description": "How much of one machine's memory is in use, in percent.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "memory"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Memory in use",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-memory-bytes",
+  "label": "Memory used",
+  "description": "How much memory one machine uses, in GB.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "memoryUsed"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Memory used",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-disk",
+  "label": "Disk in use",
+  "description": "How full one disk of a machine is, in percent.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    },
+    "mount": {
+     "type": "string",
+     "title": "Disk",
+     "description": "Which mounted disk. Most machines have one, mounted at /.",
+     "default": "/",
+     "x-atrium-choices": {
+      "endpointId": "mounts",
+      "value": "mount",
+      "label": "mount",
+      "detail": "detail",
+      "params": {
+       "machine": "machine"
+      }
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "disk"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Disk in use",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-network",
+  "label": "Network traffic",
+  "description": "Bytes per second one machine sends or receives on its network cards.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    },
+    "direction": {
+     "type": "string",
+     "title": "Direction",
+     "enum": [
+      "in",
+      "out"
+     ],
+     "x-atrium-labels": {
+      "in": "Coming in",
+      "out": "Going out"
+     },
+     "default": "in"
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "param": "direction",
+   "map": {
+    "in": "netIn",
+    "out": "netOut"
+   }
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "{measure}",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-load",
+  "label": "Load average",
+  "description": "How many tasks wait for the processors, on average.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    },
+    "period": {
+     "type": "string",
+     "title": "Over",
+     "enum": [
+      "1",
+      "5",
+      "15"
+     ],
+     "x-atrium-labels": {
+      "1": "1 minute",
+      "5": "5 minutes",
+      "15": "15 minutes"
+     },
+     "default": "5"
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "param": "period",
+   "map": {
+    "1": "load1",
+    "5": "load5",
+    "15": "load15"
+   }
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "{measure}",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-uptime",
+  "label": "Uptime",
+  "description": "How long one machine has been running since it last started.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "uptime"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Uptime",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  }
+ },
+ {
+  "id": "machine-temperature",
+  "label": "Temperature",
+  "description": "The hottest sensor of one machine, in degrees Celsius.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_hwmon_temp_celsius",
+    "node_thermal_zone_temp"
+   ],
+   "text": "temperature sensors (hwmon or thermal zones in node-exporter)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "temperature"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Temperature",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  },
+  "empty": "This machine reports no temperature sensors."
+ },
+ {
+  "id": "machine-updates",
+  "label": "Pending updates",
+  "description": "How many package updates wait on one machine.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "apt_upgrades_pending"
+   ],
+   "text": "the apt textfile collector in node-exporter"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "fixed": "updates"
+  },
+  "kind": "stat",
+  "query": "{{measure}}",
+  "format": "measure",
+  "statLabel": "Pending updates",
+  "every": {
+   "param": "machine",
+   "key": "instance",
+   "name": "{machine}"
+  },
+  "empty": "This machine reports no package updates."
+ },
+ {
+  "id": "machine-up",
+  "label": "Up or down",
+  "description": "Whether Prometheus can reach one machine right now.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   10
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "kind": "status",
+  "query": "up{ {{machine}} }",
+  "name": "{machine}",
+  "state": "value",
+  "detail": "{label:instance}",
+  "machinesOnly": true
+ },
+ {
+  "id": "machine-summary",
+  "label": "Everything about a machine",
+  "description": "One row with CPU, memory, disk, network, load, uptime and temperature of one machine (or every machine).",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "kind": "table",
+  "rows": "last_over_time(node_uname_info{ {{machine}} }[1d])",
+  "key": [
+   "instance"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "instance",
+    "label": "Address",
+    "value": "{label:instance}"
+   },
+   {
+    "key": "up",
+    "label": "Up",
+    "type": "status",
+    "value": {
+     "query": "up{ {{machine}} }"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:cpu}}"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:memory}}"
+    },
+    "main": true
+   },
+   {
+    "key": "disk",
+    "label": "Disk (/)",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:disk}}"
+    },
+    "main": true
+   },
+   {
+    "key": "netIn",
+    "label": "Network in",
+    "format": "bytesPerSec",
+    "value": {
+     "query": "{{measure:netIn}}"
+    },
+    "main": true
+   },
+   {
+    "key": "netOut",
+    "label": "Network out",
+    "format": "bytesPerSec",
+    "value": {
+     "query": "{{measure:netOut}}"
+    },
+    "main": true
+   },
+   {
+    "key": "load",
+    "label": "Load (5 min)",
+    "format": "number",
+    "value": {
+     "query": "{{measure:load5}}"
+    }
+   },
+   {
+    "key": "uptime",
+    "label": "Uptime",
+    "format": "seconds",
+    "value": {
+     "query": "{{measure:uptime}}"
+    },
+    "main": true
+   },
+   {
+    "key": "temperature",
+    "label": "Temperature",
+    "format": "celsius",
+    "value": {
+     "query": "{{measure:temperature}}"
+    }
+   },
+   {
+    "key": "updates",
+    "label": "Pending updates",
+    "format": "number",
+    "value": {
+     "query": "{{measure:updates}}"
+    }
+   },
+   {
+    "key": "reboot",
+    "label": "Reboot needed",
+    "value": {
+     "query": "{{measure:reboot}}"
+    },
+    "map": {
+     "1": "Yes",
+     "0": "No",
+     "": ""
+    }
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "machine-disks",
+  "label": "Every disk of a machine",
+  "description": "Each mounted disk of one machine with its size, used and free space.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "kind": "table",
+  "rows": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+  "key": [
+   "instance",
+   "mountpoint"
+  ],
+  "columns": [
+   {
+    "key": "machine",
+    "label": "Machine",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "mount",
+    "label": "Mount",
+    "value": "{label:mountpoint}",
+    "main": true
+   },
+   {
+    "key": "device",
+    "label": "Device",
+    "value": "{label:device}"
+   },
+   {
+    "key": "size",
+    "label": "Size",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} }"
+    },
+    "main": true
+   },
+   {
+    "key": "used",
+    "label": "Used",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} } - node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+    }
+   },
+   {
+    "key": "free",
+    "label": "Free",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+    }
+   },
+   {
+    "key": "usedPct",
+    "label": "Used %",
+    "format": "percent",
+    "value": {
+     "query": "100 * (1 - node_filesystem_avail_bytes{ {{machine}} {{FS}} } / node_filesystem_size_bytes{ {{machine}} {{FS}} })"
+    },
+    "main": true
+   }
+  ],
+  "sort": {
+   "by": "usedPct",
+   "desc": true
+  }
+ },
+ {
+  "id": "machine-history",
+  "label": "Over time",
+  "description": "One measure of one machine (or every machine) as a chart over the last hours.",
+  "group": "Machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    },
+    "measure": {
+     "type": "string",
+     "title": "Measure",
+     "enum": [
+      "cpu",
+      "memory",
+      "disk",
+      "netIn",
+      "netOut",
+      "load5",
+      "temperature"
+     ],
+     "x-atrium-labels": {
+      "cpu": "CPU in use",
+      "memory": "Memory in use",
+      "disk": "Disk in use (/)",
+      "netIn": "Network in",
+      "netOut": "Network out",
+      "load5": "Load (5 min)",
+      "temperature": "Temperature"
+     },
+     "default": "cpu"
+    },
+    "hours": {
+     "type": "number",
+     "title": "Hours to show",
+     "minimum": 1,
+     "maximum": 720,
+     "default": 6
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "measure": {
+   "param": "measure"
+  },
+  "kind": "series",
+  "query": "{{measure}}",
+  "format": "measure",
+  "name": "{machine}"
+ },
+ {
+  "id": "mounts",
+  "label": "Disks of a machine",
+  "description": "The mounted disks of one machine, for picking a disk.",
+  "group": "Machines",
+  "advanced": true,
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   300,
+   60
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string",
+     "title": "Machine",
+     "description": "Pick one of your machines, or every machine.",
+     "x-atrium-choices": {
+      "endpointId": "machines",
+      "value": "instance",
+      "label": "name",
+      "detail": "detail",
+      "every": false
+     }
+    }
+   },
+   "required": [
+    "machine"
+   ]
+  },
+  "kind": "table",
+  "rows": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+  "key": [
+   "instance",
+   "mountpoint"
+  ],
+  "columns": [
+   {
+    "key": "mount",
+    "label": "Mount",
+    "value": "{label:mountpoint}"
+   },
+   {
+    "key": "device",
+    "label": "Device",
+    "value": "{label:device}"
+   },
+   {
+    "key": "fstype",
+    "label": "Type",
+    "value": "{label:fstype}"
+   },
+   {
+    "key": "detail",
+    "label": "Detail",
+    "value": "{label:device} · {label:fstype}"
+   }
+  ],
+  "sort": {
+   "by": "mount"
+  }
+ },
+ {
+  "id": "machines",
+  "label": "Machines",
+  "description": "Every machine with node-exporter: name, address, system, cores, memory and whether it is up.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "kind": "table",
+  "rows": "last_over_time(node_uname_info[1d])",
+  "key": [
+   "instance"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "instance",
+    "label": "Address",
+    "value": "{label:instance}"
+   },
+   {
+    "key": "up",
+    "label": "Up",
+    "type": "status",
+    "value": {
+     "query": "up"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "os",
+    "label": "System",
+    "value": "{label:sysname} {label:release}"
+   },
+   {
+    "key": "arch",
+    "label": "Architecture",
+    "value": "{label:machine}"
+   },
+   {
+    "key": "cores",
+    "label": "CPU cores",
+    "format": "number",
+    "value": {
+     "query": "{{measure:cores}}"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "bytes",
+    "value": {
+     "query": "{{measure:memoryTotal}}"
+    },
+    "main": true
+   },
+   {
+    "key": "detail",
+    "label": "Detail",
+    "value": "{label:instance} · {label:sysname} {label:machine} · {col:cores} cores"
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "machines-overview",
+  "label": "Machines overview",
+  "description": "One row per machine with CPU, memory, disk, network in and out, load, uptime and temperature. Good for a card for each machine.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   30
+  ],
+  "kind": "table",
+  "rows": "last_over_time(node_uname_info[1d])",
+  "key": [
+   "instance"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "instance",
+    "label": "Address",
+    "value": "{label:instance}"
+   },
+   {
+    "key": "up",
+    "label": "Up",
+    "type": "status",
+    "value": {
+     "query": "up{ {{machine}} }"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:cpu}}"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:memory}}"
+    },
+    "main": true
+   },
+   {
+    "key": "disk",
+    "label": "Disk (/)",
+    "format": "percent",
+    "value": {
+     "query": "{{measure:disk}}"
+    },
+    "main": true
+   },
+   {
+    "key": "netIn",
+    "label": "Network in",
+    "format": "bytesPerSec",
+    "value": {
+     "query": "{{measure:netIn}}"
+    },
+    "main": true
+   },
+   {
+    "key": "netOut",
+    "label": "Network out",
+    "format": "bytesPerSec",
+    "value": {
+     "query": "{{measure:netOut}}"
+    },
+    "main": true
+   },
+   {
+    "key": "load",
+    "label": "Load (5 min)",
+    "format": "number",
+    "value": {
+     "query": "{{measure:load5}}"
+    }
+   },
+   {
+    "key": "uptime",
+    "label": "Uptime",
+    "format": "seconds",
+    "value": {
+     "query": "{{measure:uptime}}"
+    },
+    "main": true
+   },
+   {
+    "key": "temperature",
+    "label": "Temperature",
+    "format": "celsius",
+    "value": {
+     "query": "{{measure:temperature}}"
+    }
+   },
+   {
+    "key": "updates",
+    "label": "Pending updates",
+    "format": "number",
+    "value": {
+     "query": "{{measure:updates}}"
+    }
+   },
+   {
+    "key": "reboot",
+    "label": "Reboot needed",
+    "value": {
+     "query": "{{measure:reboot}}"
+    },
+    "map": {
+     "1": "Yes",
+     "0": "No",
+     "": ""
+    }
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "machines-up",
+  "label": "Machines up or down",
+  "description": "Every machine, up or down, the ones that are down first.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   10
+  ],
+  "kind": "status",
+  "query": "up",
+  "name": "{machine}",
+  "state": "value",
+  "detail": "{label:instance}",
+  "machinesOnly": true
+ },
+ {
+  "id": "machines-disks",
+  "label": "Every disk on every machine",
+  "description": "Each mounted disk of every machine, the fullest first.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "kind": "table",
+  "rows": "node_filesystem_size_bytes{ {{FS}} }",
+  "key": [
+   "instance",
+   "mountpoint"
+  ],
+  "columns": [
+   {
+    "key": "machine",
+    "label": "Machine",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "mount",
+    "label": "Mount",
+    "value": "{label:mountpoint}",
+    "main": true
+   },
+   {
+    "key": "device",
+    "label": "Device",
+    "value": "{label:device}"
+   },
+   {
+    "key": "size",
+    "label": "Size",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} }"
+    },
+    "main": true
+   },
+   {
+    "key": "used",
+    "label": "Used",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} } - node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+    }
+   },
+   {
+    "key": "free",
+    "label": "Free",
+    "format": "bytes",
+    "value": {
+     "query": "node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+    }
+   },
+   {
+    "key": "usedPct",
+    "label": "Used %",
+    "format": "percent",
+    "value": {
+     "query": "100 * (1 - node_filesystem_avail_bytes{ {{machine}} {{FS}} } / node_filesystem_size_bytes{ {{machine}} {{FS}} })"
+    },
+    "main": true
+   }
+  ],
+  "sort": {
+   "by": "usedPct",
+   "desc": true
+  }
+ },
+ {
+  "id": "machines-history",
+  "label": "One measure, every machine",
+  "description": "One measure as a chart with one line per machine.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "measure": {
+     "type": "string",
+     "title": "Measure",
+     "enum": [
+      "cpu",
+      "memory",
+      "disk",
+      "netIn",
+      "netOut",
+      "load5",
+      "temperature"
+     ],
+     "x-atrium-labels": {
+      "cpu": "CPU in use",
+      "memory": "Memory in use",
+      "disk": "Disk in use (/)",
+      "netIn": "Network in",
+      "netOut": "Network out",
+      "load5": "Load (5 min)",
+      "temperature": "Temperature"
+     },
+     "default": "cpu"
+    },
+    "hours": {
+     "type": "number",
+     "title": "Hours to show",
+     "minimum": 1,
+     "maximum": 720,
+     "default": 6
+    }
+   }
+  },
+  "measure": {
+   "param": "measure"
+  },
+  "kind": "series",
+  "query": "{{measure}}",
+  "format": "measure",
+  "name": "{machine}"
+ },
+ {
+  "id": "machines-top",
+  "label": "Busiest machines",
+  "description": "The machines with the highest value of one measure.",
+  "group": "All machines",
+  "needs": {
+   "anyMetric": [
+    "node_uname_info"
+   ],
+   "text": "node-exporter on your machines"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "measure": {
+     "type": "string",
+     "title": "Measure",
+     "enum": [
+      "cpu",
+      "memory",
+      "disk",
+      "netIn",
+      "netOut",
+      "load5",
+      "temperature"
+     ],
+     "x-atrium-labels": {
+      "cpu": "CPU in use",
+      "memory": "Memory in use",
+      "disk": "Disk in use (/)",
+      "netIn": "Network in",
+      "netOut": "Network out",
+      "load5": "Load (5 min)",
+      "temperature": "Temperature"
+     },
+     "default": "cpu"
+    },
+    "count": {
+     "type": "number",
+     "title": "How many",
+     "minimum": 1,
+     "maximum": 50,
+     "default": 5
+    }
+   }
+  },
+  "measure": {
+   "param": "measure"
+  },
+  "kind": "table",
+  "rows": "topk({{int:count}}, {{measure}})",
+  "key": [
+   "instance"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{machine}",
+    "main": true
+   },
+   {
+    "key": "instance",
+    "label": "Address",
+    "value": "{label:instance}"
+   },
+   {
+    "key": "value",
+    "label": "{measure}",
+    "format": "measure",
+    "value": {
+     "query": "{{measure}}"
+    },
+    "main": true
+   }
+  ],
+  "sort": {
+   "by": "value",
+   "desc": true
+  }
+ },
+ {
+  "id": "containers",
+  "label": "Containers",
+  "description": "Every container cAdvisor sees, with its image, CPU, memory and how long it has run.",
+  "group": "Containers",
+  "needs": {
+   "anyMetric": [
+    "container_last_seen"
+   ],
+   "text": "cAdvisor (container metrics)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "kind": "table",
+  "rows": "max by (name, image, host, instance) (container_last_seen{name!=\"\"})",
+  "key": [
+   "name"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{label:name}",
+    "main": true
+   },
+   {
+    "key": "image",
+    "label": "Image",
+    "value": "{label:image}"
+   },
+   {
+    "key": "host",
+    "label": "Host",
+    "value": "{label:host}"
+   },
+   {
+    "key": "state",
+    "label": "State",
+    "type": "status",
+    "value": {
+     "query": "max by (name) (time() - container_last_seen{name!=\"\"} < bool 60)"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])) * 100"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "bytes",
+    "value": {
+     "query": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})"
+    },
+    "main": true
+   },
+   {
+    "key": "running",
+    "label": "Running for",
+    "format": "seconds",
+    "value": {
+     "query": "max by (name) (time() - container_start_time_seconds{name!=\"\"})"
+    }
+   },
+   {
+    "key": "detail",
+    "label": "Detail",
+    "value": "{label:image} · {label:host}"
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "container-cpu",
+  "label": "Container CPU",
+  "description": "How much processor one container uses, in percent of one core.",
+  "group": "Containers",
+  "needs": {
+   "anyMetric": [
+    "container_last_seen"
+   ],
+   "text": "cAdvisor (container metrics)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "container": {
+     "type": "string",
+     "title": "Container",
+     "x-atrium-choices": {
+      "endpointId": "containers",
+      "value": "name",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "container"
+   ]
+  },
+  "kind": "stat",
+  "query": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+  "format": "percent",
+  "every": {
+   "param": "container",
+   "key": "name",
+   "name": "{label:name}"
+  },
+  "empty": "Prometheus has no CPU data for this container right now."
+ },
+ {
+  "id": "container-memory",
+  "label": "Container memory",
+  "description": "How much memory one container uses.",
+  "group": "Containers",
+  "needs": {
+   "anyMetric": [
+    "container_last_seen"
+   ],
+   "text": "cAdvisor (container metrics)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "container": {
+     "type": "string",
+     "title": "Container",
+     "x-atrium-choices": {
+      "endpointId": "containers",
+      "value": "name",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "container"
+   ]
+  },
+  "kind": "stat",
+  "query": "sum by (name) (container_memory_working_set_bytes{ {{match:container:name}} name!=\"\"})",
+  "format": "bytes",
+  "every": {
+   "param": "container",
+   "key": "name",
+   "name": "{label:name}"
+  },
+  "empty": "Prometheus has no memory data for this container right now."
+ },
+ {
+  "id": "containers-count",
+  "label": "Containers running",
+  "description": "How many containers cAdvisor saw in the last minute.",
+  "group": "Containers",
+  "needs": {
+   "anyMetric": [
+    "container_last_seen"
+   ],
+   "text": "cAdvisor (container metrics)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "kind": "stat",
+  "query": "count(time() - container_last_seen{name!=\"\"} < 60)",
+  "format": "number",
+  "empty": "zero"
+ },
+ {
+  "id": "container-history",
+  "label": "Container over time",
+  "description": "One container's CPU or memory (or every container's) as a chart.",
+  "group": "Containers",
+  "needs": {
+   "anyMetric": [
+    "container_last_seen"
+   ],
+   "text": "cAdvisor (container metrics)"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "container": {
+     "type": "string",
+     "title": "Container",
+     "x-atrium-choices": {
+      "endpointId": "containers",
+      "value": "name",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    },
+    "measure": {
+     "type": "string",
+     "title": "Measure",
+     "enum": [
+      "cpu",
+      "memory"
+     ],
+     "x-atrium-labels": {
+      "cpu": "CPU",
+      "memory": "Memory"
+     },
+     "default": "cpu"
+    },
+    "hours": {
+     "type": "number",
+     "title": "Hours to show",
+     "minimum": 1,
+     "maximum": 720,
+     "default": 6
+    }
+   },
+   "required": [
+    "container"
+   ]
+  },
+  "kind": "series",
+  "query": {
+   "param": "measure",
+   "cases": {
+    "cpu": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+    "memory": "sum by (name) (container_memory_working_set_bytes{ {{match:container:name}} name!=\"\"})"
+   }
+  },
+  "format": {
+   "param": "measure",
+   "cases": {
+    "cpu": "percent",
+    "memory": "bytes"
+   }
+  },
+  "name": "{label:name}"
+ },
+ {
+  "id": "pve-guests",
+  "label": "VMs and containers",
+  "description": "Every Proxmox VM and container with node, state, CPU, memory, disk, uptime and backup.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "kind": "table",
+  "rows": "pve_guest_info{template!=\"1\"}",
+  "key": [
+   "id"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{label:name}",
+    "main": true
+   },
+   {
+    "key": "id",
+    "label": "Id",
+    "value": "{label:id}"
+   },
+   {
+    "key": "node",
+    "label": "Node",
+    "value": "{label:node}"
+   },
+   {
+    "key": "type",
+    "label": "Type",
+    "value": "{label:type}",
+    "map": {
+     "qemu": "VM",
+     "lxc": "Container"
+    }
+   },
+   {
+    "key": "state",
+    "label": "State",
+    "type": "status",
+    "value": {
+     "query": "pve_up{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "pve_cpu_usage_ratio{id=~\"qemu/.*|lxc/.*\"} * 100"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "percent",
+    "value": {
+     "query": "100 * pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"} / pve_memory_size_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "memoryUsed",
+    "label": "Memory used",
+    "format": "bytes",
+    "value": {
+     "query": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    }
+   },
+   {
+    "key": "disk",
+    "label": "Disk used",
+    "format": "bytes",
+    "value": {
+     "query": "pve_disk_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    }
+   },
+   {
+    "key": "uptime",
+    "label": "Uptime",
+    "format": "seconds",
+    "value": {
+     "query": "pve_uptime_seconds{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "backedUp",
+    "label": "Backed up",
+    "value": {
+     "query": "pve_not_backed_up_info"
+    },
+    "map": {
+     "1": "No",
+     "": "Yes"
+    }
+   },
+   {
+    "key": "detail",
+    "label": "Detail",
+    "value": "{col:type} on {label:node}"
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "pve-guest",
+  "label": "A VM or container",
+  "description": "One Proxmox VM or container (or every one) with its state, CPU, memory and uptime.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "guest": {
+     "type": "string",
+     "title": "VM or container",
+     "x-atrium-choices": {
+      "endpointId": "pve-guests",
+      "value": "id",
+      "label": "name",
+      "detail": "detail",
+      "every": true
+     }
+    }
+   },
+   "required": [
+    "guest"
+   ]
+  },
+  "kind": "table",
+  "rows": "pve_guest_info{ {{match:guest:id}} template!=\"1\"}",
+  "key": [
+   "id"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{label:name}",
+    "main": true
+   },
+   {
+    "key": "id",
+    "label": "Id",
+    "value": "{label:id}"
+   },
+   {
+    "key": "node",
+    "label": "Node",
+    "value": "{label:node}"
+   },
+   {
+    "key": "type",
+    "label": "Type",
+    "value": "{label:type}",
+    "map": {
+     "qemu": "VM",
+     "lxc": "Container"
+    }
+   },
+   {
+    "key": "state",
+    "label": "State",
+    "type": "status",
+    "value": {
+     "query": "pve_up{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "pve_cpu_usage_ratio{id=~\"qemu/.*|lxc/.*\"} * 100"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "percent",
+    "value": {
+     "query": "100 * pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"} / pve_memory_size_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "memoryUsed",
+    "label": "Memory used",
+    "format": "bytes",
+    "value": {
+     "query": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    }
+   },
+   {
+    "key": "disk",
+    "label": "Disk used",
+    "format": "bytes",
+    "value": {
+     "query": "pve_disk_usage_bytes{id=~\"qemu/.*|lxc/.*\"}"
+    }
+   },
+   {
+    "key": "uptime",
+    "label": "Uptime",
+    "format": "seconds",
+    "value": {
+     "query": "pve_uptime_seconds{id=~\"qemu/.*|lxc/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "backedUp",
+    "label": "Backed up",
+    "value": {
+     "query": "pve_not_backed_up_info"
+    },
+    "map": {
+     "1": "No",
+     "": "Yes"
+    }
+   },
+   {
+    "key": "detail",
+    "label": "Detail",
+    "value": "{col:type} on {label:node}"
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "pve-nodes",
+  "label": "Proxmox nodes",
+  "description": "Each Proxmox node with its state, CPU, memory and uptime.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   30,
+   15
+  ],
+  "kind": "table",
+  "rows": "pve_node_info",
+  "key": [
+   "id"
+  ],
+  "columns": [
+   {
+    "key": "name",
+    "label": "Name",
+    "value": "{label:name}",
+    "main": true
+   },
+   {
+    "key": "state",
+    "label": "State",
+    "type": "status",
+    "value": {
+     "query": "pve_up{id=~\"node/.*\"}"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "cpu",
+    "label": "CPU",
+    "format": "percent",
+    "value": {
+     "query": "pve_cpu_usage_ratio{id=~\"node/.*\"} * 100"
+    },
+    "main": true
+   },
+   {
+    "key": "memory",
+    "label": "Memory",
+    "format": "percent",
+    "value": {
+     "query": "100 * pve_memory_usage_bytes{id=~\"node/.*\"} / pve_memory_size_bytes{id=~\"node/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "uptime",
+    "label": "Uptime",
+    "format": "seconds",
+    "value": {
+     "query": "pve_uptime_seconds{id=~\"node/.*\"}"
+    },
+    "main": true
+   }
+  ],
+  "sort": {
+   "by": "name"
+  }
+ },
+ {
+  "id": "pve-storage",
+  "label": "Proxmox storage",
+  "description": "Each Proxmox storage with its node, type, state and space used.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "kind": "table",
+  "rows": "pve_storage_info",
+  "key": [
+   "id"
+  ],
+  "columns": [
+   {
+    "key": "storage",
+    "label": "Storage",
+    "value": "{label:storage}",
+    "main": true
+   },
+   {
+    "key": "node",
+    "label": "Node",
+    "value": "{label:node}"
+   },
+   {
+    "key": "type",
+    "label": "Type",
+    "value": "{label:plugintype}"
+   },
+   {
+    "key": "state",
+    "label": "State",
+    "type": "status",
+    "value": {
+     "query": "pve_up{id=~\"storage/.*\"}"
+    },
+    "map": {
+     "1": "up",
+     "0": "down",
+     "": "unknown"
+    },
+    "main": true
+   },
+   {
+    "key": "used",
+    "label": "Used",
+    "format": "bytes",
+    "value": {
+     "query": "pve_disk_usage_bytes{id=~\"storage/.*\"}"
+    }
+   },
+   {
+    "key": "size",
+    "label": "Size",
+    "format": "bytes",
+    "value": {
+     "query": "pve_disk_size_bytes{id=~\"storage/.*\"}"
+    },
+    "main": true
+   },
+   {
+    "key": "usedPct",
+    "label": "Used %",
+    "format": "percent",
+    "value": {
+     "query": "100 * pve_disk_usage_bytes{id=~\"storage/.*\"} / pve_disk_size_bytes{id=~\"storage/.*\"}"
+    },
+    "main": true
+   }
+  ],
+  "sort": {
+   "by": "usedPct",
+   "desc": true
+  }
+ },
+ {
+  "id": "pve-not-backed-up",
+  "label": "Guests with no backup",
+  "description": "Proxmox VMs and containers that are in no backup job.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   300,
+   60
+  ],
+  "kind": "status",
+  "query": "pve_not_backed_up_info * on(id) group_left(name, node, type) pve_guest_info",
+  "name": "{label:name}",
+  "state": "down",
+  "detail": "In no backup job, on {label:node}"
+ },
+ {
+  "id": "pve-guests-history",
+  "label": "Guests over time",
+  "description": "CPU or memory of every Proxmox VM and container as a chart, one line per guest.",
+  "group": "Proxmox",
+  "needs": {
+   "anyMetric": [
+    "pve_up"
+   ],
+   "text": "the Proxmox exporter (prometheus-pve-exporter)"
+  },
+  "refresh": [
+   60,
+   30
+  ],
+  "params": {
+   "type": "object",
+   "properties": {
+    "measure": {
+     "type": "string",
+     "title": "Measure",
+     "enum": [
+      "cpu",
+      "memory"
+     ],
+     "x-atrium-labels": {
+      "cpu": "CPU",
+      "memory": "Memory"
+     },
+     "default": "cpu"
+    },
+    "hours": {
+     "type": "number",
+     "title": "Hours to show",
+     "minimum": 1,
+     "maximum": 720,
+     "default": 6
+    }
+   }
+  },
+  "kind": "series",
+  "query": {
+   "param": "measure",
+   "cases": {
+    "cpu": "pve_cpu_usage_ratio * 100 * on(id) group_left(name) pve_guest_info",
+    "memory": "100 * pve_memory_usage_bytes / pve_memory_size_bytes * on(id) group_left(name) pve_guest_info"
+   }
+  },
+  "format": "percent",
+  "name": "{label:name}"
+ }
+]

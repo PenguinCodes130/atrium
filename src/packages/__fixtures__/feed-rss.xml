@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Homelab &amp; News</title>
+<item><title>Older item</title><link>https://example.com/old</link><pubDate>Fri, 16 Oct 2026 08:00:00 GMT</pubDate></item>
+<item><title><![CDATA[Newest <b>item</b> & more]]></title><link>https://example.com/new</link><pubDate>Sat, 17 Oct 2026 09:30:00 GMT</pubDate></item>
+<item><title>Middle &#8217;item&#8217;</title><link>https://example.com/mid</link><pubDate>Fri, 16 Oct 2026 20:00:00 GMT</pubDate></item>
+</channel></rss>

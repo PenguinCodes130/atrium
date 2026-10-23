@@ -1,0 +1,7 @@
+[
+  { "entity_id": "light.living_room", "state": "on", "attributes": { "friendly_name": "Living room lamp", "brightness": 180 }, "last_changed": "2026-10-17T11:00:00Z" },
+  { "entity_id": "light.bedroom", "state": "off", "attributes": { "friendly_name": "Bedroom lamp" }, "last_changed": "2026-10-17T10:00:00Z" },
+  { "entity_id": "switch.kettle", "state": "off", "attributes": { "friendly_name": "Kettle" }, "last_changed": "2026-10-17T09:00:00Z" },
+  { "entity_id": "sensor.living_room_temperature", "state": "21.4", "attributes": { "friendly_name": "Living room temperature", "unit_of_measurement": "C" }, "last_changed": "2026-10-17T11:59:00Z" },
+  { "entity_id": "scene.movie_night", "state": "unknown", "attributes": { "friendly_name": "Movie night" }, "last_changed": "2026-10-16T20:00:00Z" }
+]

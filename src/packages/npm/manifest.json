@@ -1,0 +1,28 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "npm",
+  "name": "Nginx Proxy Manager",
+  "version": "1.0.0",
+  "author": "Atrium",
+  "homepage": "https://nginxproxymanager.com",
+  "description": "Your proxy hosts and SSL certificates, with expiry dates.",
+  "icon": "icon.svg",
+  "permissions": [{ "kind": "network", "hosts": "configured" }, { "kind": "secret", "key": "token" }],
+  "config": {
+    "type": "object",
+    "required": ["baseUrl"],
+    "properties": {
+      "baseUrl": { "type": "string", "title": "Admin URL", "description": "The admin address of Nginx Proxy Manager, usually port 81, for example http://10.0.0.6:81.", "format": "uri" },
+      "verifyTls": { "type": "boolean", "title": "Verify TLS", "default": true }
+    }
+  },
+  "secrets": [
+    { "key": "token", "label": "API token", "hint": "A token from POST /api/tokens with an admin or read-only user's email and password. Atrium sends it as a Bearer token and only reads.", "auth": { "as": "bearer" } }
+  ],
+  "endpoints": [
+    { "id": "proxy-hosts", "label": "Proxy hosts", "description": "Every proxy host with its forward target, whether it is enabled and its SSL state.", "shape": "table", "defaultRefreshSec": 120, "minRefreshSec": 30 },
+    { "id": "certificates", "label": "Certificates", "description": "Every SSL certificate with its domains and expiry time.", "shape": "table", "defaultRefreshSec": 600, "minRefreshSec": 60 }
+  ],
+  "detect": { "probe": { "path": "/", "match": "Nginx Proxy Manager" } }
+}

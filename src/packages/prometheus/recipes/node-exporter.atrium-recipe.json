@@ -1,0 +1,1573 @@
+{
+  "appliesTo": {
+    "package": "prometheus"
+  },
+  "atriumRecipe": "1",
+  "author": "Atrium",
+  "description": "Machines, disks, network and uptime from node-exporter on your machines.",
+  "id": "prometheus/node-exporter",
+  "name": "Node exporter",
+  "reads": [
+    {
+      "description": "How busy one machine's processors are, in percent.",
+      "group": "Machines",
+      "id": "machine-cpu",
+      "label": "CPU in use",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "cpu"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "CPU in use"
+      }
+    },
+    {
+      "description": "How much of one machine's memory is in use, in percent.",
+      "group": "Machines",
+      "id": "machine-memory",
+      "label": "Memory in use",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "memory"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Memory in use"
+      }
+    },
+    {
+      "description": "How much memory one machine uses, in GB.",
+      "group": "Machines",
+      "id": "machine-memory-bytes",
+      "label": "Memory used",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "memoryUsed"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Memory used"
+      }
+    },
+    {
+      "description": "How full one disk of a machine is, in percent.",
+      "group": "Machines",
+      "id": "machine-disk",
+      "label": "Disk in use",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          },
+          "mount": {
+            "default": "/",
+            "description": "Which mounted disk. Most machines have one, mounted at /.",
+            "title": "Disk",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "mounts",
+              "label": "mount",
+              "params": {
+                "machine": "machine"
+              },
+              "value": "mount"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "disk"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Disk in use"
+      }
+    },
+    {
+      "description": "Bytes per second one machine sends or receives on its network cards.",
+      "group": "Machines",
+      "id": "machine-network",
+      "label": "Network traffic",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "direction": {
+            "default": "in",
+            "enum": [
+              "in",
+              "out"
+            ],
+            "title": "Direction",
+            "type": "string",
+            "x-atrium-labels": {
+              "in": "Coming in",
+              "out": "Going out"
+            }
+          },
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "map": {
+            "in": "netIn",
+            "out": "netOut"
+          },
+          "param": "direction"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "{measure}"
+      }
+    },
+    {
+      "description": "How many tasks wait for the processors, on average.",
+      "group": "Machines",
+      "id": "machine-load",
+      "label": "Load average",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          },
+          "period": {
+            "default": "5",
+            "enum": [
+              "1",
+              "5",
+              "15"
+            ],
+            "title": "Over",
+            "type": "string",
+            "x-atrium-labels": {
+              "1": "1 minute",
+              "5": "5 minutes",
+              "15": "15 minutes"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "map": {
+            "1": "load1",
+            "5": "load5",
+            "15": "load15"
+          },
+          "param": "period"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "{measure}"
+      }
+    },
+    {
+      "description": "How long one machine has been running since it last started.",
+      "group": "Machines",
+      "id": "machine-uptime",
+      "label": "Uptime",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "uptime"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Uptime"
+      }
+    },
+    {
+      "description": "The hottest sensor of one machine, in degrees Celsius.",
+      "group": "Machines",
+      "id": "machine-temperature",
+      "label": "Temperature",
+      "needs": "temperature sensors (hwmon or thermal zones in node-exporter)",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "empty": "This machine reports no temperature sensors.",
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "temperature"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_hwmon_temp_celsius",
+            "node_thermal_zone_temp"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Temperature"
+      }
+    },
+    {
+      "description": "How many package updates wait on one machine.",
+      "group": "Machines",
+      "id": "machine-updates",
+      "label": "Pending updates",
+      "needs": "the apt textfile collector in node-exporter",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "empty": "This machine reports no package updates.",
+        "every": {
+          "key": "instance",
+          "name": "{machine}",
+          "param": "machine"
+        },
+        "format": "measure",
+        "kind": "stat",
+        "measure": {
+          "fixed": "updates"
+        },
+        "needs": {
+          "anyMetric": [
+            "apt_upgrades_pending"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          30,
+          15
+        ],
+        "statLabel": "Pending updates"
+      }
+    },
+    {
+      "description": "Whether Prometheus can reach one machine right now.",
+      "group": "Machines",
+      "id": "machine-up",
+      "label": "Up or down",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "up{ {{machine}} }",
+        "kind": "promql"
+      },
+      "shape": "status",
+      "x-atrium-prometheus": {
+        "detail": "{label:instance}",
+        "kind": "status",
+        "machinesOnly": true,
+        "name": "{machine}",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "up{ {{machine}} }",
+        "refresh": [
+          30,
+          10
+        ],
+        "state": "value"
+      }
+    },
+    {
+      "description": "One row with CPU, memory, disk, network, load, uptime and temperature of one machine (or every machine).",
+      "group": "Machines",
+      "id": "machine-summary",
+      "label": "Everything about a machine",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "last_over_time(node_uname_info{ {{machine}} }[1d])",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "instance",
+            "label": "Address",
+            "value": "{label:instance}"
+          },
+          {
+            "key": "up",
+            "label": "Up",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "up{ {{machine}} }"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "{{measure:cpu}}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "{{measure:memory}}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "disk",
+            "label": "Disk (/)",
+            "main": true,
+            "value": {
+              "query": "{{measure:disk}}"
+            }
+          },
+          {
+            "format": "bytesPerSec",
+            "key": "netIn",
+            "label": "Network in",
+            "main": true,
+            "value": {
+              "query": "{{measure:netIn}}"
+            }
+          },
+          {
+            "format": "bytesPerSec",
+            "key": "netOut",
+            "label": "Network out",
+            "main": true,
+            "value": {
+              "query": "{{measure:netOut}}"
+            }
+          },
+          {
+            "format": "number",
+            "key": "load",
+            "label": "Load (5 min)",
+            "value": {
+              "query": "{{measure:load5}}"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "uptime",
+            "label": "Uptime",
+            "main": true,
+            "value": {
+              "query": "{{measure:uptime}}"
+            }
+          },
+          {
+            "format": "celsius",
+            "key": "temperature",
+            "label": "Temperature",
+            "value": {
+              "query": "{{measure:temperature}}"
+            }
+          },
+          {
+            "format": "number",
+            "key": "updates",
+            "label": "Pending updates",
+            "value": {
+              "query": "{{measure:updates}}"
+            }
+          },
+          {
+            "key": "reboot",
+            "label": "Reboot needed",
+            "map": {
+              "0": "No",
+              "1": "Yes",
+              "": ""
+            },
+            "value": {
+              "query": "{{measure:reboot}}"
+            }
+          }
+        ],
+        "key": [
+          "instance"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "last_over_time(node_uname_info{ {{machine}} }[1d])",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "Each mounted disk of one machine with its size, used and free space.",
+      "group": "Machines",
+      "id": "machine-disks",
+      "label": "Every disk of a machine",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 60,
+      "request": {
+        "expr": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "machine",
+            "label": "Machine",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "mount",
+            "label": "Mount",
+            "main": true,
+            "value": "{label:mountpoint}"
+          },
+          {
+            "key": "device",
+            "label": "Device",
+            "value": "{label:device}"
+          },
+          {
+            "format": "bytes",
+            "key": "size",
+            "label": "Size",
+            "main": true,
+            "value": {
+              "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "used",
+            "label": "Used",
+            "value": {
+              "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} } - node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "free",
+            "label": "Free",
+            "value": {
+              "query": "node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "usedPct",
+            "label": "Used %",
+            "main": true,
+            "value": {
+              "query": "100 * (1 - node_filesystem_avail_bytes{ {{machine}} {{FS}} } / node_filesystem_size_bytes{ {{machine}} {{FS}} })"
+            }
+          }
+        ],
+        "key": [
+          "instance",
+          "mountpoint"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          60,
+          30
+        ],
+        "rows": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+        "sort": {
+          "by": "usedPct",
+          "desc": true
+        }
+      }
+    },
+    {
+      "description": "One measure of one machine (or every machine) as a chart over the last hours.",
+      "group": "Machines",
+      "id": "machine-history",
+      "label": "Over time",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "hours": {
+            "default": 6,
+            "maximum": 720,
+            "minimum": 1,
+            "title": "Hours to show",
+            "type": "number"
+          },
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": true,
+              "label": "name",
+              "value": "instance"
+            }
+          },
+          "measure": {
+            "default": "cpu",
+            "enum": [
+              "cpu",
+              "memory",
+              "disk",
+              "netIn",
+              "netOut",
+              "load5",
+              "temperature"
+            ],
+            "title": "Measure",
+            "type": "string",
+            "x-atrium-labels": {
+              "cpu": "CPU in use",
+              "disk": "Disk in use (/)",
+              "load5": "Load (5 min)",
+              "memory": "Memory in use",
+              "netIn": "Network in",
+              "netOut": "Network out",
+              "temperature": "Temperature"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 60,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "series",
+      "x-atrium-prometheus": {
+        "format": "measure",
+        "kind": "series",
+        "measure": {
+          "param": "measure"
+        },
+        "name": "{machine}",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          60,
+          30
+        ]
+      }
+    },
+    {
+      "advanced": true,
+      "description": "The mounted disks of one machine, for picking a disk.",
+      "group": "Machines",
+      "id": "mounts",
+      "label": "Disks of a machine",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "machine": {
+            "description": "Pick one of your machines, or every machine.",
+            "title": "Machine",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "machines",
+              "every": false,
+              "label": "name",
+              "value": "instance"
+            }
+          }
+        },
+        "required": [
+          "machine"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 300,
+      "request": {
+        "expr": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "mount",
+            "label": "Mount",
+            "value": "{label:mountpoint}"
+          },
+          {
+            "key": "device",
+            "label": "Device",
+            "value": "{label:device}"
+          },
+          {
+            "key": "fstype",
+            "label": "Type",
+            "value": "{label:fstype}"
+          },
+          {
+            "key": "detail",
+            "label": "Detail",
+            "value": "{label:device} · {label:fstype}"
+          }
+        ],
+        "key": [
+          "instance",
+          "mountpoint"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          300,
+          60
+        ],
+        "rows": "node_filesystem_size_bytes{ {{machine}} {{FS}} }",
+        "sort": {
+          "by": "mount"
+        }
+      }
+    },
+    {
+      "description": "Every machine with node-exporter: name, address, system, cores, memory and whether it is up.",
+      "group": "All machines",
+      "id": "machines",
+      "label": "Machines",
+      "needs": "node-exporter on your machines",
+      "refreshSec": 60,
+      "request": {
+        "expr": "last_over_time(node_uname_info[1d])",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "instance",
+            "label": "Address",
+            "value": "{label:instance}"
+          },
+          {
+            "key": "up",
+            "label": "Up",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "up"
+            }
+          },
+          {
+            "key": "os",
+            "label": "System",
+            "value": "{label:sysname} {label:release}"
+          },
+          {
+            "key": "arch",
+            "label": "Architecture",
+            "value": "{label:machine}"
+          },
+          {
+            "format": "number",
+            "key": "cores",
+            "label": "CPU cores",
+            "main": true,
+            "value": {
+              "query": "{{measure:cores}}"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "{{measure:memoryTotal}}"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Detail",
+            "value": "{label:instance} · {label:sysname} {label:machine} · {col:cores} cores"
+          }
+        ],
+        "key": [
+          "instance"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          60,
+          30
+        ],
+        "rows": "last_over_time(node_uname_info[1d])",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "One row per machine with CPU, memory, disk, network in and out, load, uptime and temperature. Good for a card for each machine.",
+      "group": "All machines",
+      "id": "machines-overview",
+      "label": "Machines overview",
+      "needs": "node-exporter on your machines",
+      "refreshSec": 30,
+      "request": {
+        "expr": "last_over_time(node_uname_info[1d])",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "instance",
+            "label": "Address",
+            "value": "{label:instance}"
+          },
+          {
+            "key": "up",
+            "label": "Up",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "up{ {{machine}} }"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "{{measure:cpu}}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "{{measure:memory}}"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "disk",
+            "label": "Disk (/)",
+            "main": true,
+            "value": {
+              "query": "{{measure:disk}}"
+            }
+          },
+          {
+            "format": "bytesPerSec",
+            "key": "netIn",
+            "label": "Network in",
+            "main": true,
+            "value": {
+              "query": "{{measure:netIn}}"
+            }
+          },
+          {
+            "format": "bytesPerSec",
+            "key": "netOut",
+            "label": "Network out",
+            "main": true,
+            "value": {
+              "query": "{{measure:netOut}}"
+            }
+          },
+          {
+            "format": "number",
+            "key": "load",
+            "label": "Load (5 min)",
+            "value": {
+              "query": "{{measure:load5}}"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "uptime",
+            "label": "Uptime",
+            "main": true,
+            "value": {
+              "query": "{{measure:uptime}}"
+            }
+          },
+          {
+            "format": "celsius",
+            "key": "temperature",
+            "label": "Temperature",
+            "value": {
+              "query": "{{measure:temperature}}"
+            }
+          },
+          {
+            "format": "number",
+            "key": "updates",
+            "label": "Pending updates",
+            "value": {
+              "query": "{{measure:updates}}"
+            }
+          },
+          {
+            "key": "reboot",
+            "label": "Reboot needed",
+            "map": {
+              "0": "No",
+              "1": "Yes",
+              "": ""
+            },
+            "value": {
+              "query": "{{measure:reboot}}"
+            }
+          }
+        ],
+        "key": [
+          "instance"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          30,
+          30
+        ],
+        "rows": "last_over_time(node_uname_info[1d])",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "Every machine, up or down, the ones that are down first.",
+      "group": "All machines",
+      "id": "machines-up",
+      "label": "Machines up or down",
+      "needs": "node-exporter on your machines",
+      "refreshSec": 30,
+      "request": {
+        "expr": "up",
+        "kind": "promql"
+      },
+      "shape": "status",
+      "x-atrium-prometheus": {
+        "detail": "{label:instance}",
+        "kind": "status",
+        "machinesOnly": true,
+        "name": "{machine}",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "up",
+        "refresh": [
+          30,
+          10
+        ],
+        "state": "value"
+      }
+    },
+    {
+      "description": "Each mounted disk of every machine, the fullest first.",
+      "group": "All machines",
+      "id": "machines-disks",
+      "label": "Every disk on every machine",
+      "needs": "node-exporter on your machines",
+      "refreshSec": 60,
+      "request": {
+        "expr": "node_filesystem_size_bytes{ {{FS}} }",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "machine",
+            "label": "Machine",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "mount",
+            "label": "Mount",
+            "main": true,
+            "value": "{label:mountpoint}"
+          },
+          {
+            "key": "device",
+            "label": "Device",
+            "value": "{label:device}"
+          },
+          {
+            "format": "bytes",
+            "key": "size",
+            "label": "Size",
+            "main": true,
+            "value": {
+              "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "used",
+            "label": "Used",
+            "value": {
+              "query": "node_filesystem_size_bytes{ {{machine}} {{FS}} } - node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "free",
+            "label": "Free",
+            "value": {
+              "query": "node_filesystem_avail_bytes{ {{machine}} {{FS}} }"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "usedPct",
+            "label": "Used %",
+            "main": true,
+            "value": {
+              "query": "100 * (1 - node_filesystem_avail_bytes{ {{machine}} {{FS}} } / node_filesystem_size_bytes{ {{machine}} {{FS}} })"
+            }
+          }
+        ],
+        "key": [
+          "instance",
+          "mountpoint"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          60,
+          30
+        ],
+        "rows": "node_filesystem_size_bytes{ {{FS}} }",
+        "sort": {
+          "by": "usedPct",
+          "desc": true
+        }
+      }
+    },
+    {
+      "description": "One measure as a chart with one line per machine.",
+      "group": "All machines",
+      "id": "machines-history",
+      "label": "One measure, every machine",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "hours": {
+            "default": 6,
+            "maximum": 720,
+            "minimum": 1,
+            "title": "Hours to show",
+            "type": "number"
+          },
+          "measure": {
+            "default": "cpu",
+            "enum": [
+              "cpu",
+              "memory",
+              "disk",
+              "netIn",
+              "netOut",
+              "load5",
+              "temperature"
+            ],
+            "title": "Measure",
+            "type": "string",
+            "x-atrium-labels": {
+              "cpu": "CPU in use",
+              "disk": "Disk in use (/)",
+              "load5": "Load (5 min)",
+              "memory": "Memory in use",
+              "netIn": "Network in",
+              "netOut": "Network out",
+              "temperature": "Temperature"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "refreshSec": 60,
+      "request": {
+        "expr": "{{measure}}",
+        "kind": "promql"
+      },
+      "shape": "series",
+      "x-atrium-prometheus": {
+        "format": "measure",
+        "kind": "series",
+        "measure": {
+          "param": "measure"
+        },
+        "name": "{machine}",
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "query": "{{measure}}",
+        "refresh": [
+          60,
+          30
+        ]
+      }
+    },
+    {
+      "description": "The machines with the highest value of one measure.",
+      "group": "All machines",
+      "id": "machines-top",
+      "label": "Busiest machines",
+      "needs": "node-exporter on your machines",
+      "params": {
+        "properties": {
+          "count": {
+            "default": 5,
+            "maximum": 50,
+            "minimum": 1,
+            "title": "How many",
+            "type": "number"
+          },
+          "measure": {
+            "default": "cpu",
+            "enum": [
+              "cpu",
+              "memory",
+              "disk",
+              "netIn",
+              "netOut",
+              "load5",
+              "temperature"
+            ],
+            "title": "Measure",
+            "type": "string",
+            "x-atrium-labels": {
+              "cpu": "CPU in use",
+              "disk": "Disk in use (/)",
+              "load5": "Load (5 min)",
+              "memory": "Memory in use",
+              "netIn": "Network in",
+              "netOut": "Network out",
+              "temperature": "Temperature"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "topk({{int:count}}, {{measure}})",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{machine}"
+          },
+          {
+            "key": "instance",
+            "label": "Address",
+            "value": "{label:instance}"
+          },
+          {
+            "format": "measure",
+            "key": "value",
+            "label": "{measure}",
+            "main": true,
+            "value": {
+              "query": "{{measure}}"
+            }
+          }
+        ],
+        "key": [
+          "instance"
+        ],
+        "kind": "table",
+        "measure": {
+          "param": "measure"
+        },
+        "needs": {
+          "anyMetric": [
+            "node_uname_info"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "topk({{int:count}}, {{measure}})",
+        "sort": {
+          "by": "value",
+          "desc": true
+        }
+      }
+    }
+  ],
+  "source": "builtin",
+  "version": "1.1.0"
+}

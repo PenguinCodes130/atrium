@@ -1,0 +1,12 @@
+packages:
+  - "."
+
+# pnpm 11 blocks lifecycle scripts unless allowed here. The field is `allowBuilds` (a map),
+# not the older `onlyBuiltDependencies`. better-sqlite3 "installs" without its build and then
+# fails at runtime with a missing .node binding, so every native dependency must be listed.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+  sharp: true
+  "@tailwindcss/oxide": true
+  unrs-resolver: true

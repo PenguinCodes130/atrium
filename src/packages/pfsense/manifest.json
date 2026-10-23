@@ -1,0 +1,29 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "pfsense",
+  "name": "pfSense",
+  "version": "1.0.0",
+  "author": "Atrium",
+  "homepage": "https://pfrest.org",
+  "description": "Gateway status, interfaces and firewall rule count through the community REST API.",
+  "icon": "icon.svg",
+  "permissions": [{ "kind": "network", "hosts": "configured" }, { "kind": "secret", "key": "apiKey" }],
+  "config": {
+    "type": "object",
+    "required": ["baseUrl"],
+    "properties": {
+      "baseUrl": { "type": "string", "title": "pfSense URL", "description": "The web address of your firewall, for example https://10.0.0.1.", "format": "uri" },
+      "verifyTls": { "type": "boolean", "title": "Verify TLS", "description": "pfSense ships a self-signed certificate. Turn this off to accept it on purpose.", "default": true }
+    }
+  },
+  "secrets": [
+    { "key": "apiKey", "label": "REST API key", "hint": "Install the pfSense REST API package (pfrest), then create a key under System, REST API, Keys for a user with read-only privileges.", "auth": { "as": "header", "name": "X-API-Key" } }
+  ],
+  "endpoints": [
+    { "id": "gateways", "label": "Gateway status", "description": "Each gateway, online or down, with delay and loss.", "shape": "status", "defaultRefreshSec": 30, "minRefreshSec": 10 },
+    { "id": "interfaces", "label": "Interfaces", "description": "Every interface with its status and address.", "shape": "table", "defaultRefreshSec": 60, "minRefreshSec": 15 },
+    { "id": "rule-count", "label": "Firewall rule count", "description": "How many firewall rules are configured.", "shape": "stat", "defaultRefreshSec": 300, "minRefreshSec": 60 }
+  ],
+  "detect": { "probe": { "path": "/", "match": "pfSense" } }
+}

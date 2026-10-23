@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>Atom feed</title>
+<entry><title type="html">First</title><link rel="alternate" href="https://example.org/1"/><published>2026-10-15T10:00:00Z</published></entry>
+<entry><title>Second</title><link href="https://example.org/2"/><updated>2026-10-17T10:00:00Z</updated></entry>
+</feed>

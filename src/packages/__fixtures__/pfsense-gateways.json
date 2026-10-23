@@ -1,0 +1,4 @@
+{ "code": 200, "status": "ok", "data": [
+  { "name": "WAN_DHCP", "srcip": "203.0.113.4", "monitorip": "203.0.113.1", "delay": "4.1ms", "stddev": "0.3ms", "loss": "0.0%", "status": "online" },
+  { "name": "WAN2_DHCP", "delay": "0ms", "loss": "100.0%", "status": "down" }
+] }

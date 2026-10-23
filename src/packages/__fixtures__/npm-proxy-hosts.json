@@ -1,0 +1,4 @@
+[
+  { "id": 1, "domain_names": ["grafana.home.example"], "forward_scheme": "http", "forward_host": "10.0.0.7", "forward_port": 3000, "enabled": 1, "certificate_id": 3, "ssl_forced": 1 },
+  { "id": 2, "domain_names": ["old.home.example", "legacy.home.example"], "forward_scheme": "https", "forward_host": "10.0.0.20", "forward_port": 8443, "enabled": 0, "certificate_id": 0, "ssl_forced": 0 }
+]

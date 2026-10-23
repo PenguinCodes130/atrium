@@ -1,0 +1,323 @@
+{
+  "appliesTo": {
+    "package": "prometheus"
+  },
+  "atriumRecipe": "1",
+  "author": "Atrium",
+  "description": "Container CPU, memory and counts from cAdvisor.",
+  "id": "prometheus/cadvisor",
+  "name": "Containers (cAdvisor)",
+  "reads": [
+    {
+      "description": "Every container cAdvisor sees, with its image, CPU, memory and how long it has run.",
+      "group": "Containers",
+      "id": "containers",
+      "label": "Containers",
+      "needs": "cAdvisor (container metrics)",
+      "refreshSec": 30,
+      "request": {
+        "expr": "max by (name, image, host, instance) (container_last_seen{name!=\"\"})",
+        "kind": "promql"
+      },
+      "shape": "table",
+      "x-atrium-prometheus": {
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "main": true,
+            "value": "{label:name}"
+          },
+          {
+            "key": "image",
+            "label": "Image",
+            "value": "{label:image}"
+          },
+          {
+            "key": "host",
+            "label": "Host",
+            "value": "{label:host}"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "main": true,
+            "map": {
+              "0": "down",
+              "1": "up",
+              "": "unknown"
+            },
+            "type": "status",
+            "value": {
+              "query": "max by (name) (time() - container_last_seen{name!=\"\"} < bool 60)"
+            }
+          },
+          {
+            "format": "percent",
+            "key": "cpu",
+            "label": "CPU",
+            "main": true,
+            "value": {
+              "query": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])) * 100"
+            }
+          },
+          {
+            "format": "bytes",
+            "key": "memory",
+            "label": "Memory",
+            "main": true,
+            "value": {
+              "query": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})"
+            }
+          },
+          {
+            "format": "seconds",
+            "key": "running",
+            "label": "Running for",
+            "value": {
+              "query": "max by (name) (time() - container_start_time_seconds{name!=\"\"})"
+            }
+          },
+          {
+            "key": "detail",
+            "label": "Detail",
+            "value": "{label:image} · {label:host}"
+          }
+        ],
+        "key": [
+          "name"
+        ],
+        "kind": "table",
+        "needs": {
+          "anyMetric": [
+            "container_last_seen"
+          ]
+        },
+        "refresh": [
+          30,
+          15
+        ],
+        "rows": "max by (name, image, host, instance) (container_last_seen{name!=\"\"})",
+        "sort": {
+          "by": "name"
+        }
+      }
+    },
+    {
+      "description": "How much processor one container uses, in percent of one core.",
+      "format": "percent",
+      "group": "Containers",
+      "id": "container-cpu",
+      "label": "Container CPU",
+      "needs": "cAdvisor (container metrics)",
+      "params": {
+        "properties": {
+          "container": {
+            "title": "Container",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "containers",
+              "every": true,
+              "label": "name",
+              "value": "name"
+            }
+          }
+        },
+        "required": [
+          "container"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "empty": "Prometheus has no CPU data for this container right now.",
+        "every": {
+          "key": "name",
+          "name": "{label:name}",
+          "param": "container"
+        },
+        "format": "percent",
+        "kind": "stat",
+        "needs": {
+          "anyMetric": [
+            "container_last_seen"
+          ]
+        },
+        "query": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+        "refresh": [
+          30,
+          15
+        ]
+      }
+    },
+    {
+      "description": "How much memory one container uses.",
+      "format": "bytes",
+      "group": "Containers",
+      "id": "container-memory",
+      "label": "Container memory",
+      "needs": "cAdvisor (container metrics)",
+      "params": {
+        "properties": {
+          "container": {
+            "title": "Container",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "containers",
+              "every": true,
+              "label": "name",
+              "value": "name"
+            }
+          }
+        },
+        "required": [
+          "container"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 30,
+      "request": {
+        "expr": "sum by (name) (container_memory_working_set_bytes{ {{match:container:name}} name!=\"\"})",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "empty": "Prometheus has no memory data for this container right now.",
+        "every": {
+          "key": "name",
+          "name": "{label:name}",
+          "param": "container"
+        },
+        "format": "bytes",
+        "kind": "stat",
+        "needs": {
+          "anyMetric": [
+            "container_last_seen"
+          ]
+        },
+        "query": "sum by (name) (container_memory_working_set_bytes{ {{match:container:name}} name!=\"\"})",
+        "refresh": [
+          30,
+          15
+        ]
+      }
+    },
+    {
+      "description": "How many containers cAdvisor saw in the last minute.",
+      "format": "number",
+      "group": "Containers",
+      "id": "containers-count",
+      "label": "Containers running",
+      "needs": "cAdvisor (container metrics)",
+      "refreshSec": 30,
+      "request": {
+        "expr": "count(time() - container_last_seen{name!=\"\"} < 60)",
+        "kind": "promql"
+      },
+      "shape": "stat",
+      "x-atrium-prometheus": {
+        "empty": "zero",
+        "format": "number",
+        "kind": "stat",
+        "needs": {
+          "anyMetric": [
+            "container_last_seen"
+          ]
+        },
+        "query": "count(time() - container_last_seen{name!=\"\"} < 60)",
+        "refresh": [
+          30,
+          15
+        ]
+      }
+    },
+    {
+      "description": "One container's CPU or memory (or every container's) as a chart.",
+      "group": "Containers",
+      "id": "container-history",
+      "label": "Container over time",
+      "needs": "cAdvisor (container metrics)",
+      "params": {
+        "properties": {
+          "container": {
+            "title": "Container",
+            "type": "string",
+            "x-atrium-choices": {
+              "detail": "detail",
+              "endpointId": "containers",
+              "every": true,
+              "label": "name",
+              "value": "name"
+            }
+          },
+          "hours": {
+            "default": 6,
+            "maximum": 720,
+            "minimum": 1,
+            "title": "Hours to show",
+            "type": "number"
+          },
+          "measure": {
+            "default": "cpu",
+            "enum": [
+              "cpu",
+              "memory"
+            ],
+            "title": "Measure",
+            "type": "string",
+            "x-atrium-labels": {
+              "cpu": "CPU",
+              "memory": "Memory"
+            }
+          }
+        },
+        "required": [
+          "container"
+        ],
+        "type": "object"
+      },
+      "refreshSec": 60,
+      "request": {
+        "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+        "kind": "promql"
+      },
+      "shape": "series",
+      "x-atrium-prometheus": {
+        "format": {
+          "cases": {
+            "cpu": "percent",
+            "memory": "bytes"
+          },
+          "param": "measure"
+        },
+        "kind": "series",
+        "name": "{label:name}",
+        "needs": {
+          "anyMetric": [
+            "container_last_seen"
+          ]
+        },
+        "query": {
+          "cases": {
+            "cpu": "sum by (name) (rate(container_cpu_usage_seconds_total{ {{match:container:name}} name!=\"\"}[5m])) * 100",
+            "memory": "sum by (name) (container_memory_working_set_bytes{ {{match:container:name}} name!=\"\"})"
+          },
+          "param": "measure"
+        },
+        "refresh": [
+          60,
+          30
+        ]
+      }
+    }
+  ],
+  "source": "builtin",
+  "version": "1.1.0"
+}

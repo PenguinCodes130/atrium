@@ -1,0 +1,5 @@
+{ "code": 200, "status": "ok", "data": [
+  { "name": "wan", "descr": "WAN", "hwif": "igb0", "status": "up", "ipaddr": "203.0.113.4" },
+  { "name": "lan", "descr": "LAN", "hwif": "igb1", "status": "up", "ipaddr": "10.0.0.1" },
+  { "name": "opt1", "descr": "IOT", "hwif": "igb2", "status": "no carrier", "ipaddr": "" }
+] }

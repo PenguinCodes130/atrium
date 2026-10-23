@@ -1,0 +1,95 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "docker",
+  "name": "Docker",
+  "version": "1.1.0",
+  "author": "Atrium",
+  "homepage": "https://docs.docker.com/engine/api/",
+  "description": "Your containers with their image and state, and how many are running.",
+  "icon": "icon.svg",
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    }
+  ],
+  "config": {
+    "type": "object",
+    "required": [
+      "endpoint"
+    ],
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "title": "Docker endpoint",
+        "description": "Recommended: a read-only Docker socket proxy, for example tcp://127.0.0.1:2375. The raw socket unix:///var/run/docker.sock is refused unless the server allows it.",
+        "default": "tcp://127.0.0.1:2375"
+      }
+    }
+  },
+  "secrets": [],
+  "endpoints": [
+    {
+      "id": "container",
+      "label": "A container",
+      "description": "One container (or every one) with its state, health, CPU and memory where Docker gives them.",
+      "params": {
+        "type": "object",
+        "required": [
+          "container"
+        ],
+        "properties": {
+          "container": {
+            "type": "string",
+            "title": "Container",
+            "x-atrium-choices": {
+              "endpointId": "containers",
+              "value": "name",
+              "label": "name",
+              "detail": "detail",
+              "every": true
+            }
+          }
+        }
+      },
+      "shape": "table",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "Containers"
+    },
+    {
+      "id": "containers",
+      "label": "Containers",
+      "description": "Every container with its name, image, state, status and health check.",
+      "shape": "table",
+      "defaultRefreshSec": 15,
+      "minRefreshSec": 5,
+      "group": "Containers"
+    },
+    {
+      "id": "running",
+      "label": "Running containers",
+      "description": "How many containers are running.",
+      "shape": "stat",
+      "defaultRefreshSec": 15,
+      "minRefreshSec": 5,
+      "group": "Containers"
+    },
+    {
+      "id": "unhealthy",
+      "label": "Unhealthy containers",
+      "description": "How many containers fail their own health check.",
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "Containers"
+    }
+  ],
+  "detect": {
+    "probe": {
+      "path": "/version",
+      "match": "\"ApiVersion\""
+    }
+  }
+}

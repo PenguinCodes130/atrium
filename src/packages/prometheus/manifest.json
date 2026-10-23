@@ -1,0 +1,523 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "prometheus",
+  "name": "Prometheus",
+  "version": "1.1.0",
+  "author": "Atrium",
+  "homepage": "https://prometheus.io",
+  "description": "Your machines' CPU, memory, disks and network, containers, Proxmox, disk health and alerts from Prometheus, plus any metric or your own PromQL.",
+  "icon": "icon.svg",
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    },
+    {
+      "kind": "secret",
+      "key": "password"
+    },
+    {
+      "kind": "secret",
+      "key": "token"
+    }
+  ],
+  "config": {
+    "type": "object",
+    "required": [
+      "baseUrl"
+    ],
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "title": "Prometheus URL",
+        "description": "The address you open Prometheus at, for example http://10.0.0.7:9090.",
+        "format": "uri"
+      },
+      "authMode": {
+        "type": "string",
+        "title": "Login",
+        "description": "Most Prometheus servers on a LAN need no login. Pick one only if yours sits behind Basic auth or a bearer token.",
+        "enum": [
+          "none",
+          "basic",
+          "bearer"
+        ],
+        "x-atrium-labels": {
+          "none": "No login",
+          "basic": "Username and password (Basic auth)",
+          "bearer": "Bearer token"
+        },
+        "default": "none",
+        "x-atrium-secrets": {
+          "none": [],
+          "basic": [
+            "password"
+          ],
+          "bearer": [
+            "token"
+          ]
+        }
+      },
+      "username": {
+        "type": "string",
+        "title": "Username",
+        "description": "The Basic auth username in front of Prometheus.",
+        "x-atrium-show-when": {
+          "authMode": "basic"
+        }
+      },
+      "verifyTls": {
+        "type": "boolean",
+        "title": "Verify TLS",
+        "description": "Turn off only for a self-signed certificate on your LAN.",
+        "default": true
+      }
+    }
+  },
+  "secrets": [
+    {
+      "key": "password",
+      "label": "Password",
+      "hint": "The Basic auth password for the username above, from your reverse proxy or Prometheus web config (basic_auth_users).",
+      "auth": {
+        "as": "basic",
+        "userKey": "username"
+      }
+    },
+    {
+      "key": "token",
+      "label": "Bearer token",
+      "hint": "The token your proxy or Prometheus expects in an Authorization: Bearer header. Atrium sends it only to this Prometheus address.",
+      "auth": {
+        "as": "bearer"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "targets",
+      "label": "Every scrape target",
+      "description": "Every target Prometheus scrapes, up or down, the ones that are down first.",
+      "shape": "status",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "Alerts"
+    },
+    {
+      "id": "alerts",
+      "label": "Firing alerts",
+      "description": "Alerts firing or pending in Prometheus right now, the worst first. Empty means nothing is firing.",
+      "shape": "status",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 15,
+      "group": "Alerts"
+    },
+    {
+      "id": "alerts-count",
+      "label": "Firing alerts count",
+      "description": "How many alerts are firing.",
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 15,
+      "group": "Alerts"
+    },
+    {
+      "id": "disk-health",
+      "label": "Disk health",
+      "description": "Every disk's own health check (SMART and NVMe), with temperature and life left.",
+      "shape": "status",
+      "defaultRefreshSec": 300,
+      "minRefreshSec": 60,
+      "group": "Disks",
+      "needs": "smartmon or the NVMe textfile collector in node-exporter"
+    },
+    {
+      "id": "disks-smart",
+      "label": "Disk details",
+      "description": "Each disk with model, serial, health, temperature, hours powered on and life left.",
+      "shape": "table",
+      "defaultRefreshSec": 300,
+      "minRefreshSec": 60,
+      "group": "Disks",
+      "needs": "smartmon or the NVMe textfile collector in node-exporter"
+    },
+    {
+      "id": "explore-value",
+      "label": "A metric, now",
+      "description": "Any metric your Prometheus holds, picked from a list, as one number (or one row per label value).",
+      "params": {
+        "type": "object",
+        "required": [
+          "metric"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric",
+            "description": "Search the metrics your Prometheus holds.",
+            "x-atrium-choices": {
+              "endpointId": "metrics",
+              "value": "name",
+              "label": "name",
+              "detail": "description"
+            }
+          },
+          "machine": {
+            "type": "string",
+            "title": "Machine",
+            "description": "Only this machine (optional).",
+            "x-atrium-choices": {
+              "endpointId": "machines",
+              "value": "instance",
+              "label": "name",
+              "detail": "detail",
+              "every": true
+            }
+          },
+          "filterLabel": {
+            "type": "string",
+            "title": "Only where label",
+            "x-atrium-choices": {
+              "endpointId": "metric-labels",
+              "value": "label",
+              "label": "label",
+              "detail": "detail",
+              "params": {
+                "metric": "metric"
+              }
+            }
+          },
+          "filterValue": {
+            "type": "string",
+            "title": "is",
+            "x-atrium-choices": {
+              "endpointId": "metric-label-values",
+              "value": "value",
+              "label": "name",
+              "params": {
+                "metric": "metric",
+                "label": "filterLabel"
+              }
+            }
+          },
+          "how": {
+            "type": "string",
+            "title": "Show it",
+            "enum": [
+              "asis",
+              "rate",
+              "sum",
+              "sumRate",
+              "avg",
+              "max",
+              "min",
+              "p95"
+            ],
+            "x-atrium-labels": {
+              "asis": "As is",
+              "rate": "Per second",
+              "sum": "Total across all",
+              "sumRate": "Total per second across all",
+              "avg": "Average across all",
+              "max": "Highest",
+              "min": "Lowest",
+              "p95": "95th percentile (histograms)"
+            },
+            "default": "asis"
+          },
+          "splitBy": {
+            "type": "string",
+            "title": "One row per",
+            "x-atrium-choices": {
+              "endpointId": "metric-labels",
+              "value": "label",
+              "label": "label",
+              "detail": "detail",
+              "params": {
+                "metric": "metric"
+              }
+            }
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 15,
+      "group": "Pick a metric"
+    },
+    {
+      "id": "explore-history",
+      "label": "A metric over time",
+      "description": "Any metric your Prometheus holds, picked from a list, as a chart.",
+      "params": {
+        "type": "object",
+        "required": [
+          "metric"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric",
+            "description": "Search the metrics your Prometheus holds.",
+            "x-atrium-choices": {
+              "endpointId": "metrics",
+              "value": "name",
+              "label": "name",
+              "detail": "description"
+            }
+          },
+          "machine": {
+            "type": "string",
+            "title": "Machine",
+            "description": "Only this machine (optional).",
+            "x-atrium-choices": {
+              "endpointId": "machines",
+              "value": "instance",
+              "label": "name",
+              "detail": "detail",
+              "every": true
+            }
+          },
+          "filterLabel": {
+            "type": "string",
+            "title": "Only where label",
+            "x-atrium-choices": {
+              "endpointId": "metric-labels",
+              "value": "label",
+              "label": "label",
+              "detail": "detail",
+              "params": {
+                "metric": "metric"
+              }
+            }
+          },
+          "filterValue": {
+            "type": "string",
+            "title": "is",
+            "x-atrium-choices": {
+              "endpointId": "metric-label-values",
+              "value": "value",
+              "label": "name",
+              "params": {
+                "metric": "metric",
+                "label": "filterLabel"
+              }
+            }
+          },
+          "how": {
+            "type": "string",
+            "title": "Show it",
+            "enum": [
+              "asis",
+              "rate",
+              "sum",
+              "sumRate",
+              "avg",
+              "max",
+              "min",
+              "p95"
+            ],
+            "x-atrium-labels": {
+              "asis": "As is",
+              "rate": "Per second",
+              "sum": "Total across all",
+              "sumRate": "Total per second across all",
+              "avg": "Average across all",
+              "max": "Highest",
+              "min": "Lowest",
+              "p95": "95th percentile (histograms)"
+            },
+            "default": "asis"
+          },
+          "splitBy": {
+            "type": "string",
+            "title": "One row per",
+            "x-atrium-choices": {
+              "endpointId": "metric-labels",
+              "value": "label",
+              "label": "label",
+              "detail": "detail",
+              "params": {
+                "metric": "metric"
+              }
+            }
+          },
+          "hours": {
+            "type": "number",
+            "title": "Hours to show",
+            "minimum": 1,
+            "maximum": 720,
+            "default": 6
+          }
+        }
+      },
+      "shape": "series",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Pick a metric"
+    },
+    {
+      "id": "metrics",
+      "label": "Metrics",
+      "description": "Every metric name your Prometheus holds, with Prometheus's own description.",
+      "shape": "table",
+      "defaultRefreshSec": 600,
+      "minRefreshSec": 120,
+      "group": "Pick a metric",
+      "advanced": true
+    },
+    {
+      "id": "metric-labels",
+      "label": "Labels of a metric",
+      "description": "The labels one metric carries, with how many values each has.",
+      "params": {
+        "type": "object",
+        "required": [
+          "metric"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric",
+            "description": "Search the metrics your Prometheus holds.",
+            "x-atrium-choices": {
+              "endpointId": "metrics",
+              "value": "name",
+              "label": "name",
+              "detail": "description"
+            }
+          }
+        }
+      },
+      "shape": "table",
+      "defaultRefreshSec": 300,
+      "minRefreshSec": 60,
+      "group": "Pick a metric",
+      "advanced": true
+    },
+    {
+      "id": "metric-label-values",
+      "label": "Values of a label",
+      "description": "The values one label of one metric takes.",
+      "params": {
+        "type": "object",
+        "required": [
+          "metric",
+          "label"
+        ],
+        "properties": {
+          "metric": {
+            "type": "string",
+            "title": "Metric",
+            "description": "Search the metrics your Prometheus holds.",
+            "x-atrium-choices": {
+              "endpointId": "metrics",
+              "value": "name",
+              "label": "name",
+              "detail": "description"
+            }
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "x-atrium-choices": {
+              "endpointId": "metric-labels",
+              "value": "label",
+              "label": "label",
+              "params": {
+                "metric": "metric"
+              }
+            }
+          }
+        }
+      },
+      "shape": "table",
+      "defaultRefreshSec": 300,
+      "minRefreshSec": 60,
+      "group": "Pick a metric",
+      "advanced": true
+    },
+    {
+      "id": "query",
+      "label": "Custom PromQL: one number",
+      "description": "A PromQL query you write, evaluated now. One series gives one value; several give one row each.",
+      "params": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "PromQL query",
+            "examples": [
+              "count(up)",
+              "sum(up == 0)",
+              "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100"
+            ],
+            "placeholder": "count(up)"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit",
+            "placeholder": "%"
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 5,
+      "group": "Advanced",
+      "advanced": true
+    },
+    {
+      "id": "range",
+      "label": "Custom PromQL: over time",
+      "description": "A PromQL query you write, over a time window, as a chart.",
+      "params": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "PromQL query",
+            "examples": [
+              "up",
+              "rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])",
+              "node_memory_MemAvailable_bytes"
+            ],
+            "placeholder": "rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])"
+          },
+          "rangeSec": {
+            "type": "number",
+            "title": "Window in seconds",
+            "default": 3600
+          },
+          "stepSec": {
+            "type": "number",
+            "title": "Step in seconds",
+            "default": 60
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          }
+        }
+      },
+      "shape": "series",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 15,
+      "group": "Advanced",
+      "advanced": true
+    }
+  ],
+  "detect": {
+    "probe": {
+      "path": "/-/healthy",
+      "match": "Prometheus"
+    }
+  }
+}
