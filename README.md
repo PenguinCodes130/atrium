@@ -46,3 +46,7 @@ pnpm test         # unit tests (Vitest)
 ```
 
 End-to-end tests use Playwright (`tests/e2e/`).
+
+## License
+
+[AGPL-3.0](LICENSE). You can self-host, modify and share Atrium freely. If you run a modified version as a service for others, you must publish your changes under the same license.
