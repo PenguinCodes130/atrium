@@ -10,13 +10,18 @@ import { blackhole, FAKE, fakeDocker, fakeNpm, selfSigned } from "./fakes";
 test.skip(process.env.ATRIUM_E2E_SCENARIO === "locked", "normal scenario");
 test.beforeEach(({}, info) => test.skip(info.project.name !== "desktop", "desktop project"));
 
+// The live Prometheus, e.g. ATRIUM_TEST_PROM_URL=http://<host>:9090 (the real address stays outside git).
+const LIVE_PROM = process.env.ATRIUM_TEST_PROM_URL;
+const livePromPage = () => `/integrations/new/prometheus?baseUrl=${encodeURIComponent(LIVE_PROM!)}`;
+
 test("a correct Prometheus test shows the green tick, latency and version within 10 seconds, and the glow plays once, never on reload (criteria 11, 13, V6)", async ({ browser }) => {
+  test.skip(!LIVE_PROM, "needs ATRIUM_TEST_PROM_URL");
   const videoDir = ev("video/raw-glow");
   const ctx = await themedContext(browser, "daylight", { video: videoDir });
   const page = await ctx.newPage();
   captureTraffic(page, "setup-prometheus");
-  await page.goto("/integrations/new/prometheus?baseUrl=http%3A%2F%2F10.77.99.7%3A9090");
-  await expect(page.locator('[data-config="baseUrl"]')).toHaveValue("http://10.77.99.7:9090");
+  await page.goto(livePromPage());
+  await expect(page.locator('[data-config="baseUrl"]')).toHaveValue(LIVE_PROM!);
   await page.waitForTimeout(500);
   const start = Date.now();
   await page.locator("[data-test-button]").click();
@@ -46,9 +51,10 @@ test("a correct Prometheus test shows the green tick, latency and version within
 });
 
 test("with reduced motion the tick appears with no glow and no draw-in (criterion 13, V8)", async ({ browser }) => {
+  test.skip(!LIVE_PROM, "needs ATRIUM_TEST_PROM_URL");
   const ctx = await themedContext(browser, "daylight", { reducedMotion: true });
   const page = await ctx.newPage();
-  await page.goto("/integrations/new/prometheus?baseUrl=http%3A%2F%2F10.77.99.7%3A9090");
+  await page.goto(livePromPage());
   await page.locator("[data-test-button]").click();
   await expect(page.locator("[data-test-success]")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("[data-glow-layer]")).toHaveCount(0);
