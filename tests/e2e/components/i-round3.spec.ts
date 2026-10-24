@@ -167,6 +167,10 @@ async function probe(page: Page) {
 }
 
 test.describe("desktop", () => {
+  // These tests publish dozens of versions in one browser; each new version installs a new app worker that
+  // claims the page mid-navigation, which now and then stalls page.goto for the whole timeout. Containment
+  // does not involve the offline worker, so it stays off here (the worker race is a known limit, Wave 2.9 lead).
+  test.use({ serviceWorkers: "block" });
   test.beforeEach(async ({ context, page }, info) => {
     test.skip(info.project.name !== "desktop", "desktop only");
     await signIn(context, page.request);
