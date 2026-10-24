@@ -86,6 +86,8 @@ export type FakePrometheus = {
   setHost(instance: string, host: string | undefined): void;
   /** Marks a machine down: `up` answers 0 and its other metrics disappear. */
   setDown(instance: string, down: boolean): void;
+  /** Wave 2.9: a new machine starts reporting, as a new scrape target would. */
+  addMachine(m: FakeMachine): void;
   close(): Promise<void>;
 };
 
@@ -274,6 +276,7 @@ export async function startFakePrometheus(port = 0): Promise<FakePrometheus> {
     hits,
     setHost(instance, host) { hosts.set(instance, host); },
     setDown(instance, isDown) { if (isDown) down.add(instance); else down.delete(instance); },
+    addMachine(m) { machines.push(m); },
     close: () => new Promise((r) => { s.closeAllConnections(); s.close(() => r()); }),
   };
 }

@@ -20,6 +20,7 @@ import { isBinding, sourcesInTemplate, templatesIn, usesNow, type PropError } fr
 import { getComponentDef } from "../catalogue/defs";
 import { NOT_CONNECTED, sampleProps } from "../catalogue/samples";
 import { expandInstance } from "../library-instance";
+import { lineDataKey } from "../page";
 import { compileNodeStylesAction } from "../actions";
 import { isLayoutType } from "../style/node-css-policy";
 import { DeviceContext, EditContext, NodeContext, NodeCssContext, RootContext, ScopeContext, type NodeEnv, type RootEnv } from "./context";
@@ -158,6 +159,12 @@ function guestProps(node: ComponentNode, eff: ComponentNode, scope: PageScope, p
   for (const [k, v] of Object.entries(eff.props)) {
     if (k === "data" && node.type === "html") continue;
     if (!templatesIn(v as PropValue, k).length) continue;
+    // A10.2: a chart line's data comes under its own key; its name, colour and hidden flag are literals.
+    if (k === "lines" && node.type === "chart" && Array.isArray(v)) {
+      const mobile = Object.prototype.hasOwnProperty.call(mobileProps, k) ? "@mobile" : "";
+      out[k] = v.map((ln, i) => (ln && typeof ln === "object" && !Array.isArray(ln) ? { ...(ln as object), data: g[valueKey(node.id, `${lineDataKey(i)}${mobile}`, path)] } : ln));
+      continue;
+    }
     const key = valueKey(node.id, Object.prototype.hasOwnProperty.call(mobileProps, k) ? `${k}@mobile` : k, path);
     out[k] = g[key];
   }

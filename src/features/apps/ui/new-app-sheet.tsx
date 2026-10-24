@@ -6,6 +6,10 @@ import { Button, Sheet } from "@/features/shell";
 import { slugify } from "@/features/apps/doc";
 import { ChoiceGroup, SelectMenu } from "@/features/settings/ui/controls";
 import { apiJson, Field, inputClass } from "./fields";
+import { StartPageForm, type StartChoice } from "@/features/builder/service-sheets";
+
+/** Wave 2.9 (spec 3.7, A10.8): a new app can start as a page made from your services. */
+const START_PAGE: TemplateOption = { id: "start-page", title: "Start page from your services", description: "A resource bar, then your services in groups by kind, each a tile with its live status and numbers. Like Homepage, and all of it editable.", integrations: [] };
 
 export type TemplateOption = { id: string; title: string; description: string; integrations: { key: string; packageId: string; name: string; why: string }[] };
 export type IntegrationOption = { id: string; name: string; packageId: string };
@@ -25,7 +29,9 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
   const [mappings, setMappings] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const t = useMemo(() => templates.find((x) => x.id === template), [templates, template]);
+  const all = useMemo(() => [START_PAGE, ...templates.filter((x) => x.id !== START_PAGE.id)], [templates]);
+  const t = useMemo(() => all.find((x) => x.id === template), [all, template]);
+  const [start, setStart] = useState<StartChoice | null>(null);
   const shownSlug = slugTouched ? slug : slugify(name);
 
   async function submit() {
@@ -37,7 +43,16 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
       const chosen = mappings[i.key] ?? integrations.find((x) => x.packageId === i.packageId)?.id ?? "skip";
       map[i.key] = chosen !== "skip" ? chosen : null;
     }
-    const r = await apiJson<{ app: { slug: string } }>("/api/apps", { method: "POST", body: JSON.stringify({ name, slug: shownSlug, template, mappings: map }) });
+    const startPage = template === START_PAGE.id;
+    if (startPage && !start) { setBusy(false); setErrors({ form: "Tick at least one service, or add a link." }); return; }
+    const r = await apiJson<{ app: { id: string; slug: string } }>("/api/apps", { method: "POST", body: JSON.stringify({ name, slug: shownSlug, template: startPage ? "blank" : template, mappings: map }) });
+    if (r.ok && startPage && start) {
+      // The app exists; its first page is made from the services in one change (A10.8).
+      const made = await apiJson<{ rev: number }>(`/api/apps/${encodeURIComponent(r.data.app.id)}/start-page`, { method: "POST", body: JSON.stringify(start) });
+      setBusy(false);
+      if (!made.ok) setErrors({ form: `The app was made, but its start page was not: ${made.error.message ?? "try Insert > Start page in the builder."}` });
+      return onCreated(r.data.app.slug);
+    }
     setBusy(false);
     if (r.ok) return onCreated(r.data.app.slug);
     setErrors({ [r.error.field ?? "form"]: r.error.message ?? "That did not work." });
@@ -54,7 +69,8 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
           {(a) => <input {...a} className={`${inputClass} font-mono`} value={shownSlug} onChange={(e) => { setSlugTouched(true); setSlug(e.target.value); }} data-new-app-slug />}
         </Field>
         {/* The shared square controls (gauntlet w2-r2 item 6): one row per template with an ink-fill square radio. */}
-        <ChoiceGroup<string> label="Start from" look="rows" name="template" value={template} onChange={setTemplate} options={templates.map((x) => ({ value: x.id, label: x.title, description: `${x.description}${needsWords(x, integrations)}`, data: { "template-option": x.id } }))} />
+        <ChoiceGroup<string> label="Start from" look="rows" name="template" value={template} onChange={setTemplate} options={all.map((x) => ({ value: x.id, label: x.title, description: `${x.description}${needsWords(x, integrations)}`, data: { "template-option": x.id } }))} />
+        {template === START_PAGE.id && <StartPageForm onChoice={setStart} />}
         {t && t.integrations.length > 0 && (
           <fieldset className="flex flex-col gap-3" data-template-mapping>
             <legend className="mb-1 type-label text-fg">Connect your services</legend>

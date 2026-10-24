@@ -91,7 +91,11 @@
       "shape": "stat",
       "defaultRefreshSec": 30,
       "minRefreshSec": 5,
-      "group": "Sensors"
+      "group": "Sensors",
+      "history": {
+        "endpointId": "history"
+      },
+      "headline": true
     },
     {
       "id": "sensors",
@@ -100,7 +104,8 @@
       "shape": "table",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "Sensors"
+      "group": "Sensors",
+      "measure": "count"
     },
     {
       "id": "states",
@@ -137,7 +142,8 @@
       "shape": "table",
       "defaultRefreshSec": 10,
       "minRefreshSec": 5,
-      "group": "Entities"
+      "group": "Entities",
+      "measure": "count"
     },
     {
       "id": "entity",
@@ -168,7 +174,8 @@
       "shape": "status",
       "defaultRefreshSec": 10,
       "minRefreshSec": 5,
-      "group": "Entities"
+      "group": "Entities",
+      "measure": "status"
     },
     {
       "id": "history",
@@ -216,7 +223,8 @@
       "defaultRefreshSec": 300,
       "minRefreshSec": 60,
       "group": "Entities",
-      "advanced": true
+      "advanced": true,
+      "measure": "other"
     },
     {
       "id": "unavailable",
@@ -225,7 +233,9 @@
       "shape": "table",
       "defaultRefreshSec": 60,
       "minRefreshSec": 15,
-      "group": "Entities"
+      "group": "Entities",
+      "measure": "status",
+      "headline": true
     }
   ],
   "commands": [
@@ -459,5 +469,22 @@
       "path": "/manifest.json",
       "match": "\"name\"\\s*:\\s*\"Home Assistant\""
     }
+  },
+  "service": {
+    "kind": "smart-home",
+    "headline": [
+      {
+        "label": "Entities",
+        "endpointId": "states",
+        "value": "rows | count",
+        "format": "number"
+      },
+      {
+        "label": "Unavailable",
+        "endpointId": "unavailable",
+        "value": "rows | count",
+        "format": "number"
+      }
+    ]
   }
 }

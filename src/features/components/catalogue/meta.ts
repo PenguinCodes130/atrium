@@ -1,7 +1,7 @@
 // Catalogue metadata (architecture v3 section 4.4, spec 3.1): everything in a ComponentDef except
 // the React component, so the server, validate and agent tools can read it without rendering.
 import type { ComponentCategory, ComponentNode, ComponentState, ComponentType, DataShapeKind, PropValue } from "@/core/contracts";
-import { propsSchemas, type BuiltInType } from "./schemas";
+import { DEFAULT_SEARCH_URL, propsSchemas, type BuiltInType } from "./schemas";
 
 export type ComponentMeta = {
   type: BuiltInType;
@@ -70,7 +70,14 @@ export const META: Record<BuiltInType, ComponentMeta> = {
   },
   chart: {
     type: "chart", title: "Chart", category: "data", container: false, accepts: ["series"], defaults: { kind: "line", height: 200, legend: true }, styleSlots: ["root", "legend", "axis"], states: ["hover"],
-    docs: { summary: "Draws every series of a series source as lines, areas or bars over time.", whenToUse: "Trends: load over the last hour, traffic per interface.", examples: [node("chart", "chart", { data: bind("{{ load }}"), kind: "line" })] },
+    docs: {
+      summary: "Draws series over time as lines, areas or bars: one series source in data, or a list of lines, each its own read with a name and a colour.",
+      whenToUse: "Trends: load over the last hour, traffic per interface, CPU of three machines on one chart. Lines with a second unit get the right-hand axis.",
+      examples: [
+        node("chart", "chart", { data: bind("{{ load }}"), kind: "line" }),
+        node("chart", "chartlines", { kind: "line", lines: [{ data: bind("{{ load }}"), label: "Load", color: "series1" }] }),
+      ],
+    },
   },
   table: {
     type: "table", title: "Table", category: "data", container: false, accepts: ["table"], defaults: { maxRows: 20 }, styleSlots: ["root", "header", "row", "cell"], states: ["hover"],
@@ -91,6 +98,42 @@ export const META: Record<BuiltInType, ComponentMeta> = {
   progress: {
     type: "progress", title: "Progress", category: "data", container: false, accepts: ["stat"], defaults: { min: 0, max: 100, showValue: true }, styleSlots: ["root", "track", "fill", "label", "value"],
     docs: { summary: "A bar showing a number between a minimum and a maximum.", whenToUse: "Disk use, download progress, a goal.", examples: [node("progress", "progress", { value: bind("{{ cpu.value }}"), label: "CPU", unit: "%" })] },
+  },
+  "service-tile": {
+    type: "service-tile", title: "Service tile", category: "data", container: false, accepts: ["stat", "status"],
+    defaults: { icon: "server", name: "Service", description: "", newTab: true, stats: [] },
+    styleSlots: ["root", "icon", "name", "description", "badge", "stat"], states: ["hover", "focus"],
+    docs: {
+      summary: "One service at a glance: its icon, name, a line about it, a status badge in words and colour, and up to 4 small live numbers. A click opens its address.",
+      whenToUse: "A start page of the services you run, grouped by kind, like Homepage. Use a Group to lay several tiles out in columns.",
+      examples: [node("service-tile", "servicetile", { icon: "docker", name: "Portainer", description: "Containers", href: "https://portainer.example.test", newTab: true, status: bind("{{ services }}"), stats: [{ label: "Hosts", value: bind("{{ hosts.rows | count }}") }, { label: "CPU", value: bind("{{ cpu.value }}"), format: "percent" }] })],
+    },
+  },
+  group: {
+    type: "group", title: "Group", category: "layout", container: true, defaults: { title: "Group", columns: 4, collapsible: false }, styleSlots: ["root", "title", "body"],
+    docs: {
+      summary: "A titled section that lays its children out in 1 to 6 equal columns, in order, with no grid slots. One column on phones. Can fold away.",
+      whenToUse: "Named sets of service tiles or bookmarks: Media, Monitoring, Network. Drag tiles into it, or between groups.",
+      examples: [node("group", "group", { title: "Media", columns: 3 }, { children: [node("service-tile", "grouptile", { icon: "film", name: "Jellyfin", description: "Films and series", newTab: true, stats: [] })] })],
+    },
+  },
+  "resource-bar": {
+    type: "resource-bar", title: "Resource bar", category: "data", container: false, accepts: ["stat", "status"],
+    defaults: { items: [], clock: true, clockFormat: "date-time", search: true, searchUrl: DEFAULT_SEARCH_URL },
+    styleSlots: ["root", "item", "value", "label", "bar", "clock", "search"],
+    docs: {
+      summary: "A thin strip across the top of a page: up to 8 small readings (CPU, memory free, disk free, temperature, uptime, network), each with an icon and a small bar, plus a clock and a search box.",
+      whenToUse: "The top of a start page, to see a machine's health at a glance.",
+      examples: [node("resource-bar", "resourcebar", { items: [{ icon: "cpu", label: "CPU", value: bind("{{ cpu }}"), percent: bind("{{ cpu.value }}") }], clock: true, search: true, searchUrl: DEFAULT_SEARCH_URL })],
+    },
+  },
+  bookmarks: {
+    type: "bookmarks", title: "Bookmarks", category: "content", container: false, defaults: { items: [], columns: 1 }, styleSlots: ["root", "item", "name", "domain"], states: ["hover", "focus"],
+    docs: {
+      summary: "Compact rows of links: an icon or two letters, a name and the address's domain. No live data.",
+      whenToUse: "Sites you open often, next to your service tiles.",
+      examples: [node("bookmarks", "bookmarks", { items: [{ name: "Example docs", href: "https://docs.example.test" }, { name: "Mail", href: "https://mail.example.test", icon: "mail" }], columns: 1 })],
+    },
   },
   heading: {
     type: "heading", title: "Heading", category: "content", container: false, defaults: { text: "Heading", level: 2 }, styleSlots: ["root"],

@@ -5,7 +5,7 @@
 // regression tests here. Evidence: evidence/app-builder/<ATRIUM_E2E_EVIDENCE_ROUND>/data-ease/.
 import { expect, test, type Page } from "@playwright/test";
 import { startFakePrometheus, type FakePrometheus } from "../fixtures/fake-prometheus";
-import { addUser, api, contextFor, ev, log, OWNER, PEOPLE, SHELL_VARIANTS } from "./helpers";
+import { addUser, api, contextFor, ev, log, OWNER, PEOPLE, SHELL_VARIANTS, byHand } from "./helpers";
 
 test.describe.configure({ mode: "serial", timeout: 240_000 });
 test.skip(({ isMobile }) => isMobile, "desktop project; phone widths are set per test");
@@ -95,6 +95,7 @@ test("criteria 1, 3, 5, 6, 13, 18: ACE's CPU in % from Insert in 6 clicks, no ty
   let clicks = 0;
   const click = async (sel: string) => { await page.locator(sel).first().click(); clicks++; };
   const statId = await insertStat(page); clicks++;
+  await byHand(page);
   await click(`[data-pick-integration="${promId}"]`);
   // Reads come in groups in words; containers (cAdvisor) are hidden on this server (criterion 15).
   await expect(page.locator('[data-pick-group="Machines"]')).toBeVisible();
@@ -134,6 +135,7 @@ test("criteria 1, 3, 5, 6, 13, 18: ACE's CPU in % from Insert in 6 clicks, no ty
   await page.screenshot({ path: shot("inspector-shows-light") });
   // Criterion 5: a second stat lists the app's source first with its friendly name and live value; picking it adds nothing.
   const second = await insertStat(page);
+  await byHand(page);
   const app = page.locator("[data-pick-in-app] [data-pick-app-source]").first();
   await expect(app).toContainText("CPU in use, ACE");
   await expect(app.locator("[data-pick-app-value]")).toHaveText("7.8 %");
@@ -145,6 +147,7 @@ test("criteria 1, 3, 5, 6, 13, 18: ACE's CPU in % from Insert in 6 clicks, no ty
   expect((await draft(id)).doc.dataSources).toHaveLength(1);
   // Criterion 6: the same read and machine picked from the service again reuses the source.
   const third = await insertStat(page);
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   await page.locator('[data-pick-endpoint="machine-cpu"]').click();
   await page.locator(`[data-pick-thing="${ACE}"]`).click();
@@ -183,6 +186,7 @@ test("criteria 2, 11, 13, 22: a card for each machine from the Repeat's picker b
     await selectLayer(page, repeatId); clicks++;
     await click('[data-pick-button="items"]');
   }
+  await byHand(page);
   await click(`[data-pick-integration="${promId}"]`);
   await click('[data-pick-endpoint="machines-overview"]');
   // The rows build the cards at once: a title bound to the name and CPU, memory, disk, network in and out, uptime.
@@ -237,6 +241,7 @@ async function newPhonePicker(pp: Page, slug: string) {
   await pp.locator('[data-narrow-tab="edit"]').tap();
   await pp.locator("[data-connect-data]").tap();
   await expect(pp.locator("[data-data-picker]")).toBeVisible();
+  await byHand(pp);
   await pp.locator(`[data-pick-integration="${promId}"]`).tap();
   await pp.locator('[data-pick-endpoint="machine-cpu"]').tap();
   await expect(pp.locator("[data-pick-things]")).toBeVisible({ timeout: 3000 });
@@ -263,6 +268,7 @@ test("criterion 7 (audit problem 4): renaming a source in the picker and pressin
   const toasts: string[] = [];
   page.on("console", (m) => { if (/no data source named/i.test(m.text())) toasts.push(m.text()); });
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   await page.locator('[data-pick-endpoint="machine-cpu"]').click();
   await page.locator(`[data-pick-thing="${ACE}"]`).click();
@@ -292,6 +298,7 @@ test("criterion 8 (audit problem 5): Change on shared data asks all-or-this-one;
   await open(page, slug, "c_decopyaaaa");
   await expect(page.locator("[data-data-shares]")).toHaveText("Shares its data with 1 other widget");
   await page.locator("[data-data-change]").click();
+  await byHand(page);
   await expect(page.locator("[data-pick-shared]")).toBeVisible();
   await expect(page.locator("[data-pick-shared-all]")).toHaveText("Change it for all 2 widgets");
   await page.screenshot({ path: shot("shared-ask-light") });
@@ -319,6 +326,7 @@ test("criteria 9, 10, 14, 15 (audit problems 2, 3): several values are never kep
   await open(page, slug, "c_demanyaaaa");
   // Criterion 9: Every machine on a stat lists "9 values" and offers pick one, Sum, Average, Highest, Lowest and Table.
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   // Criterion 15: reads needing cAdvisor are hidden, and shown with Show all reads.
   await expect(page.locator('[data-pick-endpoint="containers"]')).toHaveCount(0);
@@ -343,6 +351,7 @@ test("criteria 9, 10, 14, 15 (audit problems 2, 3): several values are never kep
   for (const how of ["cancel", "escape", "close"] as const) {
     await selectLayer(page, "c_dechartaaa");
     await page.locator("[data-connect-data]").click();
+    await byHand(page);
     await page.locator(`[data-pick-integration="${promId}"]`).click();
     await page.locator('[data-pick-endpoint="machines-history"]').click();
     await untilDraft(id, (d) => d.doc.dataSources.length === sources.length + 1);
@@ -356,6 +365,7 @@ test("criteria 9, 10, 14, 15 (audit problems 2, 3): several values are never kep
   // Criterion 14: a chart of CPU for every machine names each line by the machine's name.
   await selectLayer(page, "c_dechartaaa");
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   await page.locator('[data-pick-endpoint="machines-history"]').click();
   await expect(page.locator("[data-pick-sample]")).toBeVisible({ timeout: 4000 });

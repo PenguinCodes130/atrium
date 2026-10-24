@@ -2,7 +2,7 @@
 // one test per item, each proving its pass condition. Evidence goes to evidence/app-builder/<round>/
 // (ATRIUM_E2E_EVIDENCE_ROUND=r2). Self-contained: its own apps (slugs r2-*), its own fake Home Assistant.
 import { expect, test, type Page } from "@playwright/test";
-import { addUser, api, contextFor, db, ev, FAKE_HA_TOKEN, fakeHa, log, OWNER, PEOPLE, saveText, SHELL_VARIANTS, skipPicker, userId, type FakeHa } from "./helpers";
+import { addUser, api, contextFor, db, ev, FAKE_HA_TOKEN, fakeHa, log, OWNER, PEOPLE, saveText, SHELL_VARIANTS, skipPicker, userId, type FakeHa, byHand } from "./helpers";
 import { readZipEntries } from "./zip-read";
 
 // Each test makes its own apps, so one failure does not stop the rest (one worker runs them in order).
@@ -284,6 +284,7 @@ test("item 6: a source added in this session is live on the canvas within about 
   await page.locator('[data-layer="c_r2staletxt"]').click();
   // Wave 2.5: the source is added through the data picker (the old form is gone); named "lamps" there.
   await page.locator('[data-pick-button="text"]').click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${haId}"]`).click();
   await page.locator('[data-pick-endpoint="states"]').click();
   await page.locator("[data-pick-more-settings-toggle]").click();

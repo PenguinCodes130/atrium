@@ -2,7 +2,7 @@
 // packages. A package that fails validation is skipped and listed as a problem; the rest load.
 import type { Adapter, CustomCommand, CustomEndpoint, PackageManifest, PackageProblem } from "@/core/contracts";
 import { createGenericAdapter } from "@/packages/declarative/runner";
-import { validateManifest } from "./manifest";
+import { SYSTEM_PACKAGE_ID, validateManifest } from "./manifest";
 import type { OfficialEntry } from "./official";
 
 export type PackageSource = PackageProblem["source"];
@@ -76,7 +76,7 @@ export function buildRegistry(
 
 /** Gallery list: official packages in order, Custom API last; declarative packages are listed separately. */
 export function galleryOrder(r: Registry): LoadedPackage[] {
-  const official = r.order.map((id) => r.packages.get(id)!).filter((p) => p.source === "official");
+  const official = r.order.map((id) => r.packages.get(id)!).filter((p) => p.source === "official" && p.manifest.id !== SYSTEM_PACKAGE_ID);
   const custom = official.filter((p) => p.manifest.id === "custom-api");
   return [...official.filter((p) => p.manifest.id !== "custom-api"), ...custom];
 }

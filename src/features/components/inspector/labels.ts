@@ -101,13 +101,52 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     },
   },
   chart: {
-    simple: ["data", "kind"],
+    simple: ["data", "lines", "kind"],
     fields: {
       data: { label: "Series", hint: "The values over time this chart draws" },
+      lines: { label: "Lines", hint: "Each line is its own read, with a name, a colour, Hide and Remove" },
       kind: { label: "Chart type", hint: "Lines, filled areas or bars", options: { line: "Lines", area: "Filled areas", bars: "Bars" } },
       height: { label: "Height", hint: "In px" },
       legend: { label: "Show the legend", hint: "Names each line under the chart" },
       showUpdated: updated,
+    },
+  },
+  "service-tile": {
+    simple: ["icon", "name", "description", "href", "status", "stats"],
+    fields: {
+      icon: { label: "Icon", hint: "A built-in icon, the service's own, or an uploaded picture" },
+      name: { label: "Name", hint: "The service's name, in bold" },
+      description: { label: "Description", hint: "One short line under the name" },
+      href: { label: "Opens", hint: "The address a click opens, http or https. Empty: not clickable" },
+      newTab: { label: "Open in a new tab", hint: "On by default" },
+      status: { label: "Status badge from", hint: "Status data: Running, Healthy, Stopped, Down or a response time" },
+      stats: { label: "Numbers", hint: "Up to 4 small labelled numbers under the name" },
+      integrationId: { label: "Service reference", hint: "Which connected service this tile is for. Never shown" },
+    },
+  },
+  group: {
+    simple: ["title", "columns", "collapsible"],
+    fields: {
+      title: { label: "Title", hint: "The heading over the group, like Media" },
+      columns: { label: "Columns", hint: "1 to 6 equal columns. Phones always use one" },
+      collapsible: { label: "Can fold away", hint: "Shows a button by the title that folds the group" },
+    },
+  },
+  "resource-bar": {
+    simple: ["items", "clock", "search"],
+    fields: {
+      items: { label: "Readings", hint: "Up to 8, each an icon, a value, a label and a small bar" },
+      clock: { label: "Show a clock", hint: "The time at the right of the strip" },
+      clockFormat: { label: "Clock shows", hint: "Time, seconds, the date, or a 12-hour clock", options: { time: "Time", "time-seconds": "Time with seconds", "date-time": "Date and time", "time-12h": "Time, 12-hour", "date-time-12h": "Date and time, 12-hour" } },
+      search: { label: "Show a search box", hint: "Typed words open the search address in a new tab" },
+      searchUrl: { label: "Search address", hint: "https only, with {q} where the words go" },
+    },
+  },
+  bookmarks: {
+    simple: ["items", "columns"],
+    fields: {
+      items: { label: "Bookmarks", hint: "Up to 50, each a name, an address and an optional icon" },
+      columns: { label: "Columns", hint: "1 to 6. Phones always use one" },
     },
   },
   table: {

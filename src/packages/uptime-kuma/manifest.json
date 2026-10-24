@@ -8,21 +8,85 @@
   "homepage": "https://uptime.kuma.pet",
   "description": "Every monitor's status: up, down, pending or in maintenance.",
   "icon": "icon.svg",
-  "permissions": [{ "kind": "network", "hosts": "configured" }, { "kind": "secret", "key": "apiKey" }],
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    },
+    {
+      "kind": "secret",
+      "key": "apiKey"
+    }
+  ],
   "config": {
     "type": "object",
-    "required": ["baseUrl"],
+    "required": [
+      "baseUrl"
+    ],
     "properties": {
-      "baseUrl": { "type": "string", "title": "Uptime Kuma URL", "description": "The address you open Uptime Kuma at, for example http://10.0.0.8:3001.", "format": "uri" },
-      "apiUser": { "type": "string", "title": "User name", "description": "Leave blank when using an API key.", "default": "" },
-      "verifyTls": { "type": "boolean", "title": "Verify TLS", "default": true }
+      "baseUrl": {
+        "type": "string",
+        "title": "Uptime Kuma URL",
+        "description": "The address you open Uptime Kuma at, for example http://10.0.0.8:3001.",
+        "format": "uri"
+      },
+      "apiUser": {
+        "type": "string",
+        "title": "User name",
+        "description": "Leave blank when using an API key.",
+        "default": ""
+      },
+      "verifyTls": {
+        "type": "boolean",
+        "title": "Verify TLS",
+        "default": true
+      }
     }
   },
   "secrets": [
-    { "key": "apiKey", "label": "API key", "hint": "In Uptime Kuma open Settings, API Keys and add a key. Atrium reads the /metrics page with it and changes nothing.", "auth": { "as": "basic", "userKey": "apiUser" } }
+    {
+      "key": "apiKey",
+      "label": "API key",
+      "hint": "In Uptime Kuma open Settings, API Keys and add a key. Atrium reads the /metrics page with it and changes nothing.",
+      "auth": {
+        "as": "basic",
+        "userKey": "apiUser"
+      }
+    }
   ],
   "endpoints": [
-    { "id": "monitors", "label": "Monitors", "description": "Each monitor as up, down, warn (pending) or unknown (maintenance).", "shape": "status", "defaultRefreshSec": 30, "minRefreshSec": 10 }
+    {
+      "id": "monitors",
+      "label": "Monitors",
+      "description": "Each monitor as up, down, warn (pending) or unknown (maintenance).",
+      "shape": "status",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "measure": "status",
+      "headline": true
+    }
   ],
-  "detect": { "probe": { "path": "/", "match": "Uptime Kuma" } }
+  "detect": {
+    "probe": {
+      "path": "/",
+      "match": "Uptime Kuma"
+    }
+  },
+  "service": {
+    "kind": "monitoring",
+    "headline": [
+      {
+        "label": "Up",
+        "endpointId": "monitors",
+        "value": "items | filter(\"state\", \"up\") | count",
+        "format": "number"
+      },
+      {
+        "label": "Down",
+        "endpointId": "monitors",
+        "value": "items | filter(\"state\", \"down\") | count",
+        "format": "number"
+      }
+    ]
+  }
 }

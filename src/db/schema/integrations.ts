@@ -140,3 +140,15 @@ export const integrationCredentials = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.integrationId, t.secretKey] }), index("integration_credential_cred_idx").on(t.credentialId)],
 );
+
+// Amendment 10 (A10.5): a service's kind, its own address for tiles and its headline stats, set on
+// the integration form (none of it is config or secret). One row per integration, created on save;
+// an integration without a row uses its package's kind and headline and its configured address.
+// Kept in its own table so the integration table's queries work before this migration is applied.
+export const integrationServices = sqliteTable("integration_service", {
+  integrationId: text("integration_id").primaryKey().references(() => integrations.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["media", "monitoring", "network", "smart-home", "storage", "containers", "other"] }),
+  openUrl: text("open_url"),
+  headline: text("headline", { mode: "json" }).$type<{ label: string; endpointId: string; params?: Record<string, unknown>; value: string; format?: string }[] | null>(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});

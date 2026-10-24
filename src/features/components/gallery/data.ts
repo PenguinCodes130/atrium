@@ -33,6 +33,24 @@ export function gallerySources(series = 3): Record<string, GallerySource> {
     failed: { state: "failed", refreshSec: 15, data: { kind: "stat", value: 3, label: "Containers (failed)" }, error: { code: "timeout", message: "Timed out reaching the Docker proxy", hint: "Check that the socket proxy is running." } },
     empty: { state: "empty", refreshSec: 15, error: { code: "unreachable", message: "Cannot reach 10.77.99.9" } },
     unshared: { state: "failed", refreshSec: 15, error: { code: "permission", message: "No data: this integration is no longer shared" } },
+    // Wave 2.9 (A10.2, A10.7): tiles, the resource bar and chart lines.
+    health: { state: "fresh", refreshSec: 30, data: { kind: "status", items: [{ label: "Portainer", state: "up", detail: "running" }] } },
+    stopped: { state: "fresh", refreshSec: 30, data: { kind: "status", items: [{ label: "Kopia", state: "down", detail: "stopped" }] } },
+    reach: { state: "fresh", refreshSec: 60, data: { kind: "status", items: [{ label: "nas.example.test", state: "up", detail: "12 ms" }] } },
+    healthy: { state: "fresh", refreshSec: 30, data: { kind: "status", items: [{ label: "Jellyfin", state: "up", detail: "healthy" }] } },
+    staleHealth: { state: "stale", refreshSec: 30, fetchedAt: new Date(now - 900_000).toISOString(), data: { kind: "status", items: [{ label: "Sonarr", state: "up" }] } },
+    containers: { state: "fresh", refreshSec: 30, data: { kind: "table", columns: [{ key: "name", label: "Name", type: "text" }, { key: "state", label: "State", type: "status" }], rows: [...Array.from({ length: 42 }, (_, i) => ({ name: `c${i}`, state: "running" })), ...Array.from({ length: 3 }, (_, i) => ({ name: `x${i}`, state: "exited" }))] } },
+    hostCpu: { state: "fresh", refreshSec: 10, data: { kind: "stat", value: 32.4, format: "percent", label: "CPU in use" } },
+    hostMem: { state: "fresh", refreshSec: 10, data: { kind: "stat", value: 10.2 * 1024 ** 3, format: "bytes", label: "Memory free" } },
+    hostMemPct: { state: "fresh", refreshSec: 10, data: { kind: "stat", value: 64, format: "percent", label: "Memory in use" } },
+    hostDisk: { state: "fresh", refreshSec: 60, data: { kind: "stat", value: 1.22 * 1024 ** 4, format: "bytes", label: "Disk free" } },
+    hostTemp: { state: "fresh", refreshSec: 30, data: { kind: "stat", value: 50.8, format: "celsius", label: "Temperature" } },
+    hostUp: { state: "fresh", refreshSec: 60, data: { kind: "stat", value: 25 * 86400 + 17 * 3600, format: "seconds", label: "Uptime" } },
+    cpu1: { state: "fresh", refreshSec: 15, data: { kind: "series", format: "percent", series: [{ name: "pve1", display: "CPU in use, pve1", points: pts(0) }] } },
+    cpu2: { state: "fresh", refreshSec: 15, data: { kind: "series", format: "percent", series: [{ name: "pve2", display: "CPU in use, pve2", points: pts(2) }] } },
+    netIn: { state: "fresh", refreshSec: 15, data: { kind: "series", format: "bytesPerSec", series: [{ name: "pve1", display: "Network in, pve1", points: pts(1).map(([t, v]) => [t, v === null ? null : v * 40_000] as [number, number | null]) }] } },
+    tempLine: { state: "fresh", refreshSec: 15, data: { kind: "series", format: "celsius", series: [{ name: "pve1", display: "Temperature, pve1", points: pts(3) }] } },
+    everyCpu: { state: "fresh", refreshSec: 15, data: { kind: "series", format: "percent", series: Array.from({ length: 25 }, (_, i) => ({ name: `node${i + 1}`, display: `node${i + 1}`, points: pts(i, 12).map(([t, v]) => [t, v === null ? null : Math.round((v + i * 2) * 10) / 10] as [number, number | null]) })) } },
   };
 }
 
@@ -102,6 +120,42 @@ export function statesPage(): PageDoc {
     root: { id: "c_statesgrid", type: "grid", props: {}, children: [s("stfresh", "cpu", 0, 0), s("ststale", "stale", 4, 0), s("stfailed", "failed", 8, 0), s("stempty", "empty", 0, 17), s("stunshare", "unshared", 4, 17), s("stloading", "loading", 8, 17),
       n("toggle", "stoggle", { label: "Unshared lamp", control: GALLERY_CONTROLS.lamp, state: b("{{ unshared.value == 1 }}") }, [0, 34, 4, 8])] },
   };
+}
+
+/** Wave 2.9 scene (A10.2, A10.7): a start page of tiles in groups, a resource bar, bookmarks and charts with lines. */
+export function tilesPage(): PageDoc {
+  seq = 0;
+  const tile = (key: string, props: ComponentNode["props"]): ComponentNode => ({ id: id(key), type: "service-tile", props: { newTab: true, ...props } });
+  const children: ComponentNode[] = [
+    n("resource-bar", "rbar", {
+      items: [
+        { icon: "cpu", label: "CPU", value: b("{{ hostCpu }}"), percent: b("{{ hostCpu.value }}") },
+        { icon: "memory", label: "Free", value: b("{{ hostMem }}"), percent: b("{{ hostMemPct.value }}") },
+        { icon: "disk", label: "Free", value: b("{{ hostDisk }}"), percent: 41 },
+        { icon: "thermometer", label: "Temp", value: b("{{ hostTemp }}") },
+        { icon: "clock", label: "Up", value: b("{{ hostUp }}") },
+      ],
+      clock: true, clockFormat: "date-time", search: true, searchUrl: "https://duckduckgo.com/?q={q}",
+    }, [0, 0, 12, 9]),
+    n("group", "grpcontain", { title: "Containers", columns: 3 }, [0, 9, 12, 26], {
+      children: [
+        tile("tportainer", { icon: "docker", name: "Portainer", description: "Docker management", href: "https://portainer.example.test", status: b("{{ health }}"), stats: [{ label: "Running", value: b('{{ containers.rows | filter("state", "running") | count }}') }, { label: "Stopped", value: b('{{ containers.rows | filter("state", "exited") | count }}') }, { label: "Total", value: b("{{ containers.rows | count }}") }], integrationId: "i_gallery" }),
+        tile("tkopia", { icon: "database", name: "Kopia", description: "Backups", href: "https://kopia.example.test", status: b("{{ stopped }}"), stats: [{ label: "CPU", value: 0, format: "percent" }, { label: "Mem", value: 479 * 1024 ** 2, format: "bytes" }, { label: "Rx", value: 5.02 * 1024 ** 2, format: "bytesPerSec" }, { label: "Tx", value: 51.2 * 1024 ** 2, format: "bytesPerSec" }] }),
+        tile("tnas", { icon: "disk", name: "NAS", description: "Just a link", href: "https://nas.example.test", status: b("{{ reach }}") }),
+      ],
+    }),
+    n("group", "grpmedia", { title: "Media", columns: 3, collapsible: true }, [0, 35, 12, 26], {
+      children: [
+        tile("tjelly", { icon: "film", name: "Jellyfin", description: "Films and series", href: "https://jellyfin.example.test", status: b("{{ healthy }}"), stats: [{ label: "Movies", value: 252 }, { label: "Series", value: 8 }, { label: "Songs", value: 717 }] }),
+        tile("tsonarr", { icon: "tv", name: "Sonarr", description: "Series manager", status: b("{{ staleHealth }}"), stats: [{ label: "Wanted", value: 0 }, { label: "Queued", value: 0 }] }),
+        tile("tloading", { icon: "music", name: "Navidrome", description: "Music", status: b("{{ loading }}"), stats: [{ label: "Songs", value: b("{{ loading.value }}") }, { label: "Albums", value: b("{{ loading.value }}") }] }),
+      ],
+    }),
+    n("bookmarks", "bmarks", { items: [{ name: "Example docs", href: "https://docs.example.test" }, { name: "Mail", href: "https://www.mail.example.test", icon: "mail" }, { name: "Refused", href: "javascript:alert(1)" }], columns: 3 }, [0, 61, 12, 9]),
+    n("chart", "chartlines", { kind: "line", height: 160, lines: [{ data: b("{{ cpu1 }}") }, { data: b("{{ cpu2 }}"), label: "pve2" }, { data: b("{{ netIn }}"), color: "series2" }, { data: b("{{ tempLine }}") }] }, [0, 70, 6, 40]),
+    n("chart", "chartmany", { kind: "line", height: 160, lines: [{ data: b("{{ everyCpu }}"), label: "CPU" }] }, [6, 70, 6, 40]),
+  ];
+  return { id: "p_tilesaaaaa", slug: "tiles", title: "Tiles", inNav: true, root: { id: "c_tilesgrida", type: "grid", props: { minRows: 40 }, children } };
 }
 
 export function galleryDoc(pages: PageDoc[]): AppDocument {

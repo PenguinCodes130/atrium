@@ -21,7 +21,7 @@ export type OpChecks = {
 
 export type ApplyResult = { ok: true; doc: AppDocument; changed: string[] } | { ok: false; problems: Problem[] };
 
-const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat"]);
+const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat", "group"]);
 
 /** A1.4/A7.4: x and w are multiples of an eighth of a column (snapping off), y and h whole 8px rows. */
 export function isSlot(s: unknown): s is { x: number; y: number; w: number; h: number } {
@@ -189,6 +189,8 @@ export function applyOpsToDoc(input: AppDocument, ops: DraftOp[], checks: OpChec
         if ("slot" in patch && patch.slot !== null && !isSlot(patch.slot)) { fail(problem("node.bad_slot", SLOT_RULE, { nodeId: op.nodeId, field: "slot" })); break; }
         // A8.5: the widget's own title and its "Show title bar" switch.
         if ("title" in patch && patch.title !== null && (typeof patch.title !== "string" || patch.title.length > 120)) { fail(problem("node.bad_patch", "A title is text of at most 120 characters.", { nodeId: op.nodeId, field: "title" })); break; }
+        // A10.1: the component's own refresh, in whole seconds (null clears it back to the read's default).
+        if ("refreshSec" in patch && patch.refreshSec !== null && (typeof patch.refreshSec !== "number" || !Number.isFinite(patch.refreshSec) || patch.refreshSec < 1 || patch.refreshSec > 86400)) { fail(problem("node.bad_refresh", "A component's refresh is a number of seconds from 1 to 86400.", { nodeId: op.nodeId, field: "refreshSec" })); break; }
         if ("showTitle" in patch && patch.showTitle !== null && typeof patch.showTitle !== "boolean") { fail(problem("node.bad_patch", "Show title bar is true or false.", { nodeId: op.nodeId, field: "showTitle" })); break; }
         if ("type" in patch && at.parent === null && !isContainer(String(patch.type), checks)) { fail(problem("page.bad_root", "A page's root must stay a container.", { pageId: at.page.id, nodeId: op.nodeId })); break; }
         const next = mergePatch(at.node, patch);
@@ -235,7 +237,7 @@ export function applyOpsToDoc(input: AppDocument, ops: DraftOp[], checks: OpChec
         if (typeof s.refreshSec !== "number" || !Number.isFinite(s.refreshSec) || s.refreshSec <= 0) { fail(problem("source.bad_refresh", "The refresh interval is a number of seconds.", { field: "refreshSec" })); break; }
         if (s.label !== undefined && s.label !== null && (typeof s.label !== "string" || s.label.length > 80)) { fail(problem("source.bad_label", "A data source's name in words is text of at most 80 characters.", { field: "label" })); break; }
         const label = typeof s.label === "string" ? s.label.trim() : "";
-        const clean: DataSourceDef = { name: s.name, integrationId: s.integrationId, endpointId: s.endpointId, refreshSec: Math.round(s.refreshSec), ...(s.params !== undefined ? { params: clone(s.params) } : {}), ...(label ? { label } : {}) };
+        const clean: DataSourceDef = { name: s.name, integrationId: s.integrationId, endpointId: s.endpointId, refreshSec: Math.round(s.refreshSec), ...(s.params !== undefined ? { params: clone(s.params) } : {}), ...(label ? { label } : {}), ...(s.managed === true ? { managed: true } : {}) };
         const i = doc.dataSources.findIndex((d) => d.name === s.name);
         if (i >= 0) doc.dataSources[i] = clean;
         else doc.dataSources.push(clean);
@@ -393,8 +395,9 @@ export function summarize(before: AppDocument, ops: DraftOp[]): string {
       case "page.update": lines.push(`Changed page ${findPage(before, op.pageId)?.title ?? ""}`.trim()); break;
       case "page.remove": lines.push(`Removed page ${findPage(before, op.pageId)?.title ?? ""}`.trim()); break;
       case "page.move": lines.push(`Moved page ${findPage(before, op.pageId)?.title ?? ""}`.trim()); break;
-      case "source.set": lines.push(`${before.dataSources.some((d) => d.name === op.source.name) ? "Changed" : "Added"} data source ${op.source.name}`); break;
-      case "source.remove": lines.push(`Removed data source ${op.name}`); break;
+      // A10.1: managed sources follow components; their changes are not news of their own.
+      case "source.set": if (op.source.managed) break; lines.push(`${before.dataSources.some((d) => d.name === op.source.name) ? "Changed" : "Added"} data source ${op.source.name}`); break;
+      case "source.remove": if (before.dataSources.find((d) => d.name === op.name)?.managed) break; lines.push(`Removed data source ${op.name}`); break;
       case "control.set": lines.push(`${before.controls.some((c) => c.id === op.control.id) ? "Changed" : "Added"} control ${op.control.label}`); break;
       case "control.remove": lines.push(`Removed control ${before.controls.find((c) => c.id === op.controlId)?.label ?? op.controlId}`); break;
       case "app.update": lines.push("Changed app settings"); break;

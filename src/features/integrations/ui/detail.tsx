@@ -232,14 +232,17 @@ export function IntegrationDetail({ integration, pkg, endpoints, canEdit, cached
         )}
       </section>
 
-      {canRecipes && <RecipesPanel integrationId={integration.id} titleSlug={slug} />}
+      {canRecipes && !integration.system && <RecipesPanel integrationId={integration.id} titleSlug={slug} />}
 
       <div className="grid grid-cols-1 gap-6" data-r3-panels>
         <CommandsPanel integrationId={integration.id} initial={commands} titleSlug={slug} />
-        <SharingPanel integrationId={integration.id} initial={sharing} titleSlug={slug} />
+        {!integration.system && <SharingPanel integrationId={integration.id} initial={sharing} titleSlug={slug} />}
       </div>
 
-      {canEdit && (
+      {canEdit && integration.system && (
+        <p className="type-caption text-glass-muted" data-system-note>Built into Atrium: always connected and shared, and it cannot be turned off or deleted.</p>
+      )}
+      {canEdit && !integration.system && (
         <Window as="section" title={`${path} / manage`} aria-labelledby="manage-title" bodyClassName="flex flex-col gap-4" data-manage>
           <h2 id="manage-title" className="type-title-3 text-fg">Manage</h2>
           {integration.packageId === "custom-api" && endpoints.length > 0 && (

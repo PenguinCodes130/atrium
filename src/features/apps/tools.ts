@@ -16,6 +16,8 @@ import { TEMPLATES, isTemplateId } from "./templates";
 import { readableDocument } from "./view";
 import { describeChanges } from "@/features/versions/service";
 import { diffDocuments, readableDiff } from "@/features/versions/diff";
+import { bindDataOps } from "./bind-data";
+import { makeStartPage, parseStartInput } from "./start-page-server";
 
 type Ctx = { principal: Principal; signal: AbortSignal };
 const editOut = z.object({ rev: z.number(), changed: z.array(z.string()) });
@@ -358,6 +360,40 @@ export const appTools: ToolDef<never, unknown>[] = [
     minRole: "member",
     async handler({ principal }, input) {
       return edit(principal, input.appId, [{ op: "control.remove", controlId: input.controlId }], input.expectRev);
+    },
+  }),
+  // ---- Wave 2.9, direct data (A10.8): a catalogue pick and a start page, as the builder makes them ----
+  tool({
+    name: "apps.bindData",
+    title: "Show data on a component",
+    description: "Binds one prop of a draft component to a read from data.search (its item key), creating or reusing the app's hidden managed data source for that read, as the builder's picker does. prop is a prop name (data, value, status, items) or a path into a list prop (stats.0.value, items.2.value, lines.1.data); prop \"lines\" adds a chart line (a value read binds its history). value is an optional template body against the read, like value or rows | filter('state', 'running') | count. refreshSec optionally sets the component's own refresh (at or above the read's minimum). Answers no config or secrets.",
+    input: z.object({ ...appRef, ...expectRev, nodeId: z.string().min(1).max(40), prop: z.string().min(1).max(60), itemKey: z.string().min(3).max(2000).describe("A key from data.search."), value: z.string().max(400).optional(), refreshSec: z.number().int().min(1).max(86400).optional() }),
+    output: z.object({ rev: z.number(), changed: z.array(z.string()), source: z.string(), template: z.string(), words: z.string() }),
+    scope: "atrium:edit",
+    effect: "draft",
+    surfaces: ["builtin-agent", "mcp"],
+    minRole: "member",
+    async handler({ principal }, input) {
+      const app = appForEditor(principal, input.appId);
+      const d = repo.getDraft(app.id)!;
+      const b = await bindDataOps(principal, d.doc, input);
+      const r = edit(principal, app.id, b.ops, input.expectRev);
+      return { ...r, source: b.name, template: b.template, words: b.words };
+    },
+  }),
+  tool({
+    name: "apps.startPage",
+    title: "Make a start page",
+    description: "Makes a start page in the draft in one change: a resource bar (a machine's CPU, memory, disk and uptime, or this Atrium server's), then a group per kind of service (containers, media, monitoring, network, smart home, storage, other) with a service tile per integration (icon, name, address, live status, headline stats), then a Links group of plain links with an up or down check. Uses the current empty page, or adds a Start page. Only services you may use are placed.",
+    input: z.object({ ...appRef, ...expectRev, integrationIds: z.array(z.string().max(100)).max(40), links: z.array(z.object({ name: z.string().max(80), href: z.string().max(2000) })).max(40).optional(), machine: z.object({ integrationId: z.string(), thing: z.string().max(400), label: z.string().max(80).optional() }).optional() }),
+    output: z.object({ rev: z.number(), pageId: z.string(), nodes: z.array(z.string()) }),
+    scope: "atrium:edit",
+    effect: "draft",
+    surfaces: ["builtin-agent", "mcp"],
+    minRole: "member",
+    async handler({ principal }, input) {
+      const r = makeStartPage(principal, input.appId, parseStartInput({ integrationIds: input.integrationIds, links: input.links ?? [], ...(input.machine ? { machine: input.machine } : {}) }), input.expectRev !== undefined ? { expectRev: input.expectRev } : {});
+      return { rev: r.rev!, pageId: r.pageId, nodes: r.nodes };
     },
   }),
 ] as unknown as ToolDef<never, unknown>[];

@@ -15,6 +15,7 @@ import { InspectorHeader, InspectorPanels } from "./components-client";
 import { columnsChangeOps, columnsOn, fitOps, neighbourWidth, slotOn, slotOp, toEighth, widthPresets, type Device } from "./geometry";
 import { describeTemplate, failedReadReason, otherUsers, repeatAround, showsLine, usersOf } from "./data-pick";
 import { liveWords } from "./data-picker";
+import { ChartLinesEditor, DataLine, ListDataEditor } from "./data-line";
 import { evaluateTemplate } from "@/features/components/bindings";
 import { formatValue, templateFormat } from "@/features/components/render/format";
 import { MoreFold } from "@/features/components/inspector/more";
@@ -208,7 +209,7 @@ function SourcesEditor({ doc, bindable, live, apply, onPick, onSelect }: { doc: 
           const st = live?.states[s.name];
           const d = live?.data[s.name];
           return (
-            <li key={s.name} className="flex flex-col gap-1 bg-bg-sunk px-2 py-1.5" data-source={s.name}>
+            <li key={s.name} className="flex flex-col gap-1 bg-bg-sunk px-2 py-1.5" data-source={s.name} data-source-managed={s.managed ? "yes" : "no"}>
               <span className="type-caption min-w-0 truncate" data-source-words>{sourceWords(s, bindable)}</span>
               <span className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-fg-2">
                 {unmappedPackage(s.integrationId) ? <span className="text-warn" data-source-unmapped>not connected</span> : <span data-source-state={st?.state ?? "empty"}>{STATE_WORDS[st?.state ?? "empty"]}</span>}
@@ -220,17 +221,20 @@ function SourcesEditor({ doc, bindable, live, apply, onPick, onSelect }: { doc: 
                   <button type="button" className="inline-flex min-h-8 items-center px-1 type-caption underline touch:min-h-11 touch:px-2" onClick={() => onSelect?.(users[0]!.nodeId)} title={users.map((u) => u.label).join(", ")} data-source-users={users.length}>used by {users.length} {users.length === 1 ? "component" : "components"}</button>
                 ) : <span className="type-caption px-1 text-fg-2" data-source-users={0}>not used yet</span>}
                 <span className="flex-1" />
-                {onPick && <button type="button" className="inline-flex min-h-8 items-center px-1 type-caption underline touch:min-h-11 touch:px-2" onClick={() => onPick({ source: s.name })} aria-label={`Edit ${s.name}`} data-source-edit>Edit</button>}
-                <button type="button" className="inline-flex min-h-8 items-center px-1 type-caption text-bad underline touch:min-h-11 touch:px-2" onClick={() => {
+                {/* A10.1: data Atrium manages follows its components; only data a person set up can be edited here. */}
+                {!s.managed && onPick && <button type="button" className="inline-flex min-h-8 items-center px-1 type-caption underline touch:min-h-11 touch:px-2" onClick={() => onPick({ source: s.name })} aria-label={`Edit ${s.name}`} data-source-edit>Edit</button>}
+                {!s.managed && <button type="button" className="inline-flex min-h-8 items-center px-1 type-caption text-bad underline touch:min-h-11 touch:px-2" onClick={() => {
                   if (users.length && !window.confirm(`${s.name} is used by ${users.map((u) => u.label).join(", ")}. They will lose their data. Remove it?`)) return;
                   apply([{ op: "source.remove", name: s.name }]);
-                }} aria-label={`Remove ${s.name}`} data-source-remove>Remove</button>
+                }} aria-label={`Remove ${s.name}`} data-source-remove>Remove</button>}
               </span>
             </li>
           );
         })}
       </ul>
-      {onPick && <Button variant="secondary" onClick={() => onPick({})} data-add-source>Add a data source</Button>}
+      {doc.dataSources.length === 0 && <p className="type-caption m-0 text-fg-2" data-sources-none>Nothing yet. Pick what a component shows from its Data group; Atrium keeps what it reads here.</p>}
+      {/* Wave 2.9: no data source step. Setting up a read by hand stays here for templates and agents' sources. */}
+      {onPick && <button type="button" className="inline-flex min-h-8 items-center self-start px-1 type-caption underline touch:min-h-11" onClick={() => onPick({})} data-add-source>Set up a read by hand</button>}
     </div>
   );
 }
@@ -253,6 +257,10 @@ function valueNow(template: string, src: string, live: Live | undefined, def: Da
  * with Change and Disconnect, and "Shares its data with N other widgets" when the source is shared.
  */
 function DataSummary({ node, doc, bindable, live, onPick, apply }: { node: ComponentNode; doc: AppDocument; bindable: Bindable[]; live?: Live; onPick(t: PickTarget): void; apply(ops: DraftOp[]): void }) {
+  // Wave 2.9 (spec 3.4, 3.5): a chart's lines, a tile's stats and a resource bar's readings, each through the picker.
+  if (node.type === "chart") return <div className="flex flex-col gap-2 border border-line p-2" data-data-shows><ChartLinesEditor node={node} doc={doc} bindable={bindable} {...(live ? { live } : {})} apply={apply} onPick={(prop) => onPick({ nodeId: node.id, prop })} /></div>;
+  if (node.type === "service-tile") return <div className="flex flex-col gap-2 border border-line p-2" data-data-shows><ListDataEditor node={node} list="stats" max={4} noun="Stat" doc={doc} bindable={bindable} {...(live ? { live } : {})} apply={apply} onPick={(prop) => onPick({ nodeId: node.id, prop })} /></div>;
+  if (node.type === "resource-bar") return <div className="flex flex-col gap-2 border border-line p-2" data-data-shows><ListDataEditor node={node} list="items" max={8} noun="Reading" doc={doc} bindable={bindable} {...(live ? { live } : {})} apply={apply} onPick={(prop) => onPick({ nodeId: node.id, prop })} /></div>;
   const props = node.props as Record<string, PropValue>;
   const bound = Object.entries(props).flatMap(([k, v]) => (isBinding(v) ? sourcesInTemplate(v.$bind).map((src) => ({ prop: k, src, template: v.$bind })) : []));
   const order = ["data", "items", "value"];
@@ -286,12 +294,13 @@ function DataSummary({ node, doc, bindable, live, onPick, apply }: { node: Compo
   const words = ["Shows:", [line.what, line.detail, line.value, line.from].filter(Boolean).join(" · ")].join(" ");
   return (
     <div className="flex flex-col gap-1 border border-line p-2" data-data-summary={def.name} data-data-shows>
-      <span className="type-caption" data-data-summary-words title={sourceWords(def, bindable)}>{words}</span>
+      {/* Wave 2.9 (spec 3.3): one line with the component's own refresh. */}
+      <DataLine node={node} def={def} template={first.template} prop={first.prop} bindable={bindable} {...(live ? { live } : {})} apply={apply} onChange={(p) => onPick({ nodeId: node.id, prop: p, source: def.name })} />
+      <span hidden data-data-summary-words title={sourceWords(def, bindable)}>{words}</span>
       <span className="font-mono text-[11px] text-fg-2">{STATE_WORDS[st?.state ?? "empty"]}{st?.fetchedAt ? ` · updated ${new Date(st.fetchedAt).toLocaleTimeString()}` : ""}</span>
       {failed && <span role="note" className="type-caption text-warn" data-data-read-failed>This read stopped working on {integ?.integrationName ?? "its server"}: {failed} Change it, or check the integration.</span>}
       {others.length > 0 && <span className="type-caption text-fg-2" data-data-shares={others.length} title={others.map((u) => u.label).join(", ")}>Shares its data with {others.length} other {others.length === 1 ? "widget" : "widgets"}</span>}
       <span className="flex gap-2">
-        <button type="button" className="inline-flex min-h-8 items-center type-caption underline touch:min-h-11" onClick={() => onPick({ nodeId: node.id, prop: first.prop, source: def.name })} data-data-change>Change</button>
         <button type="button" className="inline-flex min-h-8 items-center type-caption underline touch:min-h-11" onClick={() => {
           const patch = Object.fromEntries(bound.filter((b) => b.src === def.name).map((b) => [b.prop, null]));
           apply([{ op: "node.update", nodeId: node.id, patch: { props: { ...node.props, ...patch } } } as DraftOp]);
@@ -414,7 +423,12 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
   const slot = node ? slotOn(node, device) : undefined;
   // Words and facts for the data chips and the Data sentence (spec 3.3).
   const describe = useMemo<BindingDescriber>(() => ({
-    words: (t) => describeTemplate(t),
+    // A10.1: a managed source is never named to a person; its words stand in for its generated name.
+    words: (t) => {
+      const w = describeTemplate(t);
+      if (!w) return w;
+      return doc.dataSources.reduce((acc, d) => (d.managed && d.label ? acc.split(d.name).join(d.label) : acc), w);
+    },
     source: (name) => {
       const def = doc.dataSources.find((d) => d.name === name);
       if (!def) return null;
@@ -447,7 +461,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
     return (
       <div className="flex flex-col" data-inspector-empty>
         <p className="p-3 type-body text-fg-2">Select a component on the canvas or in Layers.</p>
-        <div className="flex flex-col"><Group id="sources" title="App data sources" order={3} open><SourcesEditor doc={doc} bindable={bindable} live={live} apply={apply} {...(onPick ? { onPick } : {})} {...(onSelect ? { onSelect } : {})} /></Group></div>
+        <div className="flex flex-col"><Group id="sources" title="Advanced: data this app reads" order={3} open><SourcesEditor doc={doc} bindable={bindable} live={live} apply={apply} {...(onPick ? { onPick } : {})} {...(onSelect ? { onSelect } : {})} /></Group></div>
       </div>
     );
   }
@@ -511,7 +525,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
             )}
           </Group>
         )}
-        <Group id="sources" title="App data sources" order={9}>
+        <Group id="sources" title="Advanced: data this app reads" order={9}>
           <SourcesEditor doc={doc} bindable={bindable} live={live} apply={apply} {...(onPick ? { onPick } : {})} {...(onSelect ? { onSelect } : {})} />
         </Group>
       </fieldset>

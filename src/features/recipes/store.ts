@@ -8,6 +8,8 @@ import { BUILTIN_RECIPES, BUILTIN_READ_RECIPE } from "@/packages/prometheus/full
 import type { Recipe as PromRecord } from "@/packages/prometheus/recipe";
 import { registerExtraNeeds } from "@/packages/prometheus/adapter";
 import { promRecordOf, recipeEndpointId, rewriteChoices, validateRecipe, type RecipeFile } from "./schema";
+import { promHasHistory } from "@/packages/prometheus/generic";
+import { historyParams } from "@/packages/prometheus/recipe";
 import * as repo from "./repo";
 
 export type RecipeSource = RecipeFile["source"];
@@ -140,13 +142,25 @@ export function recipeEndpoints(row: IntegrationLike, opts: { includeDrafts?: bo
     const own = new Set(e.recipe.reads.map((r) => r.id));
     for (const r of e.recipe.reads) {
       if (e.source === "spec" && opts.customIds?.has(r.id)) continue;
-      out.push(endpointOfRead(e, r, own));
+      const ep = endpointOfRead(e, r, own);
+      // A10.3: an instant PromQL read on Prometheus also gets h:<endpoint id>, the same query over time.
+      if (row.packageId === "prometheus" && promHasHistory(r, promRecordOf(r as Parameters<typeof promRecordOf>[0]))) {
+        const h: RecipeEndpoint = { ...ep, id: `${HISTORY_PREFIX}${ep.id}`, label: `${ep.label} over time`, description: `${ep.label}, over the last hours.`, shape: "series", defaultRefreshSec: Math.max(60, ep.minRefreshSec), minRefreshSec: Math.max(30, ep.minRefreshSec), advanced: true, params: historyParams(ep.params as Record<string, unknown> | undefined) };
+        out.push({ ...ep, history: { endpointId: h.id } }, h);
+      } else out.push(ep);
     }
   }
   return out;
 }
 
+export const HISTORY_PREFIX = "h:";
+
 export type ResolvedRead = { entry: CatalogEntry; read: RecipeRead; record: PromRecord | null };
+
+/** The recipe read behind an h:r: history endpoint id, with the r: id it charts. */
+export function parseHistoryId(id: string): string | null {
+  return id.startsWith(HISTORY_PREFIX) && id.slice(HISTORY_PREFIX.length).startsWith("r:") ? id.slice(HISTORY_PREFIX.length) : null;
+}
 
 /** The recipe read behind an r: endpoint id, when its recipe applies to this integration. */
 export function resolveRead(row: IntegrationLike, recipeId: string, readId: string, opts: { includeDrafts?: boolean } = {}): ResolvedRead | undefined {

@@ -10,6 +10,8 @@ import { ID_RE } from "./ids";
 import { compileStyle, refusalText } from "./style/compile";
 import { isLayoutType, LAYOUT_CSS_REFUSAL } from "./style/node-css-policy";
 import { libKey } from "./render/resolve";
+import { planLines, thirdUnitSentence } from "./render/lines";
+import { iconRefKind } from "./render/tiles-logic";
 
 export type ValidateOptions = {
   /** Current data per source: when given, binding paths are checked against it. */
@@ -119,6 +121,44 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
       if (typeof href === "string" && href && !SAFE_HREF.test(href)) problems.push({ severity: "error", code: "link.scheme", where: where("href"), message: "Links open only http and https addresses; this one is drawn inert.", fix: "Use an address starting with https://." });
       const pg = n.props.page;
       if (typeof pg === "string" && pg && !pageSlugs.has(pg)) problems.push({ severity: "error", code: "link.unknown_page", where: where("page"), message: `There is no page "${pg}" in this app.` });
+    }
+    // Wave 2.9 (A10.2, A10.7)
+    const evalData = (v: unknown): { ok: boolean; value?: unknown } => {
+      if (!opts.data || !isBinding(v)) return { ok: false };
+      const r = evaluateTemplate(v.$bind, { $data: opts.data, $page: { id: "", slug: "", title: "" }, $app: { id: "", slug: "", name: doc.app.name }, $user: { kind: "user" }, $now: 0 });
+      return r.ok ? { ok: true, value: r.value } : { ok: false };
+    };
+    const checkIcon = (icon: unknown, field: string) => {
+      if (typeof icon === "string" && icon.trim() && iconRefKind(icon).kind === "unknown") problems.push({ severity: "warning", code: "icon.unknown", where: where(field), message: `"${icon}" is not a built-in icon or an uploaded picture; a plain box is drawn.`, fix: "Pick an icon from the list, or upload a picture." });
+    };
+    if (n.type === "service-tile") {
+      const href = n.props.href;
+      if (typeof href === "string" && href.trim() && !SAFE_HREF.test(href)) problems.push({ severity: "warning", code: "tile.scheme", where: where("href"), message: "A tile opens only http and https addresses; this one is not clickable.", fix: "Use an address starting with https://." });
+      checkIcon(n.props.icon, "icon");
+      const st = evalData(n.props.status);
+      if (st.ok && st.value !== undefined && st.value !== null && !(typeof st.value === "object" && (st.value as { kind?: unknown }).kind === "status") && typeof st.value !== "string" && typeof st.value !== "boolean") problems.push({ severity: "warning", code: "tile.status_shape", where: where("status"), message: "The status badge needs status data (an up or down item); this binding gives something else.", fix: "Bind a status read, such as atrium/health or atrium/reach." });
+    }
+    if (n.type === "resource-bar") (Array.isArray(n.props.items) ? n.props.items : []).forEach((it, i) => checkIcon((it as Record<string, unknown> | null)?.icon, `items[${i}].icon`));
+    if (n.type === "bookmarks") {
+      (Array.isArray(n.props.items) ? n.props.items : []).forEach((it, i) => {
+        const o = (it ?? {}) as Record<string, unknown>;
+        if (typeof o.href === "string" && o.href.trim() && !/^https?:\/\/[^\s/]+/i.test(o.href.trim())) problems.push({ severity: "warning", code: "bookmark.scheme", where: where(`items[${i}].href`), message: `Bookmark ${i + 1} is not an http or https address; it is drawn inert.`, fix: "Use an address starting with https://." });
+        checkIcon(o.icon, `items[${i}].icon`);
+      });
+    }
+    if (n.type === "chart" && Array.isArray(n.props.lines) && n.props.lines.length) {
+      const lines = n.props.lines as Record<string, unknown>[];
+      if (n.props.data !== undefined && n.props.data !== null) problems.push({ severity: "warning", code: "chart.data_ignored", where: where("data"), message: "This chart has lines, so its single Series setting is not used.", fix: "Remove Series, or add it as a line." });
+      if (opts.data) {
+        const resolved = lines.map((ln) => ({ ...ln, data: evalData(ln?.data).value }));
+        const plan = planLines(resolved);
+        const canPercent = resolved.every((ln) => { const d = ln.data as { format?: string; unit?: string } | undefined; return !d || d.format === "percent" || d.unit === "%"; });
+        for (const i of plan.refused) problems.push({ severity: "error", code: "chart.third_unit", where: where(`lines[${i}]`), message: thirdUnitSentence(canPercent), fix: canPercent ? "Put it on a new chart, or show all as percent." : "Put it on a new chart." });
+        for (const i of plan.waiting) {
+          const d = resolved[i]!.data;
+          if (d !== undefined && d !== null && lines[i]?.hidden !== true) problems.push({ severity: "warning", code: "chart.line_shape", where: where(`lines[${i}].data`), message: `Line ${i + 1} is not a series over time, so it draws nothing.`, fix: "Bind a series read, or the history of a value." });
+        }
+      }
     }
     // containers
     if (n.children?.length) {

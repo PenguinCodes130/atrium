@@ -1,5 +1,5 @@
 // Check V2 for Wave 2.7: every Prometheus read once against a real server, GET only. Run with
-//   ATRIUM_TEST_PROM_URL=http://10.77.99.7:9090 [ATRIUM_TEST_PROM_OUT=<file>] pnpm exec vitest run src/packages/__tests__/prometheus-live.test.ts
+//   ATRIUM_TEST_PROM_URL=<address from shared/constants.md> [ATRIUM_TEST_PROM_OUT=<file>] pnpm exec vitest run src/packages/__tests__/prometheus-live.test.ts
 // Skipped (never passed) without the variable. Reads whose needs the server lacks must say so through available().
 import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";

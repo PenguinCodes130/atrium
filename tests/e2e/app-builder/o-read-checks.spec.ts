@@ -5,7 +5,7 @@
 // that part). Evidence: evidence/app-builder/<ATRIUM_E2E_EVIDENCE_ROUND>/read-checks/.
 import { expect, test, type Page } from "@playwright/test";
 import { startFakePrometheus, type FakePrometheus } from "../fixtures/fake-prometheus";
-import { api, contextFor, ev, OWNER, SHELL_VARIANTS } from "./helpers";
+import { api, contextFor, ev, OWNER, SHELL_VARIANTS, byHand } from "./helpers";
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 test.skip(({ isMobile }) => isMobile, "desktop project");
@@ -112,6 +112,7 @@ test("the picker tags recipe reads with where they came from, and lists a read t
   await page.goto(`/build/${slug}`);
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
   await insertStat(page);
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   const memory = page.locator(`[data-pick-endpoint="${rid("memory")}"]`);
   await expect(memory).toBeVisible();
@@ -144,6 +145,7 @@ test("a widget bound to a failing read is marked on the canvas (edit only), in i
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
   // A healthy stat first: no warning on it.
   const good = await insertStat(page);
+  await byHand(page);
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   await page.locator(`[data-pick-endpoint="${rid("memory")}"]`).click();
   await page.locator("[data-pick-use]").click();
@@ -204,6 +206,7 @@ test("a read that worked and starts failing after a check marks its widget in th
   await page.goto(`/build/${slug}`);
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
   const stat = await insertStat(page);
+  await byHand(page);
   await page.locator(`[data-pick-integration="${prom2Id}"]`).click();
   await page.locator(`[data-pick-endpoint="${rid("memory")}"]`).click();
   await page.locator("[data-pick-use]").click();

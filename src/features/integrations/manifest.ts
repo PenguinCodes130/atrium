@@ -21,6 +21,11 @@ function paramsDeclared(e: { path: string; query?: Record<string, string> | unde
   return used.every((n) => Object.prototype.hasOwnProperty.call(props, n));
 }
 export const ATRIUM_FLOOR_SEC = 5;
+/** A10.4 measures and A10.5 service kinds. */
+export const MEASURES = ["cpu", "memory", "disk", "network", "temperature", "uptime", "count", "status", "other"] as const;
+export const SERVICE_KINDS = ["media", "monitoring", "network", "smart-home", "storage", "containers", "other"] as const;
+/** A10.6: the one built-in package whose id is not a plain slug. */
+export const SYSTEM_PACKAGE_ID = "atrium/system";
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const OFFICIAL_ID = /^[a-z][a-z0-9-]{1,40}$/;
@@ -79,6 +84,20 @@ const endpointDef = z.object({
   group: z.string().trim().min(1).max(60).optional(),
   advanced: z.boolean().optional(),
   needs: z.string().trim().min(1).max(200).optional(),
+  // Amendment 10 (A10.3, A10.4): the series read for this value over time, what it measures, and
+  // whether it is one of the service's main reads.
+  history: z.object({ endpointId: z.string().min(1).max(200), params: z.record(z.string(), z.unknown()).optional() }).optional(),
+  measure: z.enum(MEASURES).optional(),
+  headline: z.boolean().optional(),
+});
+
+/** A10.5: a service's headline stat. `value` is a template body over that read's source. */
+export const headlineStatSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  endpointId: z.string().min(1).max(200),
+  params: z.record(z.string(), z.unknown()).optional(),
+  value: z.string().trim().min(1).max(300),
+  format: z.enum(VALUE_FORMATS).optional(),
 });
 
 const COMMAND_ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
@@ -119,6 +138,8 @@ export const manifestSchema = z.object({
   components: z.array(z.object({ type: z.string().regex(/^pkg:[^/]+\/.+$/, "component types use pkg:<package>/<name>"), accepts: z.array(z.enum(SHAPES)), entry: z.string() })).optional(),
   commands: z.array(commandDef).optional(),
   detect: z.object({ serverHeader: z.string().optional(), probe: z.object({ path: z.string().startsWith("/"), match: z.string().min(1) }).optional() }).optional(),
+  // A10.5: the kind of service (for start page groups) and up to 4 headline stats.
+  service: z.object({ kind: z.enum(SERVICE_KINDS), headline: z.array(headlineStatSchema).max(4).optional() }).optional(),
 });
 
 export const customEndpointSchema = z.object({
@@ -199,7 +220,7 @@ export function validateManifest(input: unknown, opts: { hasAdapter: boolean; so
   const m = parsed.data as PackageManifest;
   if (m.kind === "declarative" && opts.hasAdapter) return { ok: false, reason: "a declarative package must not ship adapter code" };
   if (m.kind === "code" && !opts.hasAdapter) return { ok: false, reason: "a code package must ship adapter code" };
-  if (opts.source === "official" && !OFFICIAL_ID.test(m.id)) return { ok: false, reason: "official package ids are short lowercase slugs" };
+  if (opts.source === "official" && !OFFICIAL_ID.test(m.id) && m.id !== SYSTEM_PACKAGE_ID) return { ok: false, reason: "official package ids are short lowercase slugs" };
   if (opts.source === "community" && !COMMUNITY_ID.test(m.id)) return { ok: false, reason: "community package ids use the github.com/<owner>/<repo> form" };
   if (opts.source === "declarative" && !DECLARATIVE_ID.test(m.id)) return { ok: false, reason: "declarative package ids use local/<name> or github.com/<owner>/<repo>" };
   const seen = new Set<string>();
@@ -209,6 +230,8 @@ export function validateManifest(input: unknown, opts: { hasAdapter: boolean; so
     if (e.defaultRefreshSec < e.minRefreshSec) return { ok: false, reason: `endpoint "${e.id}" has a default refresh below its minimum` };
     if (m.kind === "declarative" && e.minRefreshSec < CUSTOM_MIN_REFRESH_SEC) return { ok: false, reason: `endpoint "${e.id}" has a minimum refresh below ${CUSTOM_MIN_REFRESH_SEC} seconds` };
   }
+  for (const e of m.endpoints) if (e.history && !seen.has(e.history.endpointId)) return { ok: false, reason: `endpoint "${e.id}" names an undeclared history read "${e.history.endpointId}"` };
+  for (const h of m.service?.headline ?? []) if (!seen.has(h.endpointId)) return { ok: false, reason: `headline stat "${h.label}" names undeclared endpoint "${h.endpointId}"` };
   const secretKeys = new Set<string>();
   for (const s of m.secrets) {
     if (secretKeys.has(s.key)) return { ok: false, reason: `secret key "${s.key}" is declared twice` };

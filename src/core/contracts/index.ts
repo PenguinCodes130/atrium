@@ -28,6 +28,7 @@ export type PackageManifest = {
   components?: CustomComponentDef[];
   commands?: CommandDef[];
   detect?: { serverHeader?: string; probe?: { path: string; match: string } };
+  service?: { kind: ServiceKind; headline?: HeadlineStat[] }; // A10.5
 };
 export type Permission =
   | { kind: "network"; hosts: "configured" | string[] }
@@ -51,6 +52,9 @@ export type EndpointDef = {
   group?: string; // A8.1: a heading in words in the picker
   advanced?: boolean; // A8.1: listed under Advanced
   needs?: string; // A8.1: what the service must have, in words
+  history?: { endpointId: string; params?: Record<string, PropValue> }; // A10.3: the series read for this value over time
+  measure?: Measure; // A10.4
+  headline?: boolean; // A10.4: one of the service's main reads
 };
 export type CustomComponentDef = { type: `pkg:${string}/${string}`; accepts: DataShapeKind[]; entry: string };
 
@@ -182,6 +186,9 @@ export type Integration = {
   status: "draft" | "active" | "disabled";
   shared: boolean; // v3: false = only the owner and the creator may bind it into apps
   lastHealth?: HealthResult & { checkedAt: string };
+  kind?: ServiceKind; // A10.5
+  openUrl?: string; // A10.5: the service's own address for tiles; not config, not secret
+  headline?: HeadlineStat[]; // A10.5: overrides the package's
   createdBy: Principal["kind"];
   createdById: string;
   createdAt: string;
@@ -395,6 +402,7 @@ export type DataSourceDef = {
   params?: Record<string, PropValue>;
   refreshSec: number;
   label?: string; // A8.6: the source's name in words
+  managed?: boolean; // A10.1: created, shared and removed by Atrium, never named by a person
 };
 
 // Section 4.4: components
@@ -410,6 +418,7 @@ export type ComponentNode = {
   hidden?: boolean; // A7.3: desktop only; phones use responsive.mobile.hidden
   title?: string; // A8.5: shown in the title bar
   showTitle?: boolean; // A8.5
+  refreshSec?: number; // A10.1: this component's own refresh; managed sources run at the fastest
   responsive?: { mobile?: { slot?: GridSlot; hidden?: boolean; props?: Record<string, PropValue>; style?: StyleOverride } };
   visibleWhen?: Binding;
   children?: ComponentNode[];
@@ -425,6 +434,7 @@ export type ComponentType =
   | "heading" | "text" | "image" | "video" | "icon" | "link" | "divider" | "spacer" | "clock"
   | "button" | "toggle" | "slider" | "select"
   | "html"
+  | "service-tile" | "group" | "resource-bar" | "bookmarks" // A10.7
   | `pkg:${string}/${string}` | `lib:${string}`;
 export type ComponentState = "hover" | "active" | "focus" | "on" | "off" | "disabled";
 
@@ -706,3 +716,47 @@ export type AccountLink = {
   usedAt?: string;
   revokedAt?: string;
 };
+
+// Amendment 10: direct data and service tiles
+export type Measure = "cpu" | "memory" | "disk" | "network" | "temperature" | "uptime" | "count" | "status" | "other";
+export type ServiceKind = "media" | "monitoring" | "network" | "smart-home" | "storage" | "containers" | "other";
+/** value: a template body evaluated against that read's source, e.g. "value" or `rows | filter("state", "running") | count`. */
+export type HeadlineStat = { label: string; endpointId: string; params?: Record<string, PropValue>; value: string; format?: ValueFormat };
+/** A10.2: color is "series1" to "series8" (theme tokens) or a hex colour. */
+export type ChartLine = { data: Binding; label?: string; color?: string; hidden?: boolean };
+export type CatalogueItem = {
+  key: string;
+  integrationId: string;
+  integrationName: string;
+  packageId: string;
+  serviceIcon: string;
+  endpointId: string;
+  label: string;
+  thing?: { param: string; value: string; label: string; detail?: string };
+  params: Record<string, PropValue>;
+  needsSettings?: boolean;
+  shape: DataShapeKind;
+  format?: ValueFormat;
+  group?: string;
+  measure: Measure;
+  headline?: boolean;
+  history?: { endpointId: string; params: Record<string, PropValue> };
+  check?: ReadCheck;
+  from?: string;
+  defaultRefreshSec: number;
+  minRefreshSec: number;
+};
+export type CatalogueService = {
+  integrationId: string;
+  name: string;
+  packageId: string;
+  icon: string;
+  kind: ServiceKind;
+  openUrl?: string;
+  headline: HeadlineStat[];
+  health?: HealthResult["status"];
+};
+export type CatalogueResponse = { items: CatalogueItem[]; fits: boolean[]; services: CatalogueService[]; pending: string[] };
+export type PeekRequest = { items: { integrationId: string; endpointId: string; params: Record<string, PropValue> }[] };
+export type PeekResponse = { values: { key: string; data?: ShapedData; error?: string }[] };
+export type StartPageRequest = { integrationIds: string[]; links: { name: string; href: string }[]; machine?: { integrationId: string; thing: string } };

@@ -44,6 +44,19 @@ export function insertIntegration(v: { packageId: string; name: string; config: 
   return row;
 }
 
+/** A10.6: the built-in system integration's fixed id. */
+export const SYSTEM_INTEGRATION_ID = "atrium";
+
+/** A10.6: creates the built-in `atrium` integration (shared, no config, no secrets) when it is missing. */
+export function ensureSystemIntegration(): void {
+  if (db().select({ id: integrations.id }).from(integrations).where(eq(integrations.id, SYSTEM_INTEGRATION_ID)).get()) return;
+  const now = new Date();
+  db().insert(integrations).values({
+    id: SYSTEM_INTEGRATION_ID, packageId: "atrium/system", name: "Atrium", config: {}, secretFields: [], status: "active", shared: true,
+    lastHealth: { status: "ok", latencyMs: 0, checkedAt: now.toISOString() }, createdBy: "user", createdById: "system", createdAt: now, updatedAt: now,
+  }).onConflictDoNothing().run();
+}
+
 export function updateIntegration(id: string, patch: Partial<Pick<IntegrationRow, "name" | "config" | "status" | "lastHealth" | "secretFields" | "shared">>): void {
   db().update(integrations).set({ ...patch, updatedAt: new Date() }).where(eq(integrations.id, id)).run();
 }

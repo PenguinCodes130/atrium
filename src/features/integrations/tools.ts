@@ -16,6 +16,9 @@ import { getIntegrationRow } from "./repo";
 import { endpointsOf, getRegistry } from "./runtime";
 import * as svc from "./service";
 import { credentialPicksInput, credentialTools } from "./credentials/tools";
+import { buildCatalogue, mayUseCatalogue, peek } from "@/features/data/catalogue";
+import { catalogueOut, peekIn, peekOut } from "./api";
+import { MEASURES } from "./manifest";
 
 const shape = z.enum(["stat", "series", "table", "status"]);
 const healthOut = z.object({ status: z.enum(["ok", "degraded", "down"]), latencyMs: z.number(), version: z.string().optional(), message: z.string().optional() });
@@ -167,6 +170,31 @@ export const integrationTools: ToolDef<any, any>[] = [
     },
   },
 ];
+
+// Amendment 10 (A10.4, A10.8): the data catalogue for agents with atrium:edit. Reads, things and
+// live values only; never config or secrets.
+integrationTools.push(
+  {
+    name: "data.search", title: "Search the data catalogue", ...edit, effect: "none",
+    description: "Searches every read of every connected service you may use, one result per thing (\"CPU in use\" for each machine, plus \"Every machine\"). Every word of `q` must match the read, the thing, the service or its group. `fits` is a component type (stat, chart, table, gauge, list, status, service-tile...): results that fit it come first and `fits[i]` says which do. Each item's `key` and `params` are what a binding needs (apps.bindData takes the key); `history` names the read that charts a value over time. `services` lists each service with its kind, open address and headline stats. `pending` names services whose things did not arrive within 3 seconds. Never returns config or secrets.",
+    input: z.object({ q: z.string().max(200).optional(), fits: z.string().max(60).optional(), integrationId: z.string().max(100).optional(), measure: z.enum(MEASURES).optional(), all: z.boolean().optional(), limit: z.number().int().min(1).max(200).optional() }),
+    output: catalogueOut,
+    async handler({ principal }, i: { q?: string; fits?: string; integrationId?: string; measure?: (typeof MEASURES)[number]; all?: boolean; limit?: number }) {
+      if (!mayUseCatalogue(principal)) throw new Error("Searching the data catalogue needs the atrium:edit scope and a member or owner account.");
+      return catalogueOut.parse(await buildCatalogue(principal, i));
+    },
+  },
+  {
+    name: "data.peek", title: "Peek at catalogue values", ...edit, effect: "none",
+    description: "Returns the current value of up to 20 reads (integrationId, endpointId and params from data.search) through Atrium's shared cache, within 3 seconds. Each answer has the item's key and either the shaped data or an error in words. Never returns config or secrets.",
+    input: peekIn,
+    output: peekOut,
+    async handler({ principal }, i: { items: { integrationId: string; endpointId: string; params: Record<string, unknown> }[] }) {
+      if (!mayUseCatalogue(principal)) throw new Error("Peeking at data needs the atrium:edit scope and a member or owner account.");
+      return peekOut.parse(await peek(principal, i.items));
+    },
+  },
+);
 
 integrationTools.push(...credentialTools);
 

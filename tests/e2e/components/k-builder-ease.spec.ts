@@ -115,7 +115,8 @@ test("criteria 9 and 10: every field of every built-in component has its written
     const type = k.type as (typeof types)[number];
     await select(page, k.id);
     await setFolds(page, false);
-    const want = fieldsFor(type).map((f) => f.key).sort();
+    // A service tile's integrationId is a builder reference, never shown or typed (A10.7).
+    const want = fieldsFor(type).map((f) => f.key).filter((k) => !(type === "service-tile" && k === "integrationId")).sort();
     const simpleWant = fieldsFor(type).filter((f) => f.simple).map((f) => f.key);
     const simple = await shownKeys(page);
     // Folded: the simple set only (html's Edit code stands for its html, css and js).

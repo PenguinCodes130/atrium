@@ -10,7 +10,7 @@ import type { RenderMode } from "@/core/contracts";
 import { requireUser } from "@/features/auth";
 import { compileDocumentCss } from "@/features/components/server";
 import { resolveGuestValues } from "@/features/components/page";
-import { cssPage, everyTypePage, galleryDoc, gallerySources, probeBlock, statesPage, PROBES, type ProbeName } from "@/features/components/gallery/data";
+import { cssPage, tilesPage, everyTypePage, galleryDoc, gallerySources, probeBlock, statesPage, PROBES, type ProbeName } from "@/features/components/gallery/data";
 import { Gallery } from "@/features/components/gallery/gallery";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export function generateMetadata() {
   return { title: galleryEnabled() ? "Component gallery" : "Not found" };
 }
 
-const SCENES = new Set(["all", "states", "unavailable", "controls", "css", "sandbox", "bindings", "inspector", "motion", "guest"]);
+const SCENES = new Set(["all", "states", "unavailable", "controls", "css", "sandbox", "bindings", "inspector", "motion", "guest", "tiles", "tiles-guest"]);
 const THEMES = new Set(["controlRoom", "dusk", "solid"]);
 const MODES = new Set<RenderMode>(["view", "draft-preview", "agent-render", "edit"]);
 
@@ -51,11 +51,12 @@ export default async function GalleryPage({ searchParams }: { searchParams: Prom
   let page = everyTypePage();
   if (scene === "states" || scene === "unavailable") page = statesPage();
   if (scene === "css") page = cssPage();
+  if (scene === "tiles" || scene === "tiles-guest") page = tilesPage();
   if (scene === "sandbox") page = { ...page, id: "p_sandboxaaa", slug: "sandbox", root: { id: "c_sandboxstk", type: "stack", props: { gap: 16 }, children: probes.map((n) => probeBlock(n, `http://127.0.0.1:${probePort}`, stunPort, dns)) } };
   const doc = galleryDoc([page, statesPage()].filter((p, i, a) => a.findIndex((x) => x.id === p.id) === i));
   const css = compileDocumentCss(doc, page.id);
   // Guest scene: the server resolves the page's bindings and the browser gets only those values.
-  const guestValues = scene === "guest" ? resolveGuestValues(doc, page.id, Object.fromEntries(Object.entries(gallerySources(series)).flatMap(([k, v]) => (v.data ? [[k, v.data]] : [])))) : undefined;
+  const guestValues = scene === "guest" || scene === "tiles-guest" ? resolveGuestValues(doc, page.id, Object.fromEntries(Object.entries(gallerySources(series)).flatMap(([k, v]) => (v.data ? [[k, v.data]] : [])))) : undefined;
   return (
     <Gallery
       scene={scene}
@@ -67,7 +68,7 @@ export default async function GalleryPage({ searchParams }: { searchParams: Prom
       principal={s.principal}
       series={series}
       answer={one("answer") === "refuse" ? "refuse" : "ok"}
-      viewer={scene === "guest" ? "guest" : "user"}
+      viewer={scene === "guest" || scene === "tiles-guest" ? "guest" : "user"}
       {...(guestValues ? { guestValues } : {})}
     />
   );

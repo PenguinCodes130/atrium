@@ -25,6 +25,7 @@ import { Chevron, MoreFold } from "./more";
 import { chipFrom, chipLine, chipValue, chipWords, dataSentence, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber } from "./binding-words";
 import { MediaField } from "@/features/uploads/client";
 import { PicturePanel } from "./picture-panel";
+import { BarItemsEditor, BookmarksEditor, IconField, LinesEditor, StatsEditor, type ListEnv } from "./lists";
 
 type Patch = Partial<Omit<ComponentNode, "id" | "children">>;
 export type InspectorProps = {
@@ -303,7 +304,7 @@ export function BindingField({ label, value, onChange, scope, description, name,
  * case, the description under it and the switch on the right (gauntlet w2-r2 Fix 13). The label is a
  * real <label> for the switch, so a click on it toggles.
  */
-function SwitchRow({ label, description, checked, onCheckedChange, id: given }: { label: string; description?: string; checked: boolean; onCheckedChange(c: boolean): void; id?: string }) {
+export function SwitchRow({ label, description, checked, onCheckedChange, id: given }: { label: string; description?: string; checked: boolean; onCheckedChange(c: boolean): void; id?: string }) {
   const auto = useId();
   const id = given ?? `sw-${auto}`;
   return (
@@ -427,7 +428,7 @@ const editingTemplate = new Set<string>();
  * ("Lights on · 4 · Home Assistant, every 10 s"). A failing source shows its last value with the failing
  * mark and when it was last read. Clicking it opens the data picker on this field.
  */
-function DataChip({ prop, template, scope, describe, onOpen }: { prop: string; template: string; scope: PageScope; describe?: BindingDescriber; onOpen?(): void }) {
+export function DataChip({ prop, template, scope, describe, onOpen }: { prop: string; template: string; scope: PageScope; describe?: BindingDescriber; onOpen?(): void }) {
   const src = sourcesInTemplate(template)[0] ?? "";
   const facts = describe?.source?.(src) ?? null;
   const r = evaluateTemplate(template, scope);
@@ -460,7 +461,7 @@ function DataChip({ prop, template, scope, describe, onOpen }: { prop: string; t
 }
 
 /** A bound field's template reads only sources that exist and saves as it is: it can show as a chip. */
-function chipFits(template: string, sources: readonly string[] | undefined): boolean {
+export function chipFits(template: string, sources: readonly string[] | undefined): boolean {
   if (!template.trim() || bindingHoldReason(template, sources)) return false;
   try {
     const s = sourcesInTemplate(template);
@@ -872,7 +873,7 @@ function StyleControl({ prop, value, onChange, swatches }: { prop: keyof StylePr
   );
 }
 
-const SLOT_LABELS: Record<string, string> = { root: "Whole component", value: "Value", label: "Label", unit: "Unit", delta: "Change", title: "Title", body: "Body", tab: "Tabs", panel: "Panel", description: "Description", item: "Each item", legend: "Legend", axis: "Axes", header: "Header row", row: "Rows", cell: "Cells", detail: "Detail", track: "Track", fill: "Fill", thumb: "Handle", field: "Field", time: "Time", date: "Date" };
+const SLOT_LABELS: Record<string, string> = { icon: "Icon", name: "Name", badge: "Status badge", stat: "Each number", bar: "Small bar", search: "Search box", clock: "Clock", domain: "Domain", root: "Whole component", value: "Value", label: "Label", unit: "Unit", delta: "Change", title: "Title", body: "Body", tab: "Tabs", panel: "Panel", description: "Description", item: "Each item", legend: "Legend", axis: "Axes", header: "Header row", row: "Rows", cell: "Cells", detail: "Detail", track: "Track", fill: "Fill", thumb: "Handle", field: "Field", time: "Time", date: "Date" };
 const STATE_LABELS: Record<string, string> = { hover: "Pointer over", active: "Pressed", focus: "Keyboard focus", on: "On", off: "Off", disabled: "Disabled" };
 
 const STYLE_HINTS: Partial<Record<keyof StyleProps, string>> = {
@@ -1368,15 +1369,35 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
     );
   }
   if (!meta) return <p className="type-body p-3 text-fg-2">This component type has no inspector.</p>;
-  const content = fields.filter((f) => f.group === "content" && f.key !== "showUpdated" && !(node.type === "html"));
+  // A tile's integrationId is a builder reference (A10.7): never shown or typed.
+  const content = fields.filter((f) => f.group === "content" && f.key !== "showUpdated" && !(node.type === "html") && !(node.type === "service-tile" && f.key === "integrationId"));
   // Pictures and videos open on their own Picture (or Video) panel (media layout spec 3.1).
   const media = node.type === "image" || node.type === "video";
   const dataWidget = meta.category === "data";
-  const data = fields.filter((f) => f.group === "data" || f.key === "showUpdated");
+  // A chart with lines (A10.2) no longer reads its single Series field, so the field is not shown.
+  const hasLines = node.type === "chart" && Array.isArray(node.props.lines) && node.props.lines.length > 0;
+  const data = fields.filter((f) => (f.group === "data" || f.key === "showUpdated") && !(hasLines && f.key === "data"));
   const control = fields.filter((f) => f.group === "control");
-  const sourcesBox = meta.category === "data" && data.some((f) => f.key === "data" || f.key === "items");
+  const LIST_TYPES = ["service-tile", "resource-bar"];
+  const sourcesBox = meta.category === "data" && !LIST_TYPES.includes(node.type) && !hasLines && data.some((f) => f.key === "data" || f.key === "items");
+  const connectBox = sourcesBox || LIST_TYPES.includes(node.type);
   const pick = onConnectData ? { onPick: (k: string) => onConnectData(k) } : {};
+  // Wave 2.9 list props (A10.2, A10.7): their own editors, with Pick data per entry by prop path.
+  const listEnv: ListEnv = { node, scope, sources: sourceNames, ...(describe ? { describe } : {}), ...(onConnectData ? { onPick: (p: string) => onConnectData(p) } : {}), setProp, setProps: (p) => onChange({ props: { ...node.props, ...p } } as unknown as Patch) };
+  // With the builder's own data summary (its picker-led lines and numbers, Wave 2.9 app-builder), these
+  // full editors (labels, formats, icons, templates) fold under "by hand", so each list has one main path.
+  // The wrapper names the prop (data-fields) so the folded view still counts it as shown: the fold stands for it.
+  const byHand = (key: string, label: string, el: ReactNode) => (dataSummary ? <div key={key} data-fields={key}><MoreFold group={`${key}-by-hand`} label={label}>{el}</MoreFold></div> : el);
+  const LIST_EDITORS: Record<string, () => ReactNode> = {
+    "service-tile.stats": () => byHand("stats", "Edit the numbers by hand", <StatsEditor key="stats" env={listEnv} />),
+    "resource-bar.items": () => byHand("items", "Edit the readings by hand", <BarItemsEditor key="items" env={listEnv} />),
+    "bookmarks.items": () => <BookmarksEditor key="items" env={listEnv} />,
+    "chart.lines": () => byHand("lines", "Edit the lines by hand", <LinesEditor key="lines" env={listEnv} doc={doc} {...(onOps ? { onOps } : {})} />),
+    "service-tile.icon": () => <div key="icon" data-field="icon"><IconField label="Icon" path="icon" value={node.props.icon} onSet={(v) => setProp("icon", v ?? "server")} hint="A built-in icon, the service's own, or an uploaded picture" /></div>,
+  };
   const field = (f: FieldSpec) => {
+    const custom = LIST_EDITORS[`${node.type}.${f.key}`];
+    if (custom) return custom();
     const pf = (spec: FieldSpec) => <PropField key={`${node.id}:${f.key}`} spec={spec} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={!(dataWidget && spec.simple)} {...pick} />;
     // Pictures and videos (spec 3.1): Upload, Your uploads, and the typed or live address folded under "Paste an address".
     if ((node.type === "image" || node.type === "video") && f.key === "src") {
@@ -1484,7 +1505,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
           {sentence}
           {dataSummary}
           {dataWidget ? separately : null}
-          {onConnectData && sourcesBox ? (
+          {onConnectData && connectBox ? (
             <button type="button" className="inline-flex min-h-9 items-center justify-center border border-line-strong px-3 type-label hover:bg-bg-sunk touch:min-h-11" onClick={() => onConnectData()} data-connect-data>
               Connect data
             </button>

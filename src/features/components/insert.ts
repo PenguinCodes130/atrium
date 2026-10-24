@@ -47,7 +47,19 @@ export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h:
   image: { slot: { w: 3, h: 25 } },
   // 200px default height, same allowance as image; a new video shows whole, like pictures (media layout 3.1).
   video: { slot: { w: 3, h: 30 }, props: { fit: "contain" } },
+  // Wave 2.9 (A10.7): a tile is about 100px tall with its numbers; a group is a full row holding a row of tiles.
+  "service-tile": { slot: { w: 3, h: 17 } },
+  group: { slot: { w: 12, h: 26 } },
+  "resource-bar": { slot: { w: 12, h: 9 } },
+  bookmarks: { slot: { w: 3, h: 20 } },
 }
+
+/** Insert lists these first in their category (direct data spec 3.5 and 3.6: easy to find). */
+const FIRST: Partial<Record<ComponentCategory, string[]>> = { layout: ["grid", "group"], data: ["service-tile", "resource-bar"], content: ["heading", "text", "bookmarks"] };
+const rank = (c: ComponentCategory, t: string) => {
+  const i = FIRST[c]?.indexOf(t) ?? -1;
+  return i < 0 ? 100 : i;
+};
 
 export function insertCatalogue(principal: Principal, opts: { library?: LibraryComponent[] } = {}): InsertGroup[] {
   if (principal.kind === "guest" || principal.role === "viewer") return [];
@@ -57,6 +69,9 @@ export function insertCatalogue(principal: Principal, opts: { library?: LibraryC
     folded: category === "code",
     items: Object.values(META)
       .filter((m) => m.category === category)
+      .map((m, i) => ({ m, i }))
+      .sort((a, b) => rank(category, a.m.type) - rank(category, b.m.type) || a.i - b.i)
+      .map(({ m }) => m)
       .map((m) => ({ type: m.type, title: m.title, summary: m.docs.summary, node: newNode(m.type) })),
   }));
   // Card for each (data ease spec 3.2): a ready Repeat whose rows are picked next, one card per row.

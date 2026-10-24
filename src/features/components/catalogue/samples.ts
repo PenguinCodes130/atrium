@@ -21,7 +21,7 @@ export const SAMPLE_DATA: Record<"stat" | "series" | "table" | "status", ShapedD
 /** The props each data type reads its data from, and the sample to show when none of them is set. */
 const DATA_PROPS: Record<string, { keys: string[]; sample: Record<string, unknown> }> = {
   stat: { keys: ["data", "value"], sample: { data: SAMPLE_DATA.stat } },
-  chart: { keys: ["data"], sample: { data: SAMPLE_DATA.series } },
+  chart: { keys: ["data", "lines"], sample: { data: SAMPLE_DATA.series } },
   table: { keys: ["data"], sample: { data: SAMPLE_DATA.table } },
   list: { keys: ["items"], sample: { items: (SAMPLE_DATA.table as Extract<ShapedData, { kind: "table" }>).rows, labelKey: "name", detailKey: "value" } },
   status: { keys: ["data"], sample: { data: SAMPLE_DATA.status } },
@@ -29,7 +29,7 @@ const DATA_PROPS: Record<string, { keys: string[]; sample: Record<string, unknow
   progress: { keys: ["value"], sample: { value: 42 } },
 };
 
-const empty = (v: unknown) => v === undefined || v === null || v === "" || (typeof v === "object" && v !== null && "$bind" in v && !String((v as { $bind: unknown }).$bind).trim());
+const empty = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0) || (typeof v === "object" && v !== null && "$bind" in v && !String((v as { $bind: unknown }).$bind).trim());
 
 /** True for a data component whose data props are all unset (a freshly inserted one). */
 export function notConnected(node: ComponentNode): boolean {

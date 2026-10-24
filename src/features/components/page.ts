@@ -17,6 +17,11 @@ import {
   type PageScope,
 } from "./render/resolve";
 
+/** A10.2: the guest value key part of a chart line's data ("lines.2.data"). */
+export function lineDataKey(i: number): string {
+  return `lines.${i}.data`;
+}
+
 export function findPage(doc: AppDocument, pageId: string): PageDoc | undefined {
   return doc.pages.find((p) => p.id === pageId || p.slug === pageId);
 }
@@ -91,6 +96,15 @@ export function resolveGuestValues(doc: AppDocument, pageId: string, sources: Re
       const { props } = resolveProps(n, scope);
       for (const [k, v] of Object.entries(n.props)) {
         if (raw.type === "html" && k === "data") continue;
+        // A10.2: each chart line's data under its own key, "<nodeId>:lines.<i>.data".
+        if (raw.type === "chart" && k === "lines" && Array.isArray(v)) {
+          const lines = (Array.isArray(props.lines) ? props.lines : []) as { data?: unknown }[];
+          v.forEach((ln, i) => {
+            const d = ln && typeof ln === "object" && !Array.isArray(ln) ? (ln as Record<string, PropValue>).data : undefined;
+            if (templatesIn(d, "data").length) out[valueKey(raw.id, `${lineDataKey(i)}${suffix}`, path)] = lines[i]?.data;
+          });
+          continue;
+        }
         if (templatesIn(v as PropValue, k).length) out[valueKey(raw.id, `${k}${suffix}`, path)] = props[k];
       }
       if (device === "desktop") {

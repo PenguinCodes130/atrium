@@ -273,6 +273,9 @@ test("recipe reads appear in the builder's picker like any read, the failing one
   await page.locator('[data-left-tab="layers"]').click();
   await page.locator('[data-layer="c_recipetext"]').click();
   await page.locator('[data-pick-button="text"]').first().click();
+  // Wave 2.9: Bind opens "What should this show?" first; the Wave 2.8 picker is "Set it up by hand".
+  const byHand = page.locator("[data-pick-by-hand]");
+  if (await byHand.waitFor({ timeout: 5_000 }).then(() => true).catch(() => false)) await byHand.click();
   await expect(page.locator("[data-data-picker]")).toBeVisible();
   await page.locator(`[data-pick-integration="${promId}"]`).click();
   await expect(page.locator(`[data-pick-endpoint="${rid("memory")}"]`)).toBeVisible({ timeout: 10_000 });

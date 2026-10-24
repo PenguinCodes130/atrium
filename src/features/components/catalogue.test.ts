@@ -8,7 +8,7 @@ import { suggestComponent, suggestedType } from "./suggest";
 import { insertCatalogue } from "./insert";
 import { sourcesUsed, resolveGuestValues } from "./page";
 
-const ARCH_TYPES = ["grid", "stack", "card", "tabs", "section", "repeat", "stat", "chart", "table", "list", "status", "gauge", "progress", "heading", "text", "image", "video", "icon", "link", "divider", "spacer", "clock", "button", "toggle", "slider", "select", "html"];
+const ARCH_TYPES = ["grid", "stack", "card", "tabs", "section", "repeat", "stat", "chart", "table", "list", "status", "gauge", "progress", "heading", "text", "image", "video", "icon", "link", "divider", "spacer", "clock", "button", "toggle", "slider", "select", "html", "service-tile", "group", "resource-bar", "bookmarks"];
 
 const exampleDoc = (): Pick<AppDocument, "dataSources" | "controls"> => ({
   dataSources: Object.keys(EXAMPLE_SOURCES).map((name) => ({ name, integrationId: "i1", endpointId: "e1", refreshSec: 30 })),

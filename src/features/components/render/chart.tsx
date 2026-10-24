@@ -14,6 +14,7 @@ import { nodeSources } from "./resolve";
 import { shapeMismatch } from "./rollup";
 import { MISMATCH_WORD, MismatchBody } from "./data";
 import { formatParts } from "./format";
+import { LinesChartView } from "./chart-lines";
 
 /** A series' name for people (A8.4): its display name when the data gives one, never raw label text. */
 export function seriesLabel(s: { name: string; display?: string }): string {
@@ -42,7 +43,13 @@ function niceTime(t: number, span: number): string {
   return span > 2 * 86400_000 ? `${d.getMonth() + 1}/${d.getDate()}` : `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function ChartView({ resolved }: P) {
+/** A chart with lines (A10.2) draws them; one without draws its single series source as before. */
+export function ChartView(props: P) {
+  const lines = props.node.props.lines;
+  return Array.isArray(lines) && lines.length ? <LinesChartView {...props} /> : <SingleChartView {...props} />;
+}
+
+function SingleChartView({ resolved }: P) {
   const { status, node, scope } = useNodeEnv();
   const reduced = useReducedMotion();
   const data = resolved.data && typeof resolved.data === "object" && (resolved.data as { kind?: unknown }).kind === "series" ? (resolved.data as Series) : null;

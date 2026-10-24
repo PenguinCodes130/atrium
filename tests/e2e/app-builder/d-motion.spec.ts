@@ -33,6 +33,7 @@ test("frame timing while dragging and switching edit mode (V7)", async ({ browse
   await page.goto("/build/lounge");
   await expect(page.locator("[data-canvas-root] [data-atrium-canvas]")).toBeVisible();
   const gpu = await page.evaluate(() => { const c = document.createElement("canvas").getContext("webgl"); const d = c?.getExtension("WEBGL_debug_renderer_info"); return d ? String(c!.getParameter(d.UNMASKED_RENDERER_WEBGL)) : "none"; });
+  await page.locator('[data-insert-item="text"]').first().scrollIntoViewIfNeeded();
   const item = (await page.locator('[data-insert-item="text"]').first().boundingBox())!;
   const drag = await frames(page, async () => {
     await page.mouse.move(item.x + 20, item.y + 10);

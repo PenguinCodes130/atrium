@@ -60,7 +60,8 @@ function writeLast(t: { appId: string; pageId: string }, v: PageData): void {
  */
 export function usePageData(target: { appId: string; pageId: string; draft: boolean } | null, sources: PageDataSource[], enabled = true, opts: { remember?: boolean; owner?: string | null } = {}): PageData {
   const [state, setState] = useState<PageData>({ data: {}, states: {}, guest: undefined, signedUrls: {}, mode: "connecting" });
-  const key = target ? `${target.appId}|${target.pageId}|${target.draft}|${sources.map((s) => s.key).join(",")}` : "";
+  // A source's interval is part of the key (Wave 2.9, spec 3.3): a new refresh restarts the stream at that pace.
+  const key = target ? `${target.appId}|${target.pageId}|${target.draft}|${sources.map((s) => `${s.key}@${s.refreshSec}`).join(",")}` : "";
   const remember = !!opts.remember && !!target && !target.draft;
   const owner = opts.owner ?? null;
   useEffect(() => {

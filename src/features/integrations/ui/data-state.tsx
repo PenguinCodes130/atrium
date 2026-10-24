@@ -31,6 +31,8 @@ function StatusPreview({ data }: { data: StatusData }) {
         {shown.map((i, n) => (
           <li key={n} className="flex items-center gap-2 type-body text-fg">
             <StatusMark state={i.state} /> <span className="truncate">{i.label}</span>
+            {/* A10.6: the reachability and health reads say how fast, or why not, in the detail. */}
+            {i.detail && <span className="truncate type-caption text-glass-muted" data-status-detail>{i.detail}</span>}
           </li>
         ))}
       </ul>

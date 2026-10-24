@@ -13,6 +13,8 @@ export const DATA_TABLES = [
   "integration", "custom_endpoint", "custom_command", "declarative_package", "credential", "integration_credential",
   // Wave 2.8 recipes (Amendment 9): no secrets by spec criterion 14.
   "recipe",
+  // Wave 2.9 (A10.5): kind, open address and headline stats per integration; no secrets.
+  "integration_service",
   // app-builder and components (Wave 2): names as the lead prep expects them; confirm after the wave.
   "app", "app_draft", "app_version", "draft_change", "library_component",
   // Later waves (section 12): routes, channels, action definitions.

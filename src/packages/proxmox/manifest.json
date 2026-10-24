@@ -56,7 +56,9 @@
       "shape": "status",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "Nodes"
+      "group": "Nodes",
+      "measure": "status",
+      "headline": true
     },
     {
       "id": "node-cpu",
@@ -83,7 +85,9 @@
       "shape": "stat",
       "defaultRefreshSec": 15,
       "minRefreshSec": 5,
-      "group": "Nodes"
+      "group": "Nodes",
+      "measure": "cpu",
+      "headline": true
     },
     {
       "id": "node-memory",
@@ -110,7 +114,9 @@
       "shape": "stat",
       "defaultRefreshSec": 15,
       "minRefreshSec": 5,
-      "group": "Nodes"
+      "group": "Nodes",
+      "measure": "memory",
+      "headline": true
     },
     {
       "id": "guests",
@@ -119,7 +125,8 @@
       "shape": "table",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "VMs and containers"
+      "group": "VMs and containers",
+      "measure": "count"
     },
     {
       "id": "guest",
@@ -147,7 +154,8 @@
       "shape": "table",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "VMs and containers"
+      "group": "VMs and containers",
+      "measure": "status"
     },
     {
       "id": "storage",
@@ -156,7 +164,8 @@
       "shape": "table",
       "defaultRefreshSec": 60,
       "minRefreshSec": 30,
-      "group": "Storage"
+      "group": "Storage",
+      "measure": "disk"
     }
   ],
   "detect": {
@@ -164,5 +173,28 @@
       "path": "/",
       "match": "Proxmox Virtual Environment|pve-manager"
     }
+  },
+  "service": {
+    "kind": "containers",
+    "headline": [
+      {
+        "label": "Nodes up",
+        "endpointId": "nodes",
+        "value": "items | filter(\"state\", \"up\") | count",
+        "format": "number"
+      },
+      {
+        "label": "Running",
+        "endpointId": "guests",
+        "value": "rows | filter(\"state\", \"up\") | count",
+        "format": "number"
+      },
+      {
+        "label": "Guests",
+        "endpointId": "guests",
+        "value": "rows | count",
+        "format": "number"
+      }
+    ]
   }
 }

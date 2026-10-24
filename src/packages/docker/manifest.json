@@ -56,7 +56,8 @@
       "shape": "table",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "Containers"
+      "group": "Containers",
+      "measure": "status"
     },
     {
       "id": "containers",
@@ -65,7 +66,8 @@
       "shape": "table",
       "defaultRefreshSec": 15,
       "minRefreshSec": 5,
-      "group": "Containers"
+      "group": "Containers",
+      "measure": "count"
     },
     {
       "id": "running",
@@ -74,7 +76,9 @@
       "shape": "stat",
       "defaultRefreshSec": 15,
       "minRefreshSec": 5,
-      "group": "Containers"
+      "group": "Containers",
+      "measure": "count",
+      "headline": true
     },
     {
       "id": "unhealthy",
@@ -83,7 +87,9 @@
       "shape": "stat",
       "defaultRefreshSec": 30,
       "minRefreshSec": 10,
-      "group": "Containers"
+      "group": "Containers",
+      "measure": "status",
+      "headline": true
     }
   ],
   "detect": {
@@ -91,5 +97,28 @@
       "path": "/version",
       "match": "\"ApiVersion\""
     }
+  },
+  "service": {
+    "kind": "containers",
+    "headline": [
+      {
+        "label": "Running",
+        "endpointId": "containers",
+        "value": "rows | filter(\"state\", \"running\") | count",
+        "format": "number"
+      },
+      {
+        "label": "Stopped",
+        "endpointId": "containers",
+        "value": "rows | filter(\"state\", \"exited\") | count",
+        "format": "number"
+      },
+      {
+        "label": "Total",
+        "endpointId": "containers",
+        "value": "rows | count",
+        "format": "number"
+      }
+    ]
   }
 }

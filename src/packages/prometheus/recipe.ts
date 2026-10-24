@@ -272,6 +272,53 @@ export async function runRecipe(r: Recipe, ctx: AdapterContext, params: Record<s
   }
 }
 
+// ---- A10.3: history of an instant read ----
+
+/** The hours a history read offers, and its default. */
+export const HISTORY_HOURS = [1, 6, 24, 168] as const;
+export const HISTORY_PREFIX = "h:";
+
+/** The `hours` param of a history read: one of 1, 6, 24 or 168 (default 6). */
+export function historyHours(v: unknown): number {
+  if (v === undefined || v === null || v === "") return 6;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!(HISTORY_HOURS as readonly number[]).includes(n)) fail("config", `"${String(v).slice(0, 20)}" is not a span Atrium charts.`, "Pick 1, 6, 24 or 168 hours.");
+  return n;
+}
+
+/** The history read's params schema: the value read's params plus `hours`. */
+export function historyParams(params: Record<string, unknown> | undefined): Record<string, unknown> {
+  const base = (params ?? { type: "object", properties: {} }) as { type?: string; properties?: Record<string, unknown>; required?: string[] };
+  return { ...base, type: "object", properties: { ...(base.properties ?? {}), hours: { type: "number", title: "Hours", enum: [...HISTORY_HOURS], default: 6, "x-atrium-labels": { "1": "Last hour", "6": "Last 6 hours", "24": "Last day", "168": "Last week" } } } };
+}
+
+/** Whether a built-in read answers one value per sample, so its query can run as a range query. */
+export function hasHistory(r: Recipe): boolean {
+  return r.kind === "stat" || r.kind === "status";
+}
+
+/** The history endpoint of an instant built-in read: h:<id>, the same query over time. */
+export function historyEndpointOf(r: Recipe): EndpointDef {
+  const e = endpointOf(r);
+  return { id: `${HISTORY_PREFIX}${r.id}`, label: `${r.label} over time`, description: `${r.label}, over the last hours.`, shape: "series", defaultRefreshSec: 60, minRefreshSec: 30, ...(e.group ? { group: e.group } : {}), advanced: true, params: historyParams(r.params) };
+}
+
+/** Runs a built-in read's query as a range query: one line per sample (per machine for "every"). */
+export async function runHistory(r: Recipe, ctx: AdapterContext, params: Record<string, unknown>): Promise<{ data: ShapedData }> {
+  if (r.kind !== "stat" && r.kind !== "status") fail("config", "This read has no history.");
+  const hours = historyHours(params.hours);
+  const measure = measureOf(r, params);
+  const range = rangeFor(hours, ctx.now().getTime());
+  const template = r.kind === "stat" ? (r.every?.name ?? "{machine}") : r.name;
+  const [{ lines, total }, list] = await Promise.all([matrix(ctx, fillQuery(r, byCase(r, r.query, params)!, params), range), usesMachine(template) ? machines(ctx).catch(() => []) : Promise.resolve([])]);
+  const names = nameMap(list);
+  const fmt = r.kind === "stat" ? formatOf(byCase(r, r.format as AnyFormat, params), measure) : undefined;
+  const label = r.kind === "stat" && r.statLabel ? text(r.statLabel, undefined, { names, ...(measure ? { measure } : {}) }) : r.label;
+  const series = lines.map((l) => ({ name: seriesKey(l.metric), display: text(template, { metric: l.metric, value: null }, { names, ...(measure ? { measure } : {}) }) || label, points: l.points }));
+  series.sort((a, b) => a.display.localeCompare(b.display, "en", { sensitivity: "base" }));
+  return { data: { kind: "series", series, total, ...(fmt ? { format: fmt } : {}) } };
+}
+
 /** Parses recipes.json; a bad record is a build-time bug, so this throws. */
 export function loadRecipes(raw: unknown): Recipe[] {
   const list = z.array(recipeSchema).parse(raw);

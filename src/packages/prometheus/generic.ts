@@ -6,7 +6,7 @@ import type { AdapterContext, RecipeRead, ShapedData } from "@/core/contracts";
 import { fail, num } from "../lib";
 import { machineNames, matrix, vector } from "./api";
 import { friendlyName, labelName, lit, metricName, rangeFor, round, seriesDisplays, seriesKey } from "./promql";
-import { runRecipe, type Recipe as PromRecord } from "./recipe";
+import { hasHistory, historyHours, runHistory, runRecipe, type Recipe as PromRecord } from "./recipe";
 
 /** The answer when a query has no samples; the live check counts it as empty, not failed. */
 export const NO_VALUE = "Prometheus has no value for this right now.";
@@ -100,4 +100,26 @@ export async function runPromRead(ctx: AdapterContext, read: RecipeRead, params:
     value: round(s.value, 4),
   }));
   return { data: { kind: "table", columns, rows, total: rows.length } };
+}
+
+/** A10.3: whether a recipe read is an instant PromQL read, so it gets an h: history read. */
+export function promHasHistory(read: Pick<RecipeRead, "request" | "shape">, record?: PromRecord | null): boolean {
+  if (read.request.kind !== "promql" || read.shape === "series") return false;
+  if (record) return hasHistory(record);
+  return true;
+}
+
+/** A10.3: a recipe read's PromQL as a range query over the last `hours` (1, 6, 24 or 168). */
+export async function runPromHistory(ctx: AdapterContext, read: RecipeRead, params: Record<string, unknown>, record?: PromRecord | null): Promise<{ data: ShapedData }> {
+  if (record) return runHistory(record, ctx, params);
+  const req = read.request;
+  if (req.kind !== "promql") fail("config", "This read has no history.");
+  const expr = fillExpr(req.expr, params, read.params);
+  const r = rangeFor(historyHours(params.hours), ctx.now().getTime());
+  const { lines, total } = await matrix(ctx, expr, { start: r.start, end: r.end, step: r.step });
+  const names = lines.some((l) => l.metric.instance) ? await machineNames(ctx) : new Map<string, string>();
+  const fallback = seriesDisplays(lines.map((l) => l.metric), names);
+  const series = lines.map((l, i) => ({ name: seriesKey(l.metric), display: (usableLegend(read.seriesName) ? legendText(read.seriesName!, l.metric) : "") || fallback[i] || read.label, points: l.points }));
+  const fmt = read.format ?? read.columnFormats?.value;
+  return { data: { kind: "series", series, total, ...(fmt ? { format: fmt } : {}) } };
 }

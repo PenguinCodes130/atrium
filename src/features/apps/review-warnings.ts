@@ -40,6 +40,8 @@ export function reviewWarnings(doc: AppDocument, facts: (name: string) => Source
   const failedNames = [...failed.keys()];
   // Sources nothing uses.
   for (const s of doc.dataSources) {
+    // A10.1: a managed source nothing uses is removed with the change that left it unused, never warned about.
+    if (s.managed) continue;
     let used = false;
     for (const p of doc.pages) for (const l of walk(p)) if (!used && readsSource(l.node, s.name)) used = true;
     if (!used) out.push(warn("source.unused", `${s.label?.trim() || s.name} is not shown by any widget.`, { field: `${UNUSED_FIELD}${s.name}` }, "Remove it, or show it on a widget."));

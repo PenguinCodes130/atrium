@@ -15,10 +15,10 @@ import { withScheme } from "./address-input";
 import { secretKeysFor } from "./config-ui";
 import { OFFICIAL_PACKAGES } from "./official";
 import { buildRegistry, type LoadedPackage, type Registry } from "./registry";
-import { offBuiltinReads, recipeEndpoints, resolveRead, type RecipeEndpoint } from "@/features/recipes/store";
+import { offBuiltinReads, parseHistoryId, recipeEndpoints, resolveRead, type RecipeEndpoint } from "@/features/recipes/store";
 import { parseRecipeEndpointId } from "@/features/recipes/schema";
 import { runRecipeRead } from "@/features/recipes/run";
-import { dbProblemSink, getIntegrationRow, listCustomEndpoints, listDeclarativeRows, type IntegrationRow, type SecretFieldMeta } from "./repo";
+import { dbProblemSink, ensureSystemIntegration, getIntegrationRow, listCustomEndpoints, listDeclarativeRows, type IntegrationRow, type SecretFieldMeta } from "./repo";
 
 const g = globalThis as unknown as { __atriumRegistry?: Registry };
 
@@ -27,6 +27,8 @@ export function getRegistry(): Registry {
     g.__atriumRegistry = buildRegistry(OFFICIAL_PACKAGES, listDeclarativeRows(), dbProblemSink, (p) =>
       sendSystemAlert({ severity: "warning", title: `Package "${p.packageId}" could not be loaded`, body: `${p.source} package skipped: ${p.reason}`, url: "/integrations", dedupeKey: `package-problem:${p.packageId}:${p.reason}` }),
     );
+    // A10.6: the built-in system integration exists from the first registry load on.
+    try { ensureSystemIntegration(); } catch (err) { logger("integrations").warn("could not create the built-in Atrium integration", { error: err instanceof Error ? err.message : String(err) }); }
   }
   return g.__atriumRegistry;
 }
@@ -243,9 +245,11 @@ export async function readEndpoint(integrationId: string, endpointId: string, pa
   const pkg = getPackage(row.packageId);
   if (!pkg) return fail({ code: "config", message: `The package "${row.packageId}" is not installed.`, hint: "Import the package again to bring this integration back." });
   const manifest = effectiveManifest(pkg, row.secretFields);
-  const rid = parseRecipeEndpointId(endpointId);
+  // A10.3: h:r:<recipe>:<read> is a recipe read's history; h:<id> of a built-in read is a package read.
+  const historyOf = parseHistoryId(endpointId);
+  const rid = parseRecipeEndpointId(historyOf ?? endpointId);
   const recipeRead = rid ? resolveRead(row, rid.recipeId, rid.readId, opts) : undefined;
-  if (rid ? !recipeRead : !endpointsOf(row).some((e) => e.id === endpointId)) return fail({ code: "config", message: `This integration has no endpoint "${endpointId}".` });
+  if (rid ? !recipeRead || (historyOf && !endpointsOf(row, opts).some((e) => e.id === endpointId)) : !endpointsOf(row).some((e) => e.id === endpointId)) return fail({ code: "config", message: `This integration has no endpoint "${endpointId}".` });
   const cfg = validateConfig(manifest, row.config);
   if (!cfg.ok) return fail(cfg.error);
   if (lockedFor(row.id, manifest)) return fail(LOCKED);
@@ -255,7 +259,7 @@ export async function readEndpoint(integrationId: string, endpointId: string, pa
     if (recipeRead) {
       const p = params && typeof params === "object" && !Array.isArray(params) ? (params as Record<string, unknown>) : {};
       const auth = isUserShaped(pkg) ? manifest.secrets[0]?.key : undefined;
-      return await runRecipeRead(ctx, recipeRead, p, { packageId: pkg.manifest.id, ...(auth ? { auth } : {}) });
+      return await runRecipeRead(ctx, recipeRead, p, { packageId: pkg.manifest.id, ...(auth ? { auth } : {}), ...(historyOf ? { history: true } : {}) });
     }
     return await pkg.adapterFor(listCustomEndpoints(row.id)).read(ctx, endpointId, params ?? {});
   } catch (err) {

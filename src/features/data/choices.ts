@@ -19,7 +19,7 @@ import { getPrincipal } from "@/features/auth";
 import { choicesOut } from "@/features/integrations/api";
 import { choicesFrom, choicesSpecs } from "@/features/integrations/choices";
 import { canBindReads } from "@/features/integrations/commands";
-import { getIntegrationRow } from "@/features/integrations/repo";
+import { getIntegrationRow, listIntegrationRows, SYSTEM_INTEGRATION_ID } from "@/features/integrations/repo";
 import { endpointsOf, readEndpoint } from "@/features/integrations/runtime";
 import { canEdit } from "@/features/integrations/service";
 import { cacheKey, type SourceRef } from "./keys";
@@ -45,8 +45,11 @@ export function mayReadChoices(p: Principal | null, row: Parameters<typeof canBi
 
 const inflight = new Map<string, Promise<ReadResult>>();
 
-/** The choice endpoint's rows: cached when younger than 30 s, else read live within 3 s, else the last good value. */
-async function rowsFor(src: SourceRef): Promise<{ data?: ReadResult; stale: boolean }> {
+/**
+ * The choice endpoint's rows: cached when younger than 30 s, else read live within 3 s (or `waitMs`),
+ * else the last good value. `late` is true when the live read did not answer in time.
+ */
+export async function rowsFor(src: SourceRef, waitMs = CHOICES_TIMEOUT_MS + 250): Promise<{ data?: ReadResult; stale: boolean; late?: boolean }> {
   const { cache } = dataRuntime();
   const key = cacheKey(src);
   const entry = cache.get(key);
@@ -59,11 +62,11 @@ async function rowsFor(src: SourceRef): Promise<{ data?: ReadResult; stale: bool
       .finally(() => inflight.delete(key));
     inflight.set(key, p);
   }
-  const timeout = new Promise<null>((r) => { const t = setTimeout(() => r(null), CHOICES_TIMEOUT_MS + 250); t.unref?.(); });
+  const timeout = new Promise<null>((r) => { const t = setTimeout(() => r(null), Math.max(0, waitMs)); t.unref?.(); });
   const r = await Promise.race([p, timeout]);
   if (r?.ok) return { data: r, stale: false };
-  if (entry?.lastGood) return { data: entry.lastGood, stale: true };
-  return { ...(r ? { data: r } : {}), stale: false };
+  if (entry?.lastGood) return { data: entry.lastGood, stale: true, ...(r ? {} : { late: true }) };
+  return { ...(r ? { data: r } : { late: true }), stale: false };
 }
 
 export async function handleChoices(req: Request): Promise<Response> {
@@ -93,6 +96,13 @@ export async function handleChoices(req: Request): Promise<Response> {
       const v = current[from];
       if (typeof v !== "string" || !v.trim() || v === "*") throw new AtriumError(`Pick ${from} first.`, 400, "needs_param");
       params[target] = v.slice(0, 512);
+    }
+    // A10.6: the services offered for atrium/health are the ones this caller may bind, not every shared one.
+    if (row!.id === SYSTEM_INTEGRATION_ID && spec.endpointId === "integrations") {
+      const all = listIntegrationRows().filter((r) => r.id !== SYSTEM_INTEGRATION_ID && r.status === "active" && canBindReads(p!, r)).sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+      const data = { kind: "table" as const, columns: [], rows: all.map((r) => ({ id: r.id, name: r.name, detail: r.packageId })) };
+      const { choices, total } = choicesFrom(data, spec, q.q);
+      return Response.json(choicesOut.parse({ choices, every: spec.every, total }), { headers: { "cache-control": "no-store" } });
     }
     const src: SourceRef = { integrationId: row!.id, endpointId: spec.endpointId, ...(Object.keys(params).length ? { params } : {}) };
     const { data, stale } = await rowsFor(src);

@@ -7,16 +7,39 @@
   "author": "Atrium",
   "description": "Any JSON API: paste an endpoint or a curl command, pick the fields, use them as a component in any app.",
   "icon": "icon.svg",
-  "permissions": [{ "kind": "network", "hosts": "configured" }],
+  "permissions": [
+    {
+      "kind": "network",
+      "hosts": "configured"
+    }
+  ],
   "config": {
     "type": "object",
-    "required": ["baseUrl"],
+    "required": [
+      "baseUrl"
+    ],
     "properties": {
-      "baseUrl": { "type": "string", "title": "Base URL", "description": "The address of the API, for example http://10.0.0.9:8080.", "format": "uri" },
-      "verifyTls": { "type": "boolean", "title": "Verify TLS", "default": true },
-      "specTitle": { "type": "string", "title": "API spec", "description": "The title of the API spec this integration was made from (set by spec import). Shared recipes for that spec apply here." }
+      "baseUrl": {
+        "type": "string",
+        "title": "Base URL",
+        "description": "The address of the API, for example http://10.0.0.9:8080.",
+        "format": "uri"
+      },
+      "verifyTls": {
+        "type": "boolean",
+        "title": "Verify TLS",
+        "default": true
+      },
+      "specTitle": {
+        "type": "string",
+        "title": "API spec",
+        "description": "The title of the API spec this integration was made from (set by spec import). Shared recipes for that spec apply here."
+      }
     }
   },
   "secrets": [],
-  "endpoints": []
+  "endpoints": [],
+  "service": {
+    "kind": "other"
+  }
 }

@@ -33,7 +33,10 @@ export function IntegrationCard({ i }: { i: IntegrationView }) {
   );
 }
 
-export function IntegrationsHome({ integrations, packages, declarative, problems, canEdit }: { integrations: IntegrationView[]; packages: PackageCard[]; declarative: PackageCard[]; problems: PackageProblem[]; canEdit: boolean }) {
+export function IntegrationsHome({ integrations: all, packages, declarative, problems, canEdit }: { integrations: IntegrationView[]; packages: PackageCard[]; declarative: PackageCard[]; problems: PackageProblem[]; canEdit: boolean }) {
+  // A10.6: the built-in Atrium integration is not one of "your" services; it is linked below the list.
+  const integrations = all.filter((i) => !i.system);
+  const system = all.find((i) => i.system);
   usePageTitle("Integrations");
   const router = useRouter();
   const file = useRef<HTMLInputElement>(null);
@@ -74,6 +77,11 @@ export function IntegrationsHome({ integrations, packages, declarative, problems
         <section aria-label="Your integrations" className="flex flex-col gap-4">
           <ul className="grid grid-cols-1 gap-6 md:grid-cols-2" data-integrations-list>{integrations.map((i) => <IntegrationCard key={i.id} i={i} />)}</ul>
         </section>
+      )}
+      {system && (
+        <p className="type-body text-fg-2" data-system-integration>
+          Built in: <Link href={`/integrations/${system.id}`} className="text-accent-ink underline-offset-2 hover:underline">{system.name}</Link> checks whether any address answers and reports this server&apos;s own CPU, memory, disk and network.
+        </p>
       )}
 
       <section aria-labelledby="packages" className="flex flex-col gap-3">

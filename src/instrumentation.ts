@@ -10,5 +10,8 @@ export async function register() {
     // Wave 2.8 (A9.2): the daily live check of recipe reads starts with the server, not on first use.
     const { ensureDailyChecks } = await import("@/features/recipes/daily");
     ensureDailyChecks();
+    // Wave 2.9 (A10.6): the built-in `atrium` integration exists before the first page loads.
+    const { getRegistry } = await import("@/features/integrations/runtime");
+    getRegistry();
   }
 }

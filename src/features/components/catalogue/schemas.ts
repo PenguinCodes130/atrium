@@ -26,7 +26,51 @@ const paint = z.string().max(200);
 export const ICON_NAMES = [
   "home", "server", "cpu", "memory", "disk", "network", "wifi", "light", "power", "thermometer", "droplet", "sun", "moon",
   "lock", "unlock", "bell", "play", "pause", "plug", "chart", "clock", "check", "warning", "info", "star", "heart", "door", "camera", "film", "music",
+  // Wave 2.9 (A10.7): service icons, and the official packages' own glyphs by package id.
+  "shield", "cloud", "database", "globe", "download", "upload", "search", "box", "terminal", "mail", "calendar", "book", "tv", "photo", "code", "folder",
+  "link", "gauge", "activity", "router", "printer", "gamepad", "users", "bookmark", "rss", "key", "settings", "note", "phone", "speaker", "bolt", "battery",
+  "fan", "cart", "git", "robot", "list", "grid", "container",
+  "prometheus", "npm", "pfsense", "proxmox", "docker", "uptime-kuma", "home-assistant", "custom-api", "atrium",
 ] as const;
+export type IconName = (typeof ICON_NAMES)[number];
+
+/** A10.7: a built-in icon name, a package id written "pkg:<id>", or an uploaded picture (/uploads/...). */
+export const UPLOAD_PATH = /^\/uploads\/[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
+export const iconRef = z.string().max(2000).regex(/^(pkg:[a-z0-9][a-z0-9-]{0,62}|[a-z][a-z0-9-]{0,40}|\/uploads\/[A-Za-z0-9_][A-Za-z0-9._/-]*)$/, "a built-in icon name, pkg:<package id>, or an /uploads/ path");
+const valueFormat = z.enum(["percent", "bytes", "bytesPerSec", "seconds", "celsius", "number"]);
+/** A value that may be a literal or a binding (the stats and items of A10.7 hold their bindings inside). */
+const valueOrBinding = (desc: string) => z.union([z.number(), z.string().max(400), z.boolean(), z.null(), bindingSchema]).optional().describe(desc);
+/** A10.2: "series1" to "series8" (the theme's series colours) or a hex colour. */
+export const SERIES_COLORS = ["series1", "series2", "series3", "series4", "series5", "series6", "series7", "series8"] as const;
+export const lineColor = z.union([z.enum(SERIES_COLORS), z.string().regex(/^#[0-9a-fA-F]{6}$/, "a hex colour like #2f6fb0")]);
+export const MAX_CHART_LINES = 12;
+export const chartLineSchema = z.strictObject({
+  data: bindingSchema.describe("The line's data: a series read, or the history read of a value, for example {{ d_abcdefgh }}. A read with several series (every machine) draws one line per series."),
+  label: z.string().max(80).optional().describe("The line's name in the legend. With several series it is written before each one's own name."),
+  color: lineColor.optional().describe("series1 to series8 (the theme's series colours) or a hex colour like #2f6fb0. Empty takes the next theme colour."),
+  hidden: z.boolean().optional().describe("Keep the line but do not draw it."),
+});
+export const tileStatSchema = z.strictObject({
+  label: z.string().max(40).describe("The small word under the number, like Running or CPU."),
+  value: valueOrBinding("The number or text, usually a binding like {{ d_abcdefgh.value }} or {{ d_abcdefgh.rows | filter(\"state\", \"running\") | count }}."),
+  format: valueFormat.optional().describe("How a number is written: percent, bytes, bytesPerSec, seconds, celsius or number. Empty uses the data's own format."),
+});
+export const MAX_TILE_STATS = 4;
+export const barItemSchema = z.strictObject({
+  icon: iconRef.describe("A built-in icon name (cpu, memory, disk, thermometer, clock, network, upload, download), pkg:<package id>, or an /uploads/ picture."),
+  label: z.string().max(40).describe("The small word after the value, like CPU or Free."),
+  value: valueOrBinding("The value shown, usually a binding like {{ d_abcdefgh }} or {{ d_abcdefgh.value }}."),
+  percent: valueOrBinding("Optional, 0 to 100: draws the small bar under the value, usually the same read as the value."),
+  format: valueFormat.optional().describe("How a number is written. Empty uses the data's own format."),
+});
+export const MAX_BAR_ITEMS = 8;
+export const bookmarkSchema = z.strictObject({
+  name: z.string().max(80).describe("The bookmark's name."),
+  href: z.string().max(2000).describe("An http or https address, opened in a new tab."),
+  icon: iconRef.optional().describe("A built-in icon name, pkg:<package id>, or an /uploads/ picture. Empty shows two letters from the name."),
+});
+export const MAX_BOOKMARKS = 50;
+export const DEFAULT_SEARCH_URL = "https://duckduckgo.com/?q={q}";
 
 const mediaLook = {
   shape: lit(z.enum(["original", "16:9", "4:3", "1:1", "3:4", "9:16", "fill"]), "The box's shape: the file's own (original), a fixed ratio, or fill the box as sized."),
@@ -100,7 +144,8 @@ export const propsSchemas = {
     showUpdated,
   }),
   chart: z.strictObject({
-    data: b(z.unknown(), "A series source, for example {{ load }}. Every series it holds is drawn."),
+    data: b(z.unknown(), "A series source, for example {{ load }}. Every series it holds is drawn. Ignored when lines has entries."),
+    lines: lit(z.array(chartLineSchema).max(MAX_CHART_LINES), "At most 12 lines, each its own read with a name, a colour and a hidden flag (A10.2). Lines sharing a format and unit share an axis; a second unit gets the right axis; a third is refused. At most 20 series are drawn, the highest latest value first."),
     kind: lit(z.enum(["line", "area", "bars"]), "Draw the series as lines, filled areas or bars."),
     height: lit(z.number().int().min(80).max(800), "Chart height in px."),
     legend: lit(z.boolean(), "Show the legend naming each series. On by default."),
@@ -144,6 +189,33 @@ export const propsSchemas = {
     warn: b(z.number(), "Show the warning colour at or above this value."),
     bad: b(z.number(), "Show the bad colour at or above this value."),
     showUpdated,
+  }),
+  // ---- Wave 2.9 (A10.7) ----
+  "service-tile": z.strictObject({
+    icon: lit(iconRef, "The service's icon: a built-in icon name (server, docker, proxmox, film), pkg:<package id>, or an uploaded picture (/uploads/...)."),
+    name: b(z.string().max(80), "The service's name, shown in bold."),
+    description: b(z.string().max(160), "One short line under the name, like Media server."),
+    href: b(z.string().max(2000), "The address a click opens: http or https only. Empty makes the tile not clickable."),
+    newTab: lit(z.boolean(), "Open the address in a new tab. On by default."),
+    status: b(z.unknown(), "Status data for the badge, for example {{ d_abcdefgh }} from atrium/health or atrium/reach: the first item's state and detail draw Running, Healthy, Stopped, Down or \"12 ms\"."),
+    stats: lit(z.array(tileStatSchema).max(MAX_TILE_STATS), "Up to 4 small labelled numbers under the name, each a literal or a binding, with an optional format."),
+    integrationId: lit(z.string().max(64), "The integration this tile is for (a builder reference only, never shown)."),
+  }),
+  group: z.strictObject({
+    title: b(z.string().max(80), "The group's heading, like Media or Monitoring. Empty shows no heading."),
+    columns: lit(z.number().int().min(1).max(6), "How many equal columns the children flow into, in order (1 to 6, default 4). Always one column on phones."),
+    collapsible: lit(z.boolean(), "Let viewers fold the group away with a button by its heading."),
+  }),
+  "resource-bar": z.strictObject({
+    items: lit(z.array(barItemSchema).max(MAX_BAR_ITEMS), "Up to 8 items, each an icon, a value, a label and an optional small bar from percent."),
+    clock: lit(z.boolean(), "Show the time at the right of the strip."),
+    clockFormat: lit(z.enum(["time", "time-seconds", "date-time", "time-12h", "date-time-12h"]), "How the clock reads: time, time with seconds, date and time, or the same on a 12-hour clock."),
+    search: lit(z.boolean(), "Show a search box that opens the search address in a new tab."),
+    searchUrl: lit(z.string().max(500).regex(/^https:\/\/[^\s]*\{q\}[^\s]*$/, "an https address with {q} where the words go"), "The search address, https only, with {q} where the typed words go. Default DuckDuckGo."),
+  }),
+  bookmarks: z.strictObject({
+    items: lit(z.array(bookmarkSchema).max(MAX_BOOKMARKS), "Up to 50 bookmarks, each a name, an http or https address and an optional icon."),
+    columns: lit(z.number().int().min(1).max(6), "How many columns of rows (1 to 6, default 1). One column on phones."),
   }),
   // ---- content ----
   heading: z.strictObject({

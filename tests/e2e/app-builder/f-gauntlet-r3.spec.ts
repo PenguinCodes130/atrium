@@ -808,6 +808,7 @@ test("item 16: a loose drop below the content lands on the next row at the left;
   await page.screenshot({ path: ev("screens", "item16-builder-after-delete.png") });
   // A loose drop far below the content.
   await page.locator('[data-left-tab="insert"]').click();
+  await page.locator('[data-insert-item="stat"]').first().scrollIntoViewIfNeeded();
   const item = (await page.locator('[data-insert-item="stat"]').first().boundingBox())!;
   const grid = (await page.locator(`[data-canvas-root] [data-node="${root}"]`).boundingBox())!;
   const target = { x: grid.x + grid.width * 0.7, y: grid.y + 420 };

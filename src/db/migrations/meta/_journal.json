@@ -57,6 +57,13 @@
       "when": 1792528032024,
       "tag": "0007_wave28-recipes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792807603648,
+      "tag": "0008_wave29-integration-service",
+      "breakpoints": true
     }
   ]
 }

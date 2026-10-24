@@ -41,6 +41,12 @@ export function InsertGlyph({ type }: { type: string }) {
     case "toggle": body = <><rect x="5" y="6" width="22" height="12" rx="6" {...s} /><circle cx="21" cy="12" r="4" {...a} /></>; break;
     case "slider": body = <><path d="M3 12h26" {...s} /><path d="M3 12h15" stroke="var(--accent-ink)" strokeWidth={2} /><circle cx="18" cy="12" r="3.5" {...a} /></>; break;
     case "select": body = <><rect x="2" y="6" width="28" height="12" {...s} /><path d="M22 10l3 3 3-3" {...s} /></>; break;
+    // Wave 2.9 (A10.7) and the start page.
+    case "service-tile": body = <><rect x="2" y="3" width="28" height="18" {...s} /><rect x="5" y="6" width="6" height="6" {...a} /><path d="M14 8h10M5 17h5M13 17h5M21 17h5" {...s} /></>; break;
+    case "group": body = <><path d="M2 5h12" {...s} strokeWidth={2} /><rect x="2" y="8" width="13" height="6" {...s} /><rect x="17" y="8" width="13" height="6" {...s} /><rect x="2" y="16" width="13" height="6" {...s} /></>; break;
+    case "resource-bar": body = <><rect x="2" y="8" width="28" height="8" {...s} /><path d="M5 13h5M13 13h5M21 13h5" {...s} /><rect x="5" y="10" width="3" height="1.5" {...a} /></>; break;
+    case "bookmarks": body = <><circle cx="5" cy="6" r="2" {...a} /><path d="M10 6h18M10 12h18M10 18h18" {...s} /><circle cx="5" cy="12" r="2" {...s} /><circle cx="5" cy="18" r="2" {...s} /></>; break;
+    case "start-page": body = <><rect x="2" y="2" width="28" height="4" {...a} /><rect x="2" y="8" width="8" height="14" {...s} /><rect x="12" y="8" width="8" height="14" {...s} /><rect x="22" y="8" width="8" height="14" {...s} /></>; break;
     case "html": body = <path d="M10 6l-6 6 6 6M22 6l6 6-6 6M18 4l-4 16" {...s} />; break;
     default: body = type.startsWith("lib:") ? <><rect x="3" y="3" width="26" height="18" {...s} /><path d="M3 3l8 8M29 3l-8 8" {...s} /><rect x="12" y="9" width="8" height="6" {...a} /></> : <rect x="3" y="3" width="26" height="18" {...s} />;
   }

@@ -36,6 +36,8 @@ const def = (s: ZodType): Def => (s as unknown as { _zod: { def: Def } })._zod.d
 /** Props that hold data (the Data panel) rather than content. */
 const DATA_KEYS = new Set(["data", "items", "value", "state", "delta"]);
 const LONG_TEXT = new Set(["text", "description"]);
+/** Wave 2.9: where the list props of the new components sit (a tile's numbers are data; bookmarks are content). */
+const GROUP_OF: Record<string, FieldSpec["group"]> = { "service-tile.stats": "data", "service-tile.status": "data", "resource-bar.items": "data", "bookmarks.items": "content", "chart.lines": "data", "service-tile.description": "content" };
 
 function kindOf(s: ZodType): { field: FieldKind; bindable: boolean } {
   let d = def(s);
@@ -77,7 +79,7 @@ export function fieldsFor(type: BuiltInType): FieldSpec[] {
   const schema = propsSchemas[type] as unknown as { shape: Record<string, ZodType & { description?: string }> };
   return Object.entries(schema.shape).map(([key, s]) => {
     const { field, bindable } = kindOf(s);
-    const group: FieldSpec["group"] = key === "control" || (type === "html" && key === "controls") ? "control" : DATA_KEYS.has(key) || field.kind === "data" ? "data" : "content";
+    const group: FieldSpec["group"] = GROUP_OF[`${type}.${key}`] ?? (key === "control" || (type === "html" && key === "controls") ? "control" : DATA_KEYS.has(key) || field.kind === "data" ? "data" : "content");
     const f: FieldKind = field.kind === "text" && LONG_TEXT.has(key) ? { kind: "text", long: true } : field;
     const w = wordsFor(type, key);
     return { key, label: w?.label ?? labelOf(key), description: s.description ?? "", hint: w?.hint ?? s.description ?? "", simple: isSimple(type, key), ...(w?.options ? { optionWords: w.options } : {}), bindable, field: f, group };

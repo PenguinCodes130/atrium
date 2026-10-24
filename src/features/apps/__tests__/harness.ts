@@ -54,7 +54,7 @@ export async function seedIntegration(createdBy = owner, name = "Home Assistant"
 
 // ---- The local fake of components and settings (tests only) ----
 
-const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat"]);
+const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat", "group"]);
 const ROOT = /\{\{\s*([a-z][a-z0-9_]*)/g;
 
 function templatesOf(v: unknown, out: string[] = []): string[] {
@@ -84,7 +84,7 @@ export const fakeDeps = {
     for (const page of doc.pages)
       for (const n of nodesOf(page.root)) {
         if (n.type === "stat" && n.props.decimals !== undefined && typeof n.props.decimals !== "number") out.push({ severity: "error", code: "props.invalid", where: { pageId: page.id, nodeId: n.id, field: "decimals" }, message: "decimals must be a number" });
-        if (!["grid", "stack", "card", "tabs", "section", "repeat", "stat", "chart", "table", "list", "status", "gauge", "progress", "heading", "text", "image", "icon", "link", "divider", "spacer", "clock", "button", "toggle", "slider", "select", "html"].includes(n.type) && !n.type.startsWith("lib:")) out.push({ severity: "error", code: "type.unknown", where: { pageId: page.id, nodeId: n.id }, message: `Unknown component type ${n.type}` });
+        if (!["grid", "stack", "card", "tabs", "section", "repeat", "stat", "chart", "table", "list", "status", "gauge", "progress", "heading", "text", "image", "icon", "link", "divider", "spacer", "clock", "button", "toggle", "slider", "select", "html", "service-tile", "group", "resource-bar", "bookmarks"].includes(n.type) && !n.type.startsWith("lib:")) out.push({ severity: "error", code: "type.unknown", where: { pageId: page.id, nodeId: n.id }, message: `Unknown component type ${n.type}` });
       }
     return out;
   },

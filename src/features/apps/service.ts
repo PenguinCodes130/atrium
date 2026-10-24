@@ -17,6 +17,9 @@ import { allNodes, blankDocument, clone, slugProblem } from "./doc";
 import { DraftConflict, FieldError, Invalid } from "./errors";
 import { layoutAutoApply } from "./hooks";
 import { applyOpsToDoc, isLayoutOnly, summarize } from "./ops";
+import { normaliseOps, type ReadTiming } from "./managed";
+import { getIntegrationRow } from "@/features/integrations/repo";
+import { endpointsOf } from "@/features/integrations/runtime";
 import * as repo from "./repo";
 import { templateDocument, type TemplateId } from "./templates";
 
@@ -86,14 +89,20 @@ export function createApp(p: Principal, input: CreateInput, opts: { doc?: AppDoc
 export type ApplyInput = { appId: string; ops: DraftOp[]; by: Principal; expectRev?: number };
 
 /** Validates and applies one batch in a transaction, bumps rev and records a DraftChange (section 4.9). */
-export function applyDraftOps({ appId, ops, by, expectRev }: ApplyInput): { rev: number; changed: string[]; version?: number } {
+export function applyDraftOps({ appId, ops: asked, by, expectRev, summary: named }: ApplyInput & { summary?: string }): { rev: number; changed: string[]; version?: number; follow: DraftOp[] } {
   const app = appForEditor(by, appId);
   const draft = repo.getDraft(app.id);
   if (!draft) throw new NotFound("This app has no draft.");
   if (expectRev !== undefined && expectRev !== draft.rev) throw new DraftConflict(draft.rev);
-  const result = applyOpsToDoc(draft.doc, ops, opChecks(by));
-  if (!result.ok) throw new Invalid(result.problems);
-  const summary = summarize(draft.doc, ops) || "Changed the draft";
+  const first = applyOpsToDoc(draft.doc, asked, opChecks(by));
+  if (!first.ok) throw new Invalid(first.problems);
+  // A10.1: managed sources follow their components. The follow-up ops join this same change (so one undo
+  // reverts both); they are derived by Atrium, so they skip the per-person checks.
+  const follow = normaliseOps(first.doc, serverReadTiming());
+  const followed = follow.length ? applyOpsToDoc(first.doc, follow) : null;
+  const result = followed?.ok ? { ...followed, changed: [...new Set([...first.changed, ...followed.changed])] } : first;
+  const ops = followed?.ok ? [...asked, ...follow] : asked;
+  const summary = named ?? (summarize(draft.doc, asked) || "Changed the draft");
   const rev = draft.rev + 1;
   const at = new Date().toISOString();
   let version: number | undefined;
@@ -120,7 +129,26 @@ export function applyDraftOps({ appId, ops, by, expectRev }: ApplyInput): { rev:
   });
   auditDraftChange(by, app, rev, summary);
   if (version !== undefined) audit.write({ actor: by, event: "app.published", target: { type: "app", id: app.id, label: app.name }, result: "ok", detail: { version, source: "agent-layout" } });
-  return { rev, changed: result.changed, ...(version !== undefined ? { version } : {}) };
+  return { rev, changed: result.changed, ...(version !== undefined ? { version } : {}), follow: followed?.ok ? follow : [] };
+}
+
+/** A10.1: each read's default and minimum refresh, from its integration's endpoints (cached per batch). */
+export function serverReadTiming(): ReadTiming {
+  const memo = new Map<string, ReturnType<ReadTiming>>();
+  return (s) => {
+    const k = `${s.integrationId}\u0000${s.endpointId}`;
+    if (memo.has(k)) return memo.get(k)!;
+    let t: ReturnType<ReadTiming> = null;
+    try {
+      const row = getIntegrationRow(s.integrationId);
+      const ep = row ? endpointsOf(row).find((e) => e.id === s.endpointId) : undefined;
+      t = ep ? { defaultRefreshSec: ep.defaultRefreshSec, minRefreshSec: ep.minRefreshSec } : null;
+    } catch {
+      t = null;
+    }
+    memo.set(k, t);
+    return t;
+  };
 }
 
 /** The App row's name and icon mirror the document a person sees on the launcher. */

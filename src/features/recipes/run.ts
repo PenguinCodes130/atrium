@@ -4,7 +4,7 @@
 import "server-only";
 import type { AdapterContext, AdapterError, CustomEndpoint, ReadResult } from "@/core/contracts";
 import { createGenericAdapter } from "@/packages/declarative/runner";
-import { runPromRead } from "@/packages/prometheus/generic";
+import { runPromHistory, runPromRead } from "@/packages/prometheus/generic";
 import type { ResolvedRead } from "./store";
 
 const errorOf = (err: unknown): AdapterError => {
@@ -12,7 +12,7 @@ const errorOf = (err: unknown): AdapterError => {
   return e?.code ? e : { code: "bad_response", message: "The read failed in an unexpected way.", hint: "Check the address and try again." };
 };
 
-export async function runRecipeRead(ctx: AdapterContext, r: ResolvedRead, params: Record<string, unknown>, opts: { packageId: string; auth?: string }): Promise<ReadResult> {
+export async function runRecipeRead(ctx: AdapterContext, r: ResolvedRead, params: Record<string, unknown>, opts: { packageId: string; auth?: string; history?: boolean }): Promise<ReadResult> {
   const fetchedAt = ctx.now().toISOString();
   const req = r.read.request;
   try {
@@ -25,7 +25,7 @@ export async function runRecipeRead(ctx: AdapterContext, r: ResolvedRead, params
       return await createGenericAdapter([ep]).read(ctx, ep.id, params);
     }
     if (opts.packageId !== "prometheus") return { ok: false, error: { code: "config", message: "This read is a Prometheus query, and this integration is not Prometheus." }, fetchedAt };
-    const { data } = await runPromRead(ctx, r.read, params, r.record);
+    const { data } = opts.history ? await runPromHistory(ctx, r.read, params, r.record) : await runPromRead(ctx, r.read, params, r.record);
     return { ok: true, data, sourceTimestamp: fetchedAt, fetchedAt };
   } catch (err) {
     return { ok: false, error: errorOf(err), fetchedAt };

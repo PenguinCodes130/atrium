@@ -79,6 +79,8 @@ test("drag a stat from Insert into the grid: it lands in the cell under the poin
   await open(page);
   const before = await draft();
   const item = page.locator('[data-insert-item="stat"]').first();
+  // Wave 2.9 added Start page and Group above it in the Insert list: bring it into view first.
+  await item.scrollIntoViewIfNeeded();
   const ib = (await item.boundingBox())!;
   const root = before.doc.pages[0]!.root.id;
   const grid = page.locator(`[data-canvas-root] [data-node="${root}"]`);

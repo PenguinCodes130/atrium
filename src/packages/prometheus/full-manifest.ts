@@ -5,7 +5,8 @@
 import type { PackageManifest } from "@/core/contracts";
 import { promRecordOf, validateRecipe, type RecipeFile } from "@/features/recipes/schema";
 import base from "./manifest.json";
-import { endpointOf, type Recipe } from "./recipe";
+import { endpointOf, hasHistory, historyEndpointOf, HISTORY_PREFIX, type Recipe } from "./recipe";
+import type { EndpointDef, Measure } from "@/core/contracts";
 import nodeExporter from "./recipes/node-exporter.atrium-recipe.json";
 import cadvisor from "./recipes/cadvisor.atrium-recipe.json";
 import proxmox from "./recipes/proxmox.atrium-recipe.json";
@@ -34,5 +35,37 @@ for (const r of RECIPES) {
 const json = base as unknown as PackageManifest;
 for (const e of json.endpoints) if (ids.has(e.id)) throw new Error(`Prometheus endpoint ${e.id} is both a recipe and a special read`);
 
-export const prometheusManifest: PackageManifest = { ...json, endpoints: [...RECIPES.map(endpointOf), ...json.endpoints] };
+/** A10.4: what each built-in read measures, and the service's main reads (ranked first). */
+const MEASURE_OF: Record<string, Measure> = {
+  "machine-cpu": "cpu", "machine-memory": "memory", "machine-memory-bytes": "memory", "machine-disk": "disk", "machine-network": "network", "machine-load": "cpu",
+  "machine-uptime": "uptime", "machine-temperature": "temperature", "machine-updates": "count", "machine-up": "status", "machines-up": "status",
+  "container-cpu": "cpu", "container-memory": "memory", "containers-count": "count", "containers": "status",
+  "pve-guests": "status", "pve-guest": "status", "pve-nodes": "status", "pve-storage": "disk", "pve-not-backed-up": "status",
+};
+const HEADLINE = new Set(["machine-cpu", "machine-memory", "machine-disk", "machine-network", "machines-up"]);
+const SPECIAL: Record<string, Partial<EndpointDef>> = {
+  targets: { measure: "status" }, alerts: { measure: "status" }, "alerts-count": { measure: "status", headline: true },
+  "disk-health": { measure: "disk" }, "disks-smart": { measure: "disk" },
+  "explore-value": { history: { endpointId: "explore-history" } }, query: { history: { endpointId: "range" } },
+  metrics: { measure: "other" }, "metric-labels": { measure: "other" }, "metric-label-values": { measure: "other" },
+};
+
+/** A10.3: every instant built-in read points at its h:<id> history read (the same query over time). */
+// History reads go after every Wave 2.8 endpoint, so the familiar order is unchanged.
+const builtinEndpoints: EndpointDef[] = [];
+const historyEndpoints: EndpointDef[] = [];
+for (const r of RECIPES) {
+  const e: EndpointDef = { ...endpointOf(r), ...(MEASURE_OF[r.id] ? { measure: MEASURE_OF[r.id] } : {}), ...(HEADLINE.has(r.id) ? { headline: true } : {}) };
+  if (!hasHistory(r)) { builtinEndpoints.push(e); continue; }
+  const h = historyEndpointOf(r);
+  builtinEndpoints.push({ ...e, history: { endpointId: h.id } });
+  historyEndpoints.push({ ...h, ...(e.measure ? { measure: e.measure } : {}) });
+}
+
+export const HISTORY_READS: Map<string, Recipe> = new Map(RECIPES.filter(hasHistory).map((r) => [`${HISTORY_PREFIX}${r.id}`, r]));
+
+/** A10.5: monitoring, with machines up and down and firing alerts (the reads live in the built-in recipes). */
+const SERVICE: PackageManifest["service"] = {"kind": "monitoring", "headline": [{"label": "Machines up", "endpointId": "machines-up", "value": "items | filter(\"state\", \"up\") | count", "format": "number"}, {"label": "Down", "endpointId": "machines-up", "value": "items | filter(\"state\", \"down\") | count", "format": "number"}, {"label": "Alerts", "endpointId": "alerts-count", "value": "value", "format": "number"}]};
+
+export const prometheusManifest: PackageManifest = { ...json, service: SERVICE, endpoints: [...builtinEndpoints, ...json.endpoints.map((e) => ({ ...e, ...(SPECIAL[e.id] ?? {}) })), ...historyEndpoints] };
 export default prometheusManifest;

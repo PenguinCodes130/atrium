@@ -1,0 +1,98 @@
+{
+  "atriumApi": "1",
+  "kind": "code",
+  "id": "atrium/system",
+  "name": "Atrium",
+  "version": "1.0.0",
+  "author": "Atrium",
+  "description": "Built in: whether an address answers, the health of your other services, and this server's own CPU, memory, disk, uptime and network.",
+  "icon": "icon.svg",
+  "permissions": [],
+  "config": { "type": "object", "properties": {} },
+  "secrets": [],
+  "endpoints": [
+    {
+      "id": "reach",
+      "label": "Is it up",
+      "description": "Whether an address answers (below HTTP 500 within 5 seconds), and how fast. Addresses on your network work; this server itself and link-local addresses are refused.",
+      "params": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "title": "Address", "format": "uri", "description": "An http or https address, for example http://10.0.0.5:8096." }
+        }
+      },
+      "shape": "status",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Services",
+      "measure": "status"
+    },
+    {
+      "id": "health",
+      "label": "Service health",
+      "description": "The last health check of one of your connected services, and how fast it answered.",
+      "params": {
+        "type": "object",
+        "required": ["integrationId"],
+        "properties": {
+          "integrationId": {
+            "type": "string",
+            "title": "Service",
+            "x-atrium-choices": { "endpointId": "integrations", "value": "id", "label": "name", "detail": "detail" }
+          }
+        }
+      },
+      "shape": "status",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Services",
+      "measure": "status"
+    },
+    {
+      "id": "host",
+      "label": "This server",
+      "description": "The Atrium server's own CPU, memory, disk, uptime or network traffic.",
+      "params": {
+        "type": "object",
+        "required": ["measure"],
+        "properties": {
+          "measure": {
+            "type": "string",
+            "title": "Measure",
+            "enum": ["cpu", "memory", "disk", "uptime", "netIn", "netOut"],
+            "default": "cpu",
+            "x-atrium-choices": { "endpointId": "host-measures", "value": "value", "label": "label" }
+          }
+        }
+      },
+      "shape": "stat",
+      "defaultRefreshSec": 30,
+      "minRefreshSec": 10,
+      "group": "This server"
+    },
+    {
+      "id": "integrations",
+      "label": "Connected services",
+      "description": "The shared services connected to Atrium, by name.",
+      "shape": "table",
+      "defaultRefreshSec": 60,
+      "minRefreshSec": 30,
+      "group": "Services",
+      "advanced": true,
+      "measure": "count"
+    },
+    {
+      "id": "host-measures",
+      "label": "What this server reports",
+      "description": "The measures the host read can show.",
+      "shape": "table",
+      "defaultRefreshSec": 3600,
+      "minRefreshSec": 60,
+      "group": "This server",
+      "advanced": true,
+      "measure": "other"
+    }
+  ],
+  "service": { "kind": "other" }
+}

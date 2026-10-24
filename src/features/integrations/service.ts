@@ -9,9 +9,11 @@ import { removeSecrets, seal, secretStatus, vaultStatus } from "@/features/vault
 import { forgetIntegration } from "@/features/data/runtime";
 import { canonicalJson } from "@/features/data/keys";
 import { ERROR_HEADINGS, SECRETS_LOCKED_MESSAGE } from "./host/errors";
+import { FieldError } from "./field-error";
 import { pendingFields, pendingOrigin, sealPending, type PendingField } from "./host/pending";
 import { PIN_KEY, recordPin } from "./host/secrets";
-import { customCommandSchema, customEndpointSchema, endpointDefsFor, validateManifest, CUSTOM_MIN_REFRESH_SEC } from "./manifest";
+import { customCommandSchema, customEndpointSchema, endpointDefsFor, headlineStatSchema, validateManifest, CUSTOM_MIN_REFRESH_SEC, SERVICE_KINDS, SYSTEM_PACKAGE_ID } from "./manifest";
+import { cleanOpenUrl, baseAddressOf, saveServiceRow, serviceInfoOf, serviceTableReady, SERVICE_TABLE_MISSING } from "./service-info";
 import { audit } from "@/features/audit/write";
 import { appAccess } from "@/core/hooks";
 import { galleryOrder, type LoadedPackage } from "./registry";
@@ -68,7 +70,7 @@ function requireSessionUser(p: Principal): asserts p is Extract<Principal, { kin
 // ---- Views ----
 /** Amendment 2: a field filled from a saved credential. `credential` is present only for people who may see it. */
 export type FieldCredential = { id: string; name: string; kind: string; lockedOrigins: string[] };
-export type IntegrationView = Integration & { packageName: string; packageMissing: boolean; locked: boolean; untested: boolean; secretFields: (PendingField & { set: boolean; updatedAt?: string; required: boolean; viaCredential: boolean; credential?: FieldCredential })[] };
+export type IntegrationView = Integration & { packageName: string; packageMissing: boolean; locked: boolean; untested: boolean; system: boolean; serviceSaved: boolean; secretFields: (PendingField & { set: boolean; updatedAt?: string; required: boolean; viaCredential: boolean; credential?: FieldCredential })[] };
 
 function secretFieldsOf(row: repo.IntegrationRow, pkg: LoadedPackage | undefined): PackageManifest["secrets"] {
   if (!pkg) return [];
@@ -92,6 +94,7 @@ export function toView(row: repo.IntegrationRow, viewer?: Principal): Integratio
   });
   const locked = vaultStatus().state === "locked" && (status.some((s) => s.set) || refs.size > 0);
   const required = pkg ? requiredSecretKeys(effectiveManifest(pkg, row.secretFields), row.config) : new Set<string>();
+  const info = serviceInfoOf(row, pkg?.manifest);
   return {
     id: row.id,
     packageId: row.packageId,
@@ -100,6 +103,11 @@ export function toView(row: repo.IntegrationRow, viewer?: Principal): Integratio
     secrets: status,
     status: row.status,
     shared: row.shared,
+    kind: info.kind,
+    ...(info.openUrl ? { openUrl: info.openUrl } : {}),
+    ...(info.headline.length ? { headline: info.headline } : {}),
+    system: row.id === repo.SYSTEM_INTEGRATION_ID,
+    serviceSaved: serviceTableReady(),
     ...(row.lastHealth ? { lastHealth: row.lastHealth } : {}),
     createdBy: row.createdBy,
     createdById: row.createdById,
@@ -149,7 +157,7 @@ export function readableIntegration(p: Principal, id: string): repo.IntegrationR
 
 /** v3: what a package can change, as listed under "This integration can change". */
 export type CommandSummary = { id: string; label: string; risk: "low" | "medium"; ownerOnly: boolean; method?: string; path?: string };
-export type PackageCard = { id: string; name: string; description: string; icon: string; source: LoadedPackage["source"]; status?: "draft" | "active"; config: PackageManifest["config"]; secrets: PackageManifest["secrets"]; endpoints: PackageManifest["endpoints"]; commands: CommandSummary[]; pendingCommands: CommandSummary[] };
+export type PackageCard = { id: string; name: string; description: string; icon: string; source: LoadedPackage["source"]; status?: "draft" | "active"; config: PackageManifest["config"]; secrets: PackageManifest["secrets"]; endpoints: PackageManifest["endpoints"]; commands: CommandSummary[]; pendingCommands: CommandSummary[]; service?: PackageManifest["service"] };
 function commandSummaries(p: LoadedPackage): CommandSummary[] {
   if (p.source === "declarative") return (p.declarativeCommands ?? []).map((c) => ({ id: c.id, label: c.label, risk: c.risk, ownerOnly: false, method: c.method, path: c.path }));
   const permitted = new Set(p.manifest.permissions.flatMap((x) => (x.kind === "command" ? x.ids : [])));
@@ -163,7 +171,7 @@ function pendingSummaries(p: LoadedPackage): CommandSummary[] {
     .filter((c) => published.get(c.id) !== JSON.stringify(c))
     .map((c) => ({ id: c.id, label: c.label, risk: c.risk, ownerOnly: false, method: c.method, path: c.path }));
 }
-const card = (p: LoadedPackage): PackageCard => ({ id: p.manifest.id, name: p.manifest.name, description: p.manifest.description, icon: p.manifest.icon, source: p.source, ...(p.status ? { status: p.status } : {}), config: p.manifest.config, secrets: p.manifest.secrets, endpoints: p.manifest.endpoints, commands: commandSummaries(p), pendingCommands: pendingSummaries(p) });
+const card = (p: LoadedPackage): PackageCard => ({ id: p.manifest.id, name: p.manifest.name, description: p.manifest.description, icon: p.manifest.icon, source: p.source, ...(p.status ? { status: p.status } : {}), config: p.manifest.config, secrets: p.manifest.secrets, endpoints: p.manifest.endpoints, commands: commandSummaries(p), pendingCommands: pendingSummaries(p), ...(p.manifest.service ? { service: p.manifest.service } : {}) });
 
 export function gallery(): { packages: PackageCard[]; declarative: PackageCard[]; problems: PackageProblem[] } {
   const r = getRegistry();
@@ -284,6 +292,29 @@ function takePass(passId: string | undefined, fp: string): HealthResult | undefi
 }
 
 // ---- Create, update, delete ----
+/** A10.5: the service fields of the integration form (not config, not secret). "" clears a field. */
+const serviceFields = {
+  kind: z.enum(SERVICE_KINDS).optional(),
+  openUrl: z.string().max(2048).optional(),
+  headline: z.array(headlineStatSchema).max(4).nullable().optional(),
+};
+
+/** The service fields to save: an Open address must be an http or https address with no credentials. */
+function servicePatch(input: { kind?: z.infer<typeof serviceFields.kind>; openUrl?: string | undefined; headline?: z.infer<typeof headlineStatSchema>[] | null | undefined }) {
+  const out: Parameters<typeof saveServiceRow>[1] = {};
+  if (input.kind !== undefined) out.kind = input.kind;
+  if (input.openUrl !== undefined) {
+    if (!input.openUrl.trim()) out.openUrl = ""; // no link
+    else {
+      const u = cleanOpenUrl(input.openUrl);
+      if (!u) throw new FieldError("The Open address must be a full http:// or https:// address with no user name or password in it.", "openUrl");
+      out.openUrl = u;
+    }
+  }
+  if (input.headline !== undefined) out.headline = input.headline as never;
+  return out;
+}
+
 export const createInput = z.object({
   packageId: z.string().min(1).max(200),
   name: z.string().trim().min(1).max(120),
@@ -296,12 +327,15 @@ export const createInput = z.object({
   credentials: credentialPicks.optional(),
   /** The explicit "Also allow <credential> on <server>" confirm (Amendment 2). */
   confirmOrigins: z.boolean().optional(),
+  ...serviceFields,
 });
 
 export function createIntegration(p: Principal, input: z.infer<typeof createInput>, lock: LockOptions = {}): IntegrationView {
   requireEdit(p);
   const pkg = getPackage(input.packageId);
   if (!pkg) throw new NotFound("That package is not installed.");
+  if (pkg.manifest.id === SYSTEM_PACKAGE_ID) throw new AtriumError("The built-in Atrium integration is already there; there is only one.", 400, "config");
+  const service = servicePatch(input);
   const pending = input.pendingId ? (pendingFields(input.pendingId, p.userId) ?? []) : [];
   const secretFields: repo.SecretFieldMeta[] = pkg.manifest.id === "custom-api" ? pending.map((f) => ({ key: f.key, label: f.label, hint: f.hint, auth: f.auth })) : [];
   const manifest = effectiveManifest(pkg, secretFields);
@@ -343,6 +377,8 @@ export function createIntegration(p: Principal, input: z.infer<typeof createInpu
       for (const [key, id] of Object.entries(picks)) credRepo.setRef(row.id, key, id);
     }
     for (const e of input.endpoints ?? []) addEndpointRow(row, e as CustomEndpoint);
+    // A10.5: the Open address defaults to the configured base address at creation.
+    if (serviceTableReady()) saveServiceRow(row.id, { ...service, ...(service.openUrl === undefined || service.openUrl === "" ? { openUrl: baseAddressOf(row) ?? null } : {}) });
   } catch (err) {
     repo.deleteIntegrationRow(row.id);
     removeSecrets("integration", row.id);
@@ -396,6 +432,7 @@ export const updateInput = z.object({
   /** Amendment 2: saved credential picks (agents: drafts only). Empty string switches a field back. */
   credentials: z.record(z.string(), z.string().max(100)).optional(),
   confirmOrigins: z.boolean().optional(),
+  ...serviceFields,
 });
 
 export function updateIntegration(p: Principal, id: string, input: z.infer<typeof updateInput>, lock: LockOptions = {}): IntegrationView {
@@ -403,6 +440,9 @@ export function updateIntegration(p: Principal, id: string, input: z.infer<typeo
   const row = repo.getIntegrationRow(id);
   if (!row) throw new NotFound("That integration does not exist.");
   requireManage(p, row);
+  if (row.id === repo.SYSTEM_INTEGRATION_ID && ((input.config && Object.keys(input.config).length) || input.status || input.shared === false || input.credentials)) throw new Forbidden("The built-in Atrium integration cannot be changed or turned off.");
+  const service = servicePatch(input);
+  if (Object.keys(service).length && !serviceTableReady()) throw new AtriumError(SERVICE_TABLE_MISSING, 503, "service_fields_unavailable");
   if (p.kind !== "user") {
     if (row.status !== "draft") throw new Forbidden("Agents can only change draft integrations. Ask the user to edit a live one.");
     if (input.status) throw new Forbidden("Only the user can publish or disable an integration.");
@@ -457,6 +497,7 @@ export function updateIntegration(p: Principal, id: string, input: z.infer<typeo
   }
   if (clear) removeSecrets("integration", id);
   repo.updateIntegration(id, patch);
+  if (Object.keys(service).length) saveServiceRow(id, service);
   if (newOrigin && row.status !== "draft") {
     applyLocks(p, moveNeeds, { id, name: patch.name ?? row.name });
     recordPin(id, newOrigin);
@@ -535,6 +576,7 @@ export function deleteIntegration(p: Principal, id: string): void {
   requireEdit(p);
   const row = repo.getIntegrationRow(id);
   if (!row) throw new NotFound("That integration does not exist.");
+  if (row.id === repo.SYSTEM_INTEGRATION_ID) throw new Forbidden("The built-in Atrium integration cannot be removed.");
   if (p.kind !== "user" && row.status !== "draft") throw new Forbidden("Agents can only delete draft integrations.");
   requireManage(p, row);
   repo.deleteIntegrationRow(id);

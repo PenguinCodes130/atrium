@@ -23,8 +23,12 @@ import { ReviewSheet } from "@/features/versions/ui/review-sheet";
 import { AppLookSheet } from "./app-look";
 import { SelectMenu } from "@/features/settings/ui/controls";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "@/features/components/render/render-node";
-import { failingSources, wholeProp } from "./data-pick";
+import { failingSources, repeatAround, wholeProp } from "./data-pick";
 import { DataPicker, type BindableIntegration, type PickTarget } from "./data-picker";
+import { ShowPicker, type ShowTarget } from "./show-picker";
+import { MachineChooser, ServiceChooser, StartPageSheet } from "./service-sheets";
+import { normaliseOps } from "@/features/apps/managed";
+import { timingOf } from "./data-line";
 
 export type BuilderProps = {
   app: { id: string; slug: string; name: string; publishedVersion: number | null };
@@ -41,9 +45,9 @@ export type BuilderProps = {
 
 type Drag = { kind: "insert"; item: InsertItem; w: number; h: number } | { kind: "move"; nodeId: string; label: string; w: number; h: number; /** Several selected: they all move by the same amount (spec 3.2). */ group?: string[] };
 /** A drop into a container (a selected one, or an empty Repeat) rather than onto a grid cell (spec 3.2). */
-type Into = { id: string; name: string; rect: { left: number; top: number; width: number; height: number } };
+type Into = { id: string; name: string; rect: { left: number; top: number; width: number; height: number }; /** A group (A10.7): where among its tiles the drop lands. */ index?: number };
 /** Containers a widget can be dropped into; a Repeat takes one child. */
-const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat"]);
+const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat", "group"]);
 type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[] };
 /** One button on a selected widget's toolbar: a 10px stroked icon, a 44px hit area on touch screens. */
 function BarButton({ label, title, onClick, disabled, pressed, danger, children, ...data }: { label: string; title: string; onClick(): void; disabled?: boolean; pressed?: boolean; danger?: boolean; children: React.ReactNode } & Record<`data-${string}`, unknown>) {
@@ -94,6 +98,10 @@ async function pictureShape(file: File): Promise<number | null> {
 
 /** A file dropped on the canvas while it uploads: a placeholder box with its progress (spec 3.1, 4 Loading). */
 type Uploading = { key: number; name: string; pct: number; rect: { left: number; top: number; width: number; height: number } };
+
+/** Insert > Start page (Wave 2.9, spec 3.7): not a component, a sheet that makes a whole page. */
+const START_PAGE_ITEM = "start-page";
+const START_PAGE_INSERT: InsertItem = { type: "start-page", title: "Start page", summary: "A whole page from your services: a resource bar, then groups of service tiles with live stats.", node: { id: "c_startpagea", type: "group", props: {} }, insertId: START_PAGE_ITEM };
 
 /** The data widgets whose insert opens the data picker at once (spec 3.3). */
 const DATA_TYPES = new Set(["stat", "chart", "table", "list", "status", "gauge", "progress"]);
@@ -222,6 +230,27 @@ export function BuilderScreen(props: BuilderProps) {
   // ---- The data picker (Wave 2.5) ----
   const [picker, setPicker] = useState<PickTarget | null>(null);
   const [bindable, setBindable] = useState<BindableIntegration[] | null>(null);
+  // ---- Wave 2.9: "What should this show?", service tiles and the start page ----
+  const [show, setShow] = useState<ShowTarget | null>(null);
+  const [tileFor, setTileFor] = useState<string | null>(null);
+  const [barFor, setBarFor] = useState<string | null>(null);
+  const [startOpen, setStartOpen] = useState(false);
+  // A pick's value, shown on the canvas at once until the stream sends it (spec 3.2: within 1 s).
+  const [instant, setInstant] = useState<Record<string, ShapedData>>({});
+  // The last listing seen, so managed sources can be normalised while the listing reloads (A10.1).
+  const bindableRef = useRef<BindableIntegration[] | null>(null);
+  if (bindable) bindableRef.current = bindable;
+  const openShow = useCallback((t: ShowTarget) => { setPicker(null); setShow(t); }, []);
+  /**
+   * The inspector's ways into data (Connect data, Bind on a field, Change, Add a line): "What should this
+   * show?". Inside a Repeat the Wave 2.7 picker opens instead, for "This row"; with no component (the
+   * Advanced list's "Set up a read by hand" or Edit), the by-hand picker.
+   */
+  const onInspectorPick = (t: PickTarget) => {
+    const n = t.nodeId ? findNode(client.current!.doc, t.nodeId)?.node : undefined;
+    if (!n || repeatAround(client.current!.doc, n.id)?.source) { setPicker(t); return; }
+    openShow({ nodeId: n.id, prop: t.prop ?? (n.type === "chart" ? "lines" : wholeProp(n.type) ?? "value"), ...(t.source ? { source: t.source } : {}) });
+  };
   const [ghost, setGhost] = useState<Ghost | null>(null);
   const [, force] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -256,8 +285,8 @@ export function BuilderScreen(props: BuilderProps) {
       send: async (r, ops): Promise<SendResult> => {
         const res = await fetch(`/api/apps/${app.id}/ops`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ rev: r, ops }) }).catch(() => null);
         if (!res) return { ok: false, kind: "error", message: "Atrium could not be reached. Your edits will be sent again." };
-        const j = (await res.json().catch(() => ({}))) as { rev?: number; error?: { code?: string; message?: string; rev?: number; problems?: Problem[] } };
-        if (res.ok && typeof j.rev === "number") return { ok: true, rev: j.rev };
+        const j = (await res.json().catch(() => ({}))) as { rev?: number; follow?: DraftOp[]; error?: { code?: string; message?: string; rev?: number; problems?: Problem[] } };
+        if (res.ok && typeof j.rev === "number") return { ok: true, rev: j.rev, ...(Array.isArray(j.follow) && j.follow.length ? { follow: j.follow } : {}) };
         if (res.status === 409) return { ok: false, kind: "conflict", rev: j.error?.rev ?? r };
         if (res.status === 422) return { ok: false, kind: "invalid", problems: j.error?.problems ?? [] };
         return { ok: false, kind: "error", message: j.error?.message ?? "The edit could not be saved." };
@@ -269,6 +298,8 @@ export function BuilderScreen(props: BuilderProps) {
       },
       setTimeout: (fn, ms) => window.setTimeout(fn, ms),
       clearTimeout: (h) => window.clearTimeout(h as number),
+      // A10.1: managed sources follow their components in the same edit (one undo reverts both).
+      normalise: (d) => normaliseOps(d, (src) => timingOf(src, bindableRef.current ?? [])),
     }, {
       onChange: (d, r) => { setDoc(d); setRev(r); },
       onRefused: (p) => {
@@ -290,7 +321,10 @@ export function BuilderScreen(props: BuilderProps) {
     setProblems([]);
     if (ops.some((o) => o.op === "theme.set" || o.op === "chrome.update" || (o.op === "page.update" && "theme" in o.patch) || (o.op === "node.update" && ("style" in o.patch || "css" in o.patch || "overrideTheme" in o.patch || ("props" in o.patch && /https?:\/\//i.test(JSON.stringify(o.patch.props))))) || o.op === "node.add" || o.op === "source.set" || o.op === "source.remove" || (o.op === "node.update" && JSON.stringify(o.patch).includes("{{")))) needsRender.current = true;
     // Gauntlet w2-r2 item 16: removing a component also closes the band it leaves in its grid.
+    const sourcesBefore = JSON.stringify(client.current!.doc.dataSources);
     const p = client.current!.edit(withGapsClosed(client.current!.doc, ops));
+    // A10.1: an edit that moved a managed source (added, removed, a new interval) restarts the live data.
+    if (!p && JSON.stringify(client.current!.doc.dataSources) !== sourcesBefore) needsRender.current = true;
     if (p) {
       setProblems(p);
       toast({ kind: "error", title: "That change cannot be made", description: p[0]?.message });
@@ -359,7 +393,18 @@ export function BuilderScreen(props: BuilderProps) {
     void refreshRender(p.id);
   }, [app.slug, refreshRender]);
 
+  // Wave 2.9: Start page sits first in the Layout group of Insert.
+  const insertGroups = useMemo<InsertGroup[]>(() => {
+    const has = props.catalogue.some((g) => g.category === "layout");
+    const groups = props.catalogue.map((g) => (g.category === "layout" ? { ...g, items: [START_PAGE_INSERT, ...g.items] } : g));
+    return has ? groups : [{ category: "layout", items: [START_PAGE_INSERT] }, ...groups];
+  }, [props.catalogue]);
   const live = usePageData({ appId: app.id, pageId: page.id, draft: true }, render.sources, render.sources.length > 0);
+  // Wave 2.9: values stay on the canvas while the stream restarts for a new source (a pick, a new interval),
+  // and a pick's peeked value shows at once (spec 3.2).
+  const known = useRef<Record<string, ShapedData>>({});
+  for (const [k, v] of Object.entries(live.data)) if (v) known.current[k] = v as ShapedData;
+  const shownData = useMemo(() => ({ ...instant, ...known.current, ...live.data }) as Record<string, ShapedData | undefined>, [instant, live.data]);
   const failing = useMemo(() => failingSources(doc, bindable ?? []), [doc, bindable]);
   const ctx: RenderContext = useMemo(() => ({
     mode: "edit",
@@ -368,7 +413,7 @@ export function BuilderScreen(props: BuilderProps) {
     pageId: page.id,
     version: "draft",
     values: {
-      $data: live.data,
+      $data: shownData,
       // Every source the draft names is known to bindings at once (gauntlet w2-r1 item 6): a source added
       // this session shows loading, then its value once the stream restarts, never "no data source named".
       // Unmapped sources (a skipped integration) show "No data: connect <package>" (item 2).
@@ -391,7 +436,7 @@ export function BuilderScreen(props: BuilderProps) {
     runControl: async () => ({ ok: false, code: "forbidden", message: "Controls do not run in the builder. Use Preview." }),
     confirm: async () => false,
     navigate: () => {},
-  }), [props.principal, app.id, app.slug, page, doc, live, render.library, render.signedUrls, render.unmapped, failing]);
+  }), [props.principal, app.id, app.slug, page, doc, live, shownData, render.library, render.signedUrls, render.unmapped, failing]);
 
   // ---- Preview width (spec 3.6): the page drawn at its real width, scaled down to fit the canvas ----
   const sectionRef = useRef<HTMLElement>(null);
@@ -493,7 +538,7 @@ export function BuilderScreen(props: BuilderProps) {
     if (picker) setBindable(null);
     void fetch("/api/integrations/bindable", { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : { integrations: [] })).then((j: { integrations: BindableIntegration[] }) => { if (!gone) setBindable(j.integrations ?? []); }).catch(() => { if (!gone) setBindable([]); });
     return () => { gone = true; };
-  }, [!!picker]);
+  }, [!!picker, !!show, !!tileFor, !!barFor]);
   // "Choose a data source" on a component showing sample values opens the picker for its data.
   useEffect(() => {
     const on = (e: Event) => {
@@ -501,7 +546,7 @@ export function BuilderScreen(props: BuilderProps) {
       if (!id || !takeSourceChoice(id)) return;
       const n = findNode(client.current!.doc, id)?.node;
       setSelectedId(id);
-      setPicker({ nodeId: id, ...(n && wholeProp(n.type) ? { prop: wholeProp(n.type)! } : {}) });
+      if (n) openShow({ nodeId: id, prop: n.type === "chart" ? "lines" : wholeProp(n.type) ?? "value" });
     };
     window.addEventListener(SOURCE_CHOICE_EVENT, on);
     return () => window.removeEventListener(SOURCE_CHOICE_EVENT, on);
@@ -520,7 +565,9 @@ export function BuilderScreen(props: BuilderProps) {
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     const node = nodeId ? findNode(client.current!.doc, nodeId)?.node : undefined;
     if (node) setSelectedId(node.id);
-    setPicker({ integrationId, ...(node ? { nodeId: node.id } : {}), ...(node && prop ? { prop } : {}) });
+    // Wave 2.9: back to "What should this show?" for the component (the new service is in its list).
+    if (node) { openShow({ nodeId: node.id, prop: prop ?? (node.type === "chart" ? "lines" : wholeProp(node.type) ?? "value") }); return; }
+    setPicker({ integrationId });
   }, []);
 
   // ---- Canvas selection and outlines ----
@@ -702,16 +749,32 @@ export function BuilderScreen(props: BuilderProps) {
       if (n?.type === "grid") return null;
       if (n && DROP_CONTAINERS.has(n.type)) {
         const empty = !(n.children ?? []).length;
-        const ok = n.type === "repeat" ? empty : n.id === sel;
+        // Any group under the pointer takes a tile (spec 3.6: tiles drag between groups), not only a selected one.
+        const ok = n.type === "repeat" ? empty : n.type === "group" ? true : n.id === sel;
         const own = d.kind === "move" && (n.id === d.nodeId || inside(cur, d.nodeId, n.id));
         if (ok && !own) {
           const r = rectOf(n.id);
-          return r ? { id: n.id, name: nodeLabel(n), rect: r } : null;
+          if (!r) return null;
+          return n.type === "group" ? { id: n.id, name: nodeLabel(n), rect: r, index: groupIndexAt(n.id, x, y, d.kind === "move" ? d.nodeId : null) } : { id: n.id, name: nodeLabel(n), rect: r };
         }
       }
       host = host.parentElement?.closest("[data-node]") as HTMLElement | null;
     }
     return null;
+  };
+  /**
+   * Where a drop at (x, y) lands among a group's tiles: before the first tile whose middle is after the
+   * pointer in reading order (row first, then column). The dragged tile itself is left out, so the index is
+   * the one node.move expects once it has left its old place.
+   */
+  const groupIndexAt = (groupId: string, x: number, y: number, dragged: string | null): number => {
+    const items = [...(canvasRef.current?.querySelectorAll<HTMLElement>(`[data-group-body="${CSS.escape(groupId)}"] > [data-group-item]`) ?? [])].filter((el) => el.getAttribute("data-group-item") !== dragged);
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i]!.getBoundingClientRect();
+      if (y < r.top) return i;
+      if (y <= r.bottom && x < r.left + r.width / 2) return i;
+    }
+    return items.length;
   };
   /** Puts a dragged widget into a container: no grid slot there, it stacks in the container's order. */
   const dropInto = (d: Drag, target: Into) => {
@@ -719,13 +782,15 @@ export function BuilderScreen(props: BuilderProps) {
     if (d.kind === "insert") {
       const node = freshCopy(d.item.node);
       delete node.slot;
-      apply([{ op: "node.add", parentId: target.id, node }], { announce: `Added ${nodeLabel(node)} into ${target.name}`, select: node.id });
+      apply([{ op: "node.add", parentId: target.id, ...(target.index !== undefined ? { index: target.index } : {}), node }], { announce: `Added ${nodeLabel(node)} into ${target.name}`, select: node.id });
       reveal(node.id);
       openPickerForNew(node);
     } else {
       const at = findNode(cur, d.nodeId);
       if (!at) return;
-      apply([{ op: "node.move", nodeId: d.nodeId, parentId: target.id }], { announce: `${nodeLabel(at.node)} moved into ${target.name}` });
+      // A tile dropped back on its own place is no change.
+      if (at.parent?.id === target.id && target.index === at.index) return;
+      apply([{ op: "node.move", nodeId: d.nodeId, parentId: target.id, ...(target.index !== undefined ? { index: target.index } : {}) }], { announce: `${nodeLabel(at.node)} moved into ${target.name}` });
     }
   };
   /** Drags an edge or corner of the selected component, snapping to the grid (operator bug 2). */
@@ -845,9 +910,21 @@ export function BuilderScreen(props: BuilderProps) {
    * stays as it is (operator, 2026-10-19): the new widget goes beside it on the page.
    */
   const addToSelected = (item: InsertItem) => {
+    // Wave 2.9 (spec 3.7): Insert > Start page makes a whole page from your services.
+    if (item.insertId === START_PAGE_ITEM) { setStartOpen(true); return; }
     const cur = client.current!.doc;
     const node = freshCopy(item.node);
     const sel = selectedRef.current ? findNode(cur, selectedRef.current) : null;
+    // A selected group (or a tile inside one) takes the new component in its flow (A10.7: no grid slots).
+    const group = sel?.node.type === "group" ? sel.node : sel?.parent?.type === "group" ? sel.parent : null;
+    if (group) {
+      delete node.slot;
+      const index = sel?.node.type === "group" ? (group.children ?? []).length : (sel?.index ?? 0) + 1;
+      apply([{ op: "node.add", parentId: group.id, index, node }], { announce: `Added ${nodeLabel(node)} into ${nodeLabel(group)}`, select: node.id });
+      reveal(node.id);
+      openPickerForNew(node);
+      return;
+    }
     if (sel?.node.type === "repeat" && !(sel.node.children ?? []).length) {
       delete node.slot;
       apply([{ op: "node.add", parentId: sel.node.id, node }], { announce: `Added ${nodeLabel(node)} into ${nodeLabel(sel.node)}`, select: node.id });
@@ -872,9 +949,13 @@ export function BuilderScreen(props: BuilderProps) {
   /** A new data widget opens the data picker at once, with "Skip for now" to keep sample values (spec 3.3). */
   const openPickerForNew = (node: ComponentNode) => {
     if (node.type === "repeat" && node.name === "Card for each") { setPicker({ nodeId: node.id, prop: "items", fromInsert: true, cards: true }); return; }
+    // Wave 2.9 (spec 3.5): a service tile asks which service, then fills itself.
+    if (node.type === "service-tile") { setTileFor(node.id); return; }
+    // Spec 3.6: a resource bar asks which machine, then fills its readings.
+    if (node.type === "resource-bar" && !(Array.isArray(node.props.items) && node.props.items.length)) { setBarFor(node.id); return; }
     if (!DATA_TYPES.has(node.type)) return;
-    const prop = wholeProp(node.type);
-    setPicker({ nodeId: node.id, ...(prop ? { prop } : {}), fromInsert: true } as PickTarget);
+    // Wave 2.9 (spec 3.1): every data component starts with "What should this show?", no data source step.
+    openShow({ nodeId: node.id, prop: node.type === "chart" ? "lines" : wholeProp(node.type) ?? "value", fromInsert: true });
   };
 
   // ---- Files dropped on the canvas (spec 3.1): upload, then an Image or Video at the drop point ----
@@ -1169,7 +1250,7 @@ export function BuilderScreen(props: BuilderProps) {
         </div>
       )}
       {!narrow && tab === "insert" ? (
-        <InsertPanel groups={props.catalogue} onAdd={addToSelected} onPickUp={(item, e) => startDrag({ kind: "insert", item, w: item.node.slot?.w ?? (device === "mobile" ? 4 : 3), h: item.node.slot?.h ?? 16 }, e)} />
+        <InsertPanel groups={insertGroups} onAdd={addToSelected} onPickUp={(item, e) => { if (item.insertId === START_PAGE_ITEM) return; startDrag({ kind: "insert", item, w: item.node.slot?.w ?? (device === "mobile" ? 4 : 3), h: item.node.slot?.h ?? 16 }, e); }} />
       ) : (
         <LayersPanel page={page} selectedId={selectedId} agentNodes={meta.agentNodes} stepButtons={narrow} device={narrow ? "mobile" : device} covered={covered} selectedIds={multiOn ? new Set(multi) : undefined} onSelect={(id, o) => (o?.shift && !narrow ? toggleMulti(id) : setSelectedId(id))} onMove={(nodeId, parentId, index) => apply([{ op: "node.move", nodeId, parentId, ...(index === Number.MAX_SAFE_INTEGER ? {} : { index }) }], { announce: "Moved in the layer tree" })}
           onHide={layerHide} onRename={layerRename} onDuplicate={layerDuplicate} onDelete={layerDelete} />
@@ -1348,7 +1429,7 @@ export function BuilderScreen(props: BuilderProps) {
                       aria-hidden
                       title={narrow ? undefined : "Drag to move"}
                       className={`pointer-events-auto flex select-none items-center gap-1 bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg ${narrow ? "" : "cursor-grab touch-none"}`}
-                      onPointerDown={(e) => { if (narrow) return; const s = slotOn(selected, device); if (s) startDrag({ kind: "move", nodeId: selected.id, label: nodeLabel(selected), w: s.w, h: s.h }, e); }}
+                      onPointerDown={(e) => { if (narrow) return; const s = slotOn(selected, device) ?? (selectedParent?.type === "group" ? { w: 3, h: 12 } : undefined); if (s) startDrag({ kind: "move", nodeId: selected.id, label: nodeLabel(selected), w: s.w, h: s.h }, e); }}
                       data-drag-handle
                     >
                       {!narrow && <svg viewBox="0 0 6 10" width={6} height={10} fill="currentColor" aria-hidden data-move-grip><circle cx="1.5" cy="2" r="1" /><circle cx="4.5" cy="2" r="1" /><circle cx="1.5" cy="5" r="1" /><circle cx="4.5" cy="5" r="1" /><circle cx="1.5" cy="8" r="1" /><circle cx="4.5" cy="8" r="1" /></svg>}
@@ -1478,7 +1559,7 @@ export function BuilderScreen(props: BuilderProps) {
               <MultiPanel names={multi.map((id) => { const n = findNode(doc, id)?.node; return n ? nodeLabel(n) : id; })} onAction={arrange} onClear={() => setMulti([])} />
             ) : (
             <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} applyAndWait={applyAndWait} compact={narrow}
-              live={{ data: live.data as Record<string, ShapedData | undefined>, states: live.states }} onPick={(t) => setPicker(t)} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
+              live={{ data: shownData, states: live.states }} onPick={onInspectorPick} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
             )}
           </aside>
         )}
@@ -1510,6 +1591,19 @@ export function BuilderScreen(props: BuilderProps) {
         }} />
       )}
       {picker && <DataPicker appId={app.id} target={picker} doc={doc} bindable={bindable} data={live.data as Record<string, ShapedData | undefined>} states={live.states} apply={(ops) => apply(ops)} onClose={() => setPicker(null)} />}
+      {show && (
+        <ShowPicker target={show} doc={doc} bindable={bindable ?? bindableRef.current} data={shownData} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setShow(null)}
+          onByHand={() => { const t = show; setShow(null); setPicker({ nodeId: t.nodeId, ...(/^[A-Za-z]+$/.test(t.prop) && t.prop !== "lines" ? { prop: t.prop } : {}), ...(t.fromInsert ? { fromInsert: true } : {}), ...(t.source && !client.current!.doc.dataSources.find((x) => x.name === t.source)?.managed ? { source: t.source } : {}) }); }}
+          onPeeked={(name, d) => setInstant((m) => ({ ...m, [name]: d }))} onSelect={(id) => { setSelectedId(id); reveal(id); }} newNodeId={() => newId("c")} />
+      )}
+      {barFor && <MachineChooser nodeId={barFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setBarFor(null)} />}
+      {tileFor && <ServiceChooser nodeId={tileFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setTileFor(null)} />}
+      {startOpen && <StartPageSheet appId={app.id} apply={(ops) => { apply(ops, { announce: "Made a start page" }); void client.current!.flush(); }} onClose={() => setStartOpen(false)} onMade={(pageId) => {
+        setStartOpen(false);
+        const p = findPage(client.current!.doc, pageId);
+        if (p && p.id !== page.id) goPage(p);
+        toast({ kind: "success", title: "Start page made", description: "Values fill in as your services answer. Undo takes it all back." });
+      }} />}
       {lookOpen && <AppLookSheet appId={app.id} doc={doc} page={page} theme={render.theme} chromeRemoved={render.chromeRemoved} onClose={() => setLookOpen(false)} apply={(ops) => apply(ops)} />}
     </div>
   );

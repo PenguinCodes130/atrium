@@ -11,7 +11,7 @@ export const DEBOUNCE_MS = 300;
 export const DROPPED_MESSAGE = "Someone else changed this; your last edit was not applied";
 
 export type SendResult =
-  | { ok: true; rev: number }
+  | { ok: true; rev: number; /** A10.1: follow-up ops the server added to the same change (managed sources). */ follow?: DraftOp[] }
   | { ok: false; kind: "conflict"; rev: number }
   | { ok: false; kind: "invalid"; problems: Problem[] }
   | { ok: false; kind: "error"; message: string };
@@ -21,6 +21,8 @@ export type DraftClientDeps = {
   fetchDraft(): Promise<{ rev: number; doc: AppDocument }>;
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(h: unknown): void;
+  /** A10.1: the managed-source follow-up ops for a document, added to the same edit (so one undo reverts both). */
+  normalise?(doc: AppDocument): DraftOp[];
 };
 
 export type DraftEvents = {
@@ -66,10 +68,16 @@ export class DraftClient {
   }
 
   /** Applies an edit locally and queues it. Returns the problems when it cannot apply even locally. */
-  edit(ops: DraftOp[], opts: { history?: "push" | "none" } = {}): Problem[] | null {
-    const inv = inverseOps(this.doc, ops);
-    const r = applyOpsToDoc(this.doc, ops);
+  edit(asked: DraftOp[], opts: { history?: "push" | "none" } = {}): Problem[] | null {
+    let ops = asked;
+    let r = applyOpsToDoc(this.doc, ops);
     if (!r.ok) return r.problems;
+    const follow = this.deps.normalise?.(r.doc) ?? [];
+    if (follow.length) {
+      const both = applyOpsToDoc(this.doc, [...asked, ...follow]);
+      if (both.ok) { ops = [...asked, ...follow]; r = both; }
+    }
+    const inv = inverseOps(this.doc, ops);
     this.doc = r.doc;
     if (opts.history !== "none" && inv) {
       this.undoStack.push({ ops, inverse: inv });
@@ -144,7 +152,8 @@ export class DraftClient {
     for (let attempt = 0; attempt < 4 && ops.length; attempt++) {
       const res = await this.deps.send(this.rev, ops);
       if (res.ok) {
-        const applied = applyOpsToDoc(this.confirmed, ops);
+        const withFollow = res.follow?.length ? applyOpsToDoc(this.confirmed, [...ops, ...res.follow]) : null;
+        const applied = withFollow?.ok ? withFollow : applyOpsToDoc(this.confirmed, ops);
         if (applied.ok) this.confirmed = applied.doc;
         this.rev = res.rev;
         break;

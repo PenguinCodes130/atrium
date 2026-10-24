@@ -18,6 +18,8 @@ import haManifest from "@/packages/home-assistant/manifest.json";
 import ha from "@/packages/home-assistant/adapter";
 import customManifest from "@/packages/custom-api/manifest.json";
 import { createCustomApiAdapter } from "@/packages/custom-api/adapter";
+import systemManifest from "@/packages/atrium-system/manifest.json";
+import system from "@/packages/atrium-system/adapter";
 
 export type OfficialEntry = { manifest: unknown; adapter: Adapter | ((endpoints: CustomEndpoint[]) => Adapter) };
 
@@ -32,4 +34,6 @@ export const OFFICIAL_PACKAGES: OfficialEntry[] = [
   { manifest: kumaManifest, adapter: kuma },
   { manifest: haManifest, adapter: ha },
   { manifest: customManifest, adapter: createCustomApiAdapter },
+  // A10.6: built in, never in the gallery; its one integration (id "atrium") is created at start.
+  { manifest: systemManifest, adapter: system },
 ];

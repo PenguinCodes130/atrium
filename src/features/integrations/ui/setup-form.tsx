@@ -30,6 +30,10 @@ import { initialChoice, lockState, SecretFieldInput, type FieldChoice, type Pick
 import { SaveCancelled, sendJson, useLockedSave } from "./locked-save";
 import { builderReturnFor } from "./return-to-builder";
 
+type ServiceKindValue = "containers" | "media" | "monitoring" | "network" | "smart-home" | "storage" | "other";
+/** A10.5 kinds, in start page order, in words. */
+const SERVICE_KIND_OPTIONS: [ServiceKindValue, string][] = [["containers", "Containers"], ["media", "Media"], ["monitoring", "Monitoring"], ["network", "Network"], ["smart-home", "Smart home"], ["storage", "Storage"], ["other", "Other"]];
+
 type TestResult = { ok: true; health: { status: "ok" | "degraded" | "down"; latencyMs: number; version?: string; message?: string }; passId?: string } | { ok: false; heading: string; error: ApiError; latencyMs: number };
 
 const PINNED_CONFIRM = "Changing the address removes the saved credentials, because Atrium only sends them to the address they were saved for. You can enter them again right after.";
@@ -70,6 +74,12 @@ function ConnectionFormInner({ pkg, integration, prefill = {}, canEdit, existing
   for (const [k, p] of Object.entries(props)) initial[k] = integration?.config[k] ?? prefill[k] ?? p.default ?? (p.type === "boolean" ? false : "");
   const [config, setConfig] = useState(initial);
   const [name, setName] = useState(integration?.name ?? pkg.name);
+  // A10.5: the service's own address for tiles and its kind (start page groups). Not config, not secret.
+  const pkgKind = (pkg.service?.kind ?? "other") as ServiceKindValue;
+  const [openUrl, setOpenUrl] = useState(integration?.openUrl ?? "");
+  const [kind, setKind] = useState<ServiceKindValue>((integration?.kind as ServiceKindValue | undefined) ?? pkgKind);
+  const serviceFieldsSaved = integration ? integration.serviceSaved !== false : true;
+  const serviceBody = () => (serviceFieldsSaved ? { openUrl: openUrl.trim(), kind } : {});
   const allFields0 = integration?.secretFields ?? pkg.secrets.map((s) => ({ ...s, set: false as boolean, updatedAt: undefined as string | undefined, required: true, viaCredential: false }));
   const [choices, setChoices] = useState<Record<string, FieldChoice>>(() => Object.fromEntries(allFields0.map((f) => [f.key, initialChoice(f)])));
   const [testing, setTesting] = useState(false);
@@ -144,7 +154,7 @@ function ConnectionFormInner({ pkg, integration, prefill = {}, canEdit, existing
     const typed = typedValues;
     try {
       if (integration) {
-        const patch = (extra: Record<string, unknown>) => locked$.save((confirmOrigins) => sendJson(`/api/integrations/${integration.id}`, "PATCH", { name, config: shownConfig(), ...extra, ...(confirmOrigins ? { confirmOrigins: true } : {}) }));
+        const patch = (extra: Record<string, unknown>) => locked$.save((confirmOrigins) => sendJson(`/api/integrations/${integration.id}`, "PATCH", { name, config: shownConfig(), ...serviceBody(), ...extra, ...(confirmOrigins ? { confirmOrigins: true } : {}) }));
         try {
           await patch({});
         } catch (e) {
@@ -165,7 +175,7 @@ function ConnectionFormInner({ pkg, integration, prefill = {}, canEdit, existing
         router.refresh();
       } else {
         const created = await locked$.save<IntegrationView>((confirmOrigins) => sendJson("/api/integrations", "POST", {
-          packageId: pkg.id, name, config: shownConfig(), secrets: typed,
+          packageId: pkg.id, name, config: shownConfig(), secrets: typed, ...serviceBody(),
           ...(Object.keys(picks).length ? { credentials: picks } : {}),
           ...(untested || saveAndTest || !passed ? { untested: true } : { passId: passed.passId }),
           ...(confirmOrigins ? { confirmOrigins: true } : {}),
@@ -239,6 +249,25 @@ function ConnectionFormInner({ pkg, integration, prefill = {}, canEdit, existing
               </Field>
             ),
           )}
+          <Field label="Open address" hint={integration ? "Where a service tile takes you. Leave it empty for no link." : "Where a service tile takes you. Leave it empty to use the address above."} htmlFor={`${uid}-open-url`}>
+            <Input
+              id={`${uid}-open-url`}
+              aria-describedby={`${uid}-open-url-hint`}
+              value={openUrl}
+              onChange={(e) => setOpenUrl(e.target.value)}
+              onBlur={(e) => { const v = e.target.value.trim() ? withScheme(e.target.value) : ""; if (v !== e.target.value) setOpenUrl(v); }}
+              placeholder={addressKey ? withScheme(String(config[addressKey] ?? "")) || "http://10.0.0.5:8096" : "http://10.0.0.5:8096"}
+              autoComplete="off"
+              {...urlInputProps}
+              data-open-url
+            />
+          </Field>
+          <Field label="Kind" hint="Groups this service on a start page." htmlFor={`${uid}-kind`}>
+            <select id={`${uid}-kind`} className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as ServiceKindValue)} aria-describedby={`${uid}-kind-hint`} data-service-kind>
+              {SERVICE_KIND_OPTIONS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </Field>
+          {!serviceFieldsSaved && <p role="status" className="type-caption text-glass-muted" data-service-unsaved>Atrium needs a database update before it can keep the Open address and kind. They show their defaults until then.</p>}
           {sameAddress.length > 0 && (
             <p role="status" className="type-caption text-glass-muted" data-same-address>
               Already set up at this address: {sameAddress.map((e) => e.name).join(", ")}. Saving adds another integration.

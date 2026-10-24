@@ -222,3 +222,20 @@ export async function skipPicker(page: Page): Promise<void> {
   else await page.locator("[data-pick-cancel]").click();
   await picker.waitFor({ state: "detached", timeout: 5000 });
 }
+
+/**
+ * Wave 2.9 (direct data spec 3.1): every way into data opens "What should this show?" (the catalogue). The
+ * Wave 2.5 to 2.8 picker these older tests drive is now one click away, "Set it up by hand"; this clicks it
+ * and waits for that picker. Used only by tests written for the earlier flow.
+ */
+export async function byHand(page: Page): Promise<void> {
+  const b = page.locator("[data-pick-by-hand]");
+  // Insert > Card for each still opens the by-hand picker straight away (its cards step lives there).
+  const old = page.locator("[data-data-picker]:not([data-show-picker])");
+  await page.locator("[data-pick-by-hand], [data-data-picker]:not([data-show-picker])").first().waitFor({ state: "visible", timeout: 5000 });
+  if (!(await b.isVisible()) && (await old.isVisible())) return;
+  if ((await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) await b.tap();
+  else await b.click();
+  await page.locator("[data-show-picker]").waitFor({ state: "detached", timeout: 5000 });
+  await page.locator("[data-data-picker]").waitFor({ state: "visible", timeout: 5000 });
+}

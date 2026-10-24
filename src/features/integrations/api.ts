@@ -89,6 +89,12 @@ export const integrationOut = z.object({
   packageMissing: z.boolean(),
   locked: z.boolean(),
   untested: z.boolean(),
+  // A10.5: service information (not config, not secret)
+  kind: z.string().optional(),
+  openUrl: z.string().optional(),
+  headline: z.array(z.object({ label: z.string(), endpointId: z.string(), params: z.record(z.string(), z.unknown()).optional(), value: z.string(), format: z.string().optional() })).optional(),
+  system: z.boolean().optional(),
+  serviceSaved: z.boolean().optional(),
   secretFields: z.array(secretField.extend({
     set: z.boolean(), updatedAt: z.string().optional(), required: z.boolean(), viaCredential: z.boolean(),
     credential: z.object({ id: z.string(), name: z.string(), kind: z.string(), lockedOrigins: z.array(z.string()) }).optional(),
@@ -112,6 +118,7 @@ const packageCard = z.object({
   config: z.record(z.string(), z.unknown()), secrets: z.array(secretField), endpoints: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), shape: z.string(), defaultRefreshSec: z.number(), minRefreshSec: z.number(), params: z.record(z.string(), z.unknown()).optional(), group: z.string().optional(), advanced: z.boolean().optional(), needs: z.string().optional() })),
   commands: z.array(z.object({ id: z.string(), label: z.string(), risk: z.enum(["low", "medium"]), ownerOnly: z.boolean(), method: z.string().optional(), path: z.string().optional() })),
   pendingCommands: z.array(z.object({ id: z.string(), label: z.string(), risk: z.enum(["low", "medium"]), ownerOnly: z.boolean(), method: z.string().optional(), path: z.string().optional() })),
+  service: z.object({ kind: z.string(), headline: z.array(z.object({ label: z.string(), endpointId: z.string(), params: z.record(z.string(), z.unknown()).optional(), value: z.string(), format: z.string().optional() })).optional() }).optional(),
 });
 export const packageCardOut = packageCard;
 export const galleryOut = z.object({
@@ -195,3 +202,26 @@ export const sharingOut = z.object({
   shared: z.boolean(), canChange: z.boolean(), appsKnown: z.boolean(),
   affectedApps: z.array(z.object({ id: z.string(), name: z.string(), slug: z.string() })),
 });
+
+// ---- Amendment 10 (A10.4): the data catalogue and peek (reads, things and values; never config or secrets) ----
+const propValue = z.unknown();
+const headlineStatOut = z.object({ label: z.string(), endpointId: z.string(), params: z.record(z.string(), propValue).optional(), value: z.string(), format: z.string().optional() });
+export const catalogueItemOut = z.object({
+  key: z.string(), integrationId: z.string(), integrationName: z.string(), packageId: z.string(), serviceIcon: z.string(),
+  endpointId: z.string(), label: z.string(),
+  thing: z.object({ param: z.string(), value: z.string(), label: z.string(), detail: z.string().optional() }).optional(),
+  params: z.record(z.string(), propValue), needsSettings: z.boolean().optional(),
+  shape: z.enum(["stat", "series", "table", "status"]), format: z.string().optional(), group: z.string().optional(),
+  measure: z.enum(["cpu", "memory", "disk", "network", "temperature", "uptime", "count", "status", "other"]), headline: z.boolean().optional(),
+  history: z.object({ endpointId: z.string(), params: z.record(z.string(), propValue) }).optional(),
+  check: z.object({ status: z.enum(["ok", "empty", "failed", "odd"]), reason: z.string().optional(), at: z.string() }).optional(),
+  from: z.string().optional(), defaultRefreshSec: z.number(), minRefreshSec: z.number(),
+});
+export const catalogueServiceOut = z.object({
+  integrationId: z.string(), name: z.string(), packageId: z.string(), icon: z.string(),
+  kind: z.enum(["media", "monitoring", "network", "smart-home", "storage", "containers", "other"]), openUrl: z.string().optional(),
+  headline: z.array(headlineStatOut), health: z.enum(["ok", "degraded", "down"]).optional(),
+});
+export const catalogueOut = z.object({ items: z.array(catalogueItemOut), fits: z.array(z.boolean()), services: z.array(catalogueServiceOut), pending: z.array(z.string()) });
+export const peekIn = z.object({ items: z.array(z.object({ integrationId: z.string().min(1).max(100), endpointId: z.string().min(1).max(200), params: z.record(z.string(), z.unknown()).default({}) })).min(1).max(20) });
+export const peekOut = z.object({ values: z.array(z.object({ key: z.string(), data: z.unknown().optional(), error: z.string().optional() })) });

@@ -9,7 +9,16 @@ import { exportText, validateRecipe } from "../schema";
 
 describe("built-in Prometheus recipes (criterion 1)", () => {
   it("give the same manifest endpoints as Wave 2.7, in the same order", () => {
-    expect(JSON.parse(JSON.stringify(prometheusManifest))).toEqual(w27Manifest);
+    // Wave 2.9 (Amendment 10) only adds: the service block, measure, headline and history fields, and
+    // the h:<id> history reads after every other endpoint. Without those it is the Wave 2.7 manifest.
+    const m = JSON.parse(JSON.stringify(prometheusManifest)) as { service?: unknown; endpoints: Record<string, unknown>[] };
+    delete m.service;
+    m.endpoints = m.endpoints.filter((e) => !String(e.id).startsWith("h:")).map((e) => {
+      const { measure, headline, history, ...rest } = e;
+      void measure; void headline; void history;
+      return rest;
+    });
+    expect(m).toEqual(w27Manifest);
   });
   it("rebuild exactly the Wave 2.7 recipe records", () => {
     expect(RECIPES).toEqual(loadRecipes(w27Recipes));

@@ -2,7 +2,7 @@
 // test per group of acceptance criteria, all through the real screen (V11). Uses the Home Assistant
 // stand-in (48 lights). Evidence: evidence/app-builder/<ATRIUM_E2E_EVIDENCE_ROUND>/data-picker/.
 import { expect, test, type Page } from "@playwright/test";
-import { addUser, api, contextFor, ev, FAKE_HA_TOKEN, fakeHa, log, OWNER, PEOPLE, SHELL_VARIANTS, type FakeHa } from "./helpers";
+import { addUser, api, contextFor, ev, FAKE_HA_TOKEN, fakeHa, log, OWNER, PEOPLE, SHELL_VARIANTS, type FakeHa, byHand } from "./helpers";
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 test.skip(({ isMobile }) => isMobile, "desktop project; phone widths are set per test");
@@ -83,6 +83,7 @@ test("criteria 1, 4, 7 to 10, 13: a text shows the number of lights in 5 clicks,
   const click = async (sel: string) => { await page.locator(sel).first().click(); clicks++; };
   await click('[data-pick-button="text"]');
   await expect(picker(page)).toBeVisible();
+  await byHand(page);
   await click(`[data-pick-integration="${haId}"]`);
   // Criterion 4: every endpoint row has a label, a description and its kind in words.
   const rows = await page.locator("[data-pick-endpoint]").evaluateAll((els) => els.map((e) => ({ desc: e.querySelector("[data-pick-endpoint-description]")?.textContent ?? "", kind: e.querySelector("[data-pick-endpoint-kind]")?.textContent ?? "" })));
@@ -131,6 +132,7 @@ test("criteria 1, 4, 7 to 10, 13: a text shows the number of lights in 5 clicks,
   await page.locator('[data-binding-field="text"] textarea').fill("{{ entities.rows | count }} lights");
   await page.waitForTimeout(800);
   await page.locator('[data-pick-button="text"]').click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${haId}"]`).click();
   await page.locator('[data-pick-endpoint="states"]').click();
   await expect(page.locator("[data-pick-bound-words]")).toHaveText("Custom template");
@@ -192,6 +194,7 @@ test("criteria 12, 14, 15, 16: stat with a table offers summaries; Cancel undoes
   // Criterion 14: Cancel after adding a source and binding puts the draft back as it was.
   const start = await draft(id);
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${haId}"]`).click();
   await page.locator('[data-pick-endpoint="states"]').click();
   await expect(page.locator("[data-pick-sample]")).toBeVisible({ timeout: 3000 });
@@ -213,6 +216,7 @@ test("criteria 12, 14, 15, 16: stat with a table offers summaries; Cancel undoes
   expect(nodeIn(back, "c_pkstataaaa").props).toEqual(nodeIn(start, "c_pkstataaaa").props);
   // Criterion 15: Cancel keeps a source that another component already uses.
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   await page.locator(`[data-pick-integration="${haId}"]`).click();
   await page.locator('[data-pick-endpoint="states"]').click();
   const withSrc = await untilDraft(id, (d) => d.doc.dataSources.length === 1);
@@ -228,6 +232,7 @@ test("criteria 12, 14, 15, 16: stat with a table offers summaries; Cancel undoes
   await open(page, slug, "c_pkusedaaaa");
   await expect(page.locator("[data-data-summary-words]")).toContainText(name);
   await page.locator("[data-data-change]").click();
+  await byHand(page);
   await moreSettings(page);
   await page.locator("[data-pick-name]").fill("lamps");
   await page.locator("[data-pick-name]").press("Enter");
@@ -247,6 +252,7 @@ test("criteria 18, 19, 2: the Data group summary with Change and Disconnect; rem
   const page = await ctx.newPage();
   await open(page, slug, "c_pktableaaa");
   await page.locator("[data-connect-data]").click();
+  await byHand(page);
   // Criterion 2: exactly the integrations the bindable listing returns.
   const listing = ((await (await (await api(OWNER)).get("/api/integrations/bindable")).json()).integrations as { integrationId: string }[]).map((i) => i.integrationId);
   await expect(page.locator("[data-pick-integration]").first()).toBeVisible();
@@ -289,6 +295,7 @@ test("criteria 20, 21, 22, 23: viewers get no picker; 390px works full screen; r
   await page.locator('[data-pick-button="text"]').tap();
   const sheet = page.locator('[data-sheet="data-picker"], [data-data-picker]').first();
   await expect(sheet).toBeVisible();
+  await byHand(page);
   // Criterion 22: with reduced motion the sheet does not move while it opens.
   const a = await page.locator("[data-data-picker]").boundingBox();
   await page.waitForTimeout(120);

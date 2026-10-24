@@ -4,6 +4,7 @@
 // only; agents need atrium:edit and only ever make drafts. Secret values are sealed through the
 // held-secrets path, never echoed, and no response carries config or secrets.
 import "server-only";
+import { getServiceRow, kindFromTitle, saveServiceRow } from "../service-info";
 import { randomBytes } from "node:crypto";
 import type { CustomCommand, CustomEndpoint, JsonSchema, Principal, ReadCheck } from "@/core/contracts";
 import { AtriumError, NotFound } from "@/core/errors";
@@ -211,6 +212,15 @@ export async function importHeldSpec(p: Principal, input: ImportInput, lock: Par
     repo.upsertCustomEndpoint(integrationId, parsed.data as CustomEndpoint);
     added++;
   }
+  // A10.5: the service's kind from the spec title, and its top 4 stat-shaped headline reads as its
+  // headline stats (unless the owner already picked some).
+  const savedIds = new Set(reads.filter((r) => !skipped.some((x) => x.id === r.id)).map((r) => r.id));
+  const prevService = getServiceRow(integrationId);
+  const headline = reads
+    .filter((r) => savedIds.has(r.id) && r.headline && r.shape === "stat" && !((r.params as { required?: string[] } | undefined)?.required ?? []).length)
+    .slice(0, 4)
+    .map((r) => ({ label: r.label.slice(0, 60), endpointId: r.id, value: "value", ...(r.format ? { format: r.format } : {}) }));
+  saveServiceRow(integrationId, { ...(prevService?.kind ? {} : { kind: kindFromTitle(imp.title) }), ...(prevService?.headline?.length || !headline.length ? {} : { headline }) });
   // Changes the service can make: only the ones the owner picked, each with the risk they set.
   const addedCommands: string[] = [];
   for (const pick of input.commands ?? []) {
