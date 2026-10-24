@@ -11,6 +11,8 @@ import { sqlite } from "@/core/db";
 export const DATA_TABLES = [
   "user", "allowlist", "setting", "theme", "theme_draft", "upload",
   "integration", "custom_endpoint", "custom_command", "declarative_package", "credential", "integration_credential",
+  // Wave 2.8 recipes (Amendment 9): no secrets by spec criterion 14.
+  "recipe",
   // app-builder and components (Wave 2): names as the lead prep expects them; confirm after the wave.
   "app", "app_draft", "app_version", "draft_change", "library_component",
   // Later waves (section 12): routes, channels, action definitions.
@@ -24,12 +26,13 @@ export const AUDIT_TABLES = ["audit_log", "control_run"] as const;
  * Never exported (section 12 and A4.4): sessions, Better Auth accounts (password hashes) and
  * verification rows, TOTP secrets, OAuth clients and tokens, guest links and sessions, invite and reset
  * links, sealed secrets (values travel only in secrets.enc), the cache, one-time credential links,
- * package problems, rate-limit buckets, agent tokens, render tickets and push subscriptions.
+ * package problems, rate-limit buckets, agent tokens, render tickets and push subscriptions. `read_check`
+ * (Wave 2.8) is derived: the daily live check rebuilds it.
  */
 export const NEVER_TABLES = [
   "session", "account", "verification", "two_factor", "auth_rate_limit",
   "oauth_client", "oauth_resource", "oauth_client_resource", "oauth_refresh_token", "oauth_access_token", "oauth_consent", "oauth_client_assertion",
-  "guest_link", "guest_session", "account_link", "secret", "endpoint_cache", "credential_link", "package_problem",
+  "guest_link", "guest_session", "account_link", "secret", "endpoint_cache", "credential_link", "package_problem", "read_check",
   "agent_token", "render_ticket", "push_subscription", "__drizzle_migrations", "sqlite_sequence",
 ] as const;
 
