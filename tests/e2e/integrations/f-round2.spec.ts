@@ -1,6 +1,6 @@
 // Round 2 (gauntlet r1 Fix List): the security replays over HTTP (items 1 to 4), and the
-// usability, quality-bar and mobile fixes (items 5 to 11 and 13) in the real UI. Live Prometheus
-// at 10.77.99.7:9090 is read-only. Test-only secrets; none are real.
+// usability, quality-bar and mobile fixes (items 5 to 11 and 13) in the real UI. The live Prometheus
+// (ATRIUM_TEST_PROM_URL, kept outside git) is read-only. Test-only secrets; none are real.
 import Database from "better-sqlite3";
 import { appendFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -14,6 +14,7 @@ test.beforeEach(({}, info) => test.skip(info.project.name !== "desktop", "deskto
 
 let api: HomeApi;
 test.beforeAll(async () => { api = await fakeHomeApi(); });
+const LIVE_PROM = process.env.ATRIUM_TEST_PROM_URL;
 test.afterAll(async () => { await api.close(); });
 
 const SEC_LOG = ev("security/http-replay.jsonl");
@@ -183,10 +184,12 @@ test("Prometheus login choices show only the fields each needs (item 10)", async
 });
 
 test("Prometheus detail: up/down/total headline, a range chart, examples, Query error (items 9, 10, live)", async ({ browser }) => {
+  test.skip(!LIVE_PROM, "needs ATRIUM_TEST_PROM_URL");
+  const bare = LIVE_PROM!.replace(/^https?:\/\//, "");
   const ctx0 = await themedContext(browser, "daylight");
-  const created = await (await ctx0.request.post("/api/integrations", { data: { packageId: "prometheus", name: "Prometheus live", config: { baseUrl: "10.77.99.7:9090" }, secrets: {}, untested: true }, headers: { origin: ORIGIN } })).json();
+  const created = await (await ctx0.request.post("/api/integrations", { data: { packageId: "prometheus", name: "Prometheus live", config: { baseUrl: bare }, secrets: {}, untested: true }, headers: { origin: ORIGIN } })).json();
   // A bare address gets http:// on the server too (item 13).
-  expect(created.config.baseUrl).toBe("http://10.77.99.7:9090");
+  expect(created.config.baseUrl).toBe(`http://${bare}`);
   await ctx0.close();
   for (const theme of ["daylight", "dusk", "solid"] as Theme[]) {
     const ctx = await themedContext(browser, theme);

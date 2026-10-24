@@ -1,5 +1,6 @@
 // Check V2: live services. Run with ATRIUM_LIVE=1. A service whose token variable is not set is
-// skipped, never passed. Only read requests are sent; no guessed token is ever sent anywhere.
+// skipped, never passed. Addresses come from ATRIUM_TEST_PROM_URL, ATRIUM_TEST_NPM_URL and
+// ATRIUM_TEST_PROXMOX_URL (the real ones live outside git); the defaults are placeholders. Only read requests are sent; no guessed token is ever sent anywhere.
 import { describe, expect, it } from "vitest";
 import type { Adapter, PackageManifest } from "@/core/contracts";
 import { createHostHttp, type RequestRecord } from "@/features/integrations/host/http";
@@ -18,6 +19,9 @@ import haManifest from "../home-assistant/manifest.json";
 import { safeRequest } from "@/features/integrations/host/request";
 
 const LIVE = process.env.ATRIUM_LIVE === "1";
+const PROM_URL = process.env.ATRIUM_TEST_PROM_URL ?? "http://10.77.99.7:9090";
+const NPM_URL = process.env.ATRIUM_TEST_NPM_URL ?? "http://10.77.99.6:81";
+const PROXMOX_URL = process.env.ATRIUM_TEST_PROXMOX_URL ?? "https://10.77.99.4:8006";
 const log = { debug() {}, info() {}, warn() {}, error() {} };
 
 function ctx(manifest: unknown, config: Record<string, unknown>, secret?: string, sent?: RequestRecord[]) {
@@ -25,9 +29,9 @@ function ctx(manifest: unknown, config: Record<string, unknown>, secret?: string
   return { config, http, log, signal: new AbortController().signal, now: () => new Date() };
 }
 
-describe.skipIf(!LIVE)("live Prometheus http://10.77.99.7:9090", () => {
+describe.skipIf(!LIVE)(`live Prometheus ${PROM_URL}`, () => {
   const sent: RequestRecord[] = [];
-  const c = ctx(prometheusManifest, { baseUrl: "http://10.77.99.7:9090" }, undefined, sent);
+  const c = ctx(prometheusManifest, { baseUrl: PROM_URL }, undefined, sent);
   const p: Adapter = prometheus;
   it("health is ok with a version, within 10 seconds", async () => {
     const h = await p.health(c);
@@ -69,7 +73,7 @@ describe.skipIf(!LIVE)("live RSS feeds", () => {
 
 describe.skipIf(!LIVE || !process.env.ATRIUM_TEST_NPM_TOKEN)("live Nginx Proxy Manager (needs ATRIUM_TEST_NPM_TOKEN)", () => {
   it("health and proxy hosts", async () => {
-    const c = ctx(npmManifest, { baseUrl: "http://10.77.99.6:81" }, process.env.ATRIUM_TEST_NPM_TOKEN);
+    const c = ctx(npmManifest, { baseUrl: NPM_URL }, process.env.ATRIUM_TEST_NPM_TOKEN);
     expect((await npm.health(c)).status).toBe("ok");
     expect((await npm.read(c, "proxy-hosts", {})).ok).toBe(true);
   });
@@ -77,7 +81,7 @@ describe.skipIf(!LIVE || !process.env.ATRIUM_TEST_NPM_TOKEN)("live Nginx Proxy M
 
 describe.skipIf(!LIVE || !process.env.ATRIUM_TEST_PROXMOX_TOKEN)("live Proxmox VE (needs ATRIUM_TEST_PROXMOX_TOKEN)", () => {
   it("health and nodes", async () => {
-    const c = ctx(proxmoxManifest, { baseUrl: "https://10.77.99.4:8006", verifyTls: false }, process.env.ATRIUM_TEST_PROXMOX_TOKEN);
+    const c = ctx(proxmoxManifest, { baseUrl: PROXMOX_URL, verifyTls: false }, process.env.ATRIUM_TEST_PROXMOX_TOKEN);
     expect((await proxmox.health(c)).status).toBe("ok");
     expect((await proxmox.read(c, "nodes", {})).ok).toBe(true);
   });

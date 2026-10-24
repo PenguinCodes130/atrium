@@ -1,6 +1,6 @@
 // Check V2 for Wave 2.8: Grafana dashboard 1860 (downloaded once from grafana.com by id) imported onto
 // the operator's real Prometheus, the live check run, and the built-in recipe reads checked. Run with
-//   ATRIUM_TEST_PROM_URL=http://10.77.99.7:9090 [ATRIUM_TEST_GRAFANA_DOWNLOAD=1] [ATRIUM_TEST_RECIPES_OUT=<file>] pnpm exec vitest run src/features/recipes/__tests__/recipes-live.test.ts
+//   ATRIUM_TEST_PROM_URL=http://<prometheus>:9090 [ATRIUM_TEST_GRAFANA_DOWNLOAD=1] [ATRIUM_TEST_RECIPES_OUT=<file>] pnpm exec vitest run src/features/recipes/__tests__/recipes-live.test.ts
 // Skipped (never passed) without the variable. Only the reads' own GET requests reach Prometheus.
 import { writeFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";

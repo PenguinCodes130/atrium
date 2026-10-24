@@ -5,6 +5,9 @@ import { fakeHomeApi, fakePlain } from "./fakes";
 
 test.skip(process.env.ATRIUM_E2E_SCENARIO === "locked", "normal scenario");
 
+// The live Prometheus, e.g. ATRIUM_TEST_PROM_URL=http://<host>:9090 (the real address stays outside git).
+const LIVE_PROM = process.env.ATRIUM_TEST_PROM_URL;
+
 test.describe("gallery and detection", () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== "desktop", "desktop project; mobile shots are taken explicitly"));
 
@@ -33,23 +36,25 @@ test.describe("gallery and detection", () => {
     await ctx.close();
   });
 
-  test("pasting http://10.77.99.7:9090 highlights Prometheus within 10 seconds (criterion 7, live)", async ({ browser }) => {
+  test("pasting the live Prometheus address highlights Prometheus within 10 seconds (criterion 7, live)", async ({ browser }) => {
+    test.skip(!LIVE_PROM, "needs ATRIUM_TEST_PROM_URL");
+    const prom = LIVE_PROM!;
     const ctx = await themedContext(browser, "daylight");
     const page = await ctx.newPage();
     captureTraffic(page, "detect-prometheus");
     await page.goto("/integrations/new");
-    await page.locator("#detect-url").fill("http://10.77.99.7:9090");
+    await page.locator("#detect-url").fill(prom);
     const start = Date.now();
     await page.locator("[data-detect-button]").click();
     await expect(page.locator('[data-gallery-card="prometheus"]')).toHaveAttribute("data-match", "true", { timeout: 10_000 });
     const took = Date.now() - start;
     // Fix List item 8: a match panel with a primary "Set up Prometheus" button; the card keeps its description.
-    await expect(page.locator("[data-detect-match]")).toContainText("This looks like Prometheus at http://10.77.99.7:9090");
+    await expect(page.locator("[data-detect-match]")).toContainText(`This looks like Prometheus at ${prom}`);
     await expect(page.locator('[data-detect-setup="prometheus"]')).toHaveText("Set up Prometheus");
-    await expect(page.locator('[data-detect-setup="prometheus"]')).toHaveAttribute("href", "/integrations/new/prometheus?baseUrl=http%3A%2F%2F10.77.99.7%3A9090");
+    await expect(page.locator('[data-detect-setup="prometheus"]')).toHaveAttribute("href", `/integrations/new/prometheus?baseUrl=${encodeURIComponent(prom)}`);
     await expect(page.locator('[data-gallery-card="prometheus"]')).toContainText("Your machines' CPU, memory, disks and network"); // Wave 2.7 description
     await expect(page.locator('[data-gallery-card="prometheus"] [data-match-note]')).toBeVisible();
-    await expect(page.locator('[data-gallery-card="prometheus"] a')).toHaveAttribute("href", "/integrations/new/prometheus?baseUrl=http%3A%2F%2F10.77.99.7%3A9090");
+    await expect(page.locator('[data-gallery-card="prometheus"] a')).toHaveAttribute("href", `/integrations/new/prometheus?baseUrl=${encodeURIComponent(prom)}`);
     test.info().annotations.push({ type: "detect-ms", description: String(took) });
     await shot(page, "screens/detect-prometheus-daylight.png");
     await ctx.close();
