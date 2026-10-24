@@ -6,7 +6,7 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { api, contextFor, FAKE_HA_TOKEN, fakeHa, OWNER, SHELL_VARIANTS, type FakeHa } from "../app-builder/helpers";
+import { api, byHand, contextFor, FAKE_HA_TOKEN, fakeHa, OWNER, SHELL_VARIANTS, type FakeHa } from "../app-builder/helpers";
 
 test.describe.configure({ mode: "serial", timeout: 300_000 });
 test.use({ actionTimeout: 15_000 });
@@ -92,6 +92,7 @@ test("build a lights dashboard: create, connect data, compose, pages, fit, publi
     text = await insert(page, "text");
     await expect(page.locator(`[data-selected-outline="${text.id}"]`)).toBeVisible();
     await page.locator('[data-pick-button="text"]').click();
+    await byHand(page); // Wave 2.9: the by-hand picker is one click past "What should this show?"
     await page.locator(`[data-pick-integration="${haId}"]`).click();
     await page.locator('[data-pick-endpoint="states"]').click();
     await expect(page.locator("[data-pick-sample]")).toBeVisible({ timeout: 5000 });
@@ -120,6 +121,8 @@ test("build a lights dashboard: create, connect data, compose, pages, fit, publi
   await test.step("drag a card from Insert onto the canvas", async () => {
     await page.locator('[data-left-tab="insert"]').click();
     const before = kids(await draft()).length;
+    // The Insert list keeps its scroll from the last insert (Wave 2.9 made the Data section longer).
+    await page.locator('[data-insert-item="card"]').first().scrollIntoViewIfNeeded();
     const item = (await page.locator('[data-insert-item="card"]').first().boundingBox())!;
     const canvas = (await page.locator("[data-canvas-root]").boundingBox())!;
     const to = { x: canvas.x + canvas.width * 0.75, y: canvas.y + 120 };
@@ -218,6 +221,7 @@ test("a card for each machine: a Repeat picks Machines overview from Prometheus 
     await page.locator('[data-left-tab="layers"]').click();
     await page.locator('[data-layer="c_jrepeataaa"]').click();
     await page.locator('[data-pick-button="items"]').click();
+    await byHand(page); // Wave 2.9: the by-hand picker is one click past "What should this show?"
     await page.locator(`[data-pick-integration="${promId}"]`).click();
     await page.locator('[data-pick-endpoint="machines-overview"]').click();
     await expect(page.locator("[data-pick-cards]")).toBeVisible({ timeout: 5000 });
@@ -346,6 +350,7 @@ test("import a Grafana dashboard and put a read on a page: a stat picks the dash
       await page.locator('[data-left-tab="insert"]').click();
       await page.locator('[data-insert-item="stat"]').first().click();
       await expect(page.locator("[data-data-picker]")).toBeVisible();
+      await byHand(page); // Wave 2.9: the by-hand picker is one click past "What should this show?"
       await page.locator(`[data-pick-integration="${promId}"]`).click();
       const read = page.locator(`[data-pick-endpoint="${readId}"]`);
       await expect(read).toBeVisible();
