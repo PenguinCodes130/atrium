@@ -117,7 +117,9 @@ test("criteria 1, 2, 3: Insert a Stat, type cpu, click a machine: its live CPU o
   // Criterion 3: fitting results come first, under "Fits a stat".
   const groups = await page.locator("[data-show-group]").evaluateAll((els) => els.map((e) => e.getAttribute("data-show-group")));
   expect(groups[0]).toBe("fits");
-  // Each result shows its live value within 3 s (criterion 2's value part).
+  // Each result shows its live value within 3 s (criterion 2's value part). Rows past the first 20 load
+  // their value once on screen; with other suites' services in the data this row can sit lower down.
+  await ace.scrollIntoViewIfNeeded();
   await expect(ace.locator("[data-show-value]")).toHaveText("7.8 %", { timeout: 3000 });
   await page.screenshot({ path: shot("c1-search-cpu-light") });
   expect((await draft(id)).doc.dataSources).toHaveLength(0);
@@ -409,7 +411,14 @@ test("criterion 10: Insert > Start page from three stand-in services: a resource
   await page.locator('[data-left-tab="insert"]').click().catch(() => {});
   await page.locator('[data-insert-item="start-page"]').click();
   await expect(page.locator("[data-start-sheet]")).toBeVisible();
-  for (const x of [promId, dockerId, haId]) await expect(page.locator(`[data-start-service="${x}"]`)).toHaveAttribute("aria-checked", "true");
+  const mine = [promId, dockerId, haId];
+  for (const x of mine) await expect(page.locator(`[data-start-service="${x}"]`)).toHaveAttribute("aria-checked", "true");
+  // Every connected service starts ticked; other suites' services in the same data are unticked here.
+  for (const other of await page.locator("[data-start-service]").all()) {
+    if (mine.includes((await other.getAttribute("data-start-service"))!)) continue;
+    if ((await other.getAttribute("aria-checked")) === "true") await other.click();
+    await expect(other).toHaveAttribute("aria-checked", "false");
+  }
   await page.locator("[data-start-link-name]").fill("Router");
   await page.locator("[data-start-link-href]").fill("http://router.e2e.test/");
   await page.locator("[data-start-link-add]").click();

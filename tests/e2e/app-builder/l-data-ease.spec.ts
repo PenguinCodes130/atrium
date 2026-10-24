@@ -65,6 +65,7 @@ async function selectLayer(page: Page, id: string) {
   await expect(page.locator(`[data-selected-outline="${id}"]`)).toBeVisible();
 }
 const picker = (page: Page) => page.locator("[data-data-picker]");
+const showPicker = (page: Page) => page.locator("[data-show-picker]");
 const canvasNode = (page: Page, id: string) => page.locator(`[data-canvas-root] [data-node="${id}"]`);
 async function insertStat(page: Page): Promise<string> {
   await page.locator('[data-left-tab="insert"]').click().catch(() => {});
@@ -347,36 +348,42 @@ test("criteria 9, 10, 14, 15 (audit problems 2, 3): several values are never kep
   await expect(canvasNode(page, "c_demanyaaaa").locator('[data-slot="value"]')).toHaveText("34.6", { timeout: 2000 });
   await page.locator("[data-pick-done]").click();
   const sources = (await draft(id)).doc.dataSources.map((s) => s.name);
-  // Criterion 10: Cancel, Escape and the close button each leave no source the picker added.
+  // Criterion 10: Cancel, Escape and the close button each leave no source the picker added. Wave 2.9: a
+  // chart's picker is "What should this show?" in line mode (no by-hand step), which adds nothing until a pick.
+  const rev0 = (await draft(id)).rev;
   for (const how of ["cancel", "escape", "close"] as const) {
     await selectLayer(page, "c_dechartaaa");
     await page.locator("[data-connect-data]").click();
-    await byHand(page);
-    await page.locator(`[data-pick-integration="${promId}"]`).click();
-    await page.locator('[data-pick-endpoint="machines-history"]').click();
-    await untilDraft(id, (d) => d.doc.dataSources.length === sources.length + 1);
+    await expect(showPicker(page)).toHaveAttribute("data-mode", "line");
+    await page.locator("[data-show-search]").fill("cpu");
+    await expect(page.locator(`[data-show-item][data-show-endpoint="machine-cpu"]`).first()).toBeVisible({ timeout: 3000 });
     if (how === "cancel") await page.locator("[data-pick-cancel]").click();
     if (how === "escape") await page.keyboard.press("Escape");
     if (how === "close") await page.locator('[data-sheet="data-picker"] button[aria-label="Close"]').click();
-    await expect(picker(page)).toHaveCount(0);
-    const back = await untilDraft(id, (d) => d.doc.dataSources.length === sources.length);
+    await expect(showPicker(page)).toHaveCount(0);
+    const back = await draft(id);
     expect(back.doc.dataSources.map((s) => s.name), how).toEqual(sources);
+    expect(back.rev, how).toBe(rev0);
   }
   // Criterion 14: a chart of CPU for every machine names each line by the machine's name.
   await selectLayer(page, "c_dechartaaa");
   await page.locator("[data-connect-data]").click();
-  await byHand(page);
-  await page.locator(`[data-pick-integration="${promId}"]`).click();
-  await page.locator('[data-pick-endpoint="machines-history"]').click();
-  await expect(page.locator("[data-pick-sample]")).toBeVisible({ timeout: 4000 });
-  await page.locator("[data-pick-use]").click();
-  await page.locator("[data-pick-done]").click();
-  const legend = canvasNode(page, "c_dechartaaa").locator('[data-slot="legend"] li');
-  await expect(legend.first()).toBeVisible({ timeout: 4000 });
+  await page.locator("[data-show-search]").fill("cpu");
+  const cpu = page.locator(`[data-show-item][data-show-integration="${promId}"][data-show-endpoint="machine-cpu"][data-show-thing-value="${ACE}"]`).first();
+  await expect(cpu).toBeVisible({ timeout: 3000 });
+  await cpu.click();
+  await expect(showPicker(page)).toHaveCount(0);
+  await selectLayer(page, "c_dechartaaa");
+  const g = page.locator('section[data-inspector-group="data"]');
+  if ((await g.getAttribute("data-open")) === null) await g.locator("h3 > button").click();
+  await page.locator('[data-also-for="*"]').click();
+  await expect(page.locator('[data-chart-line="1"] [data-chart-line-words]')).toContainText("9 lines", { timeout: 15_000 });
+  const legend = canvasNode(page, "c_dechartaaa").locator("[data-legend-line]");
+  await expect.poll(async () => (await legend.allTextContents()).length, { timeout: 8000 }).toBeGreaterThan(1);
   const lines = await legend.allTextContents();
   log("chart legend", lines);
   expect(lines.join(" ")).toContain("ACE");
-  expect(lines.join(" ")).not.toMatch(/[{}="]/);
+  expect(lines.join(" ")).not.toMatch(/[{}="]|:9100/);
   await page.screenshot({ path: shot("chart-legend-solid") });
   await ctx.close();
 });

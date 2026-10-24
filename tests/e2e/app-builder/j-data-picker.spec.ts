@@ -314,7 +314,9 @@ test("criteria 20, 21, 22, 23: viewers get no picker; 390px works full screen; r
   await page.locator("[data-pick-done]").tap();
   const all = bodies.join("\n");
   expect(all).not.toContain(FAKE_HA_TOKEN);
-  expect(all).not.toContain(ha!.url);
+  // A10.5: a service's open address (by default its base address) is not config and may travel as
+  // `openUrl` for the tile link; anywhere else the address is config and must not reach the browser.
+  expect(all.replaceAll(new RegExp(`"openUrl":"${ha!.url.replace(/[.]/g, "\\.")}/?"`, "g"), "")).not.toContain(ha!.url);
   await ctx.close();
   // Criterion 20: a viewer sees no Connect data, no Pick data and no picker.
   const v = await contextFor(browser, PEOPLE.viewer, { variant: SHELL_VARIANTS[0] });

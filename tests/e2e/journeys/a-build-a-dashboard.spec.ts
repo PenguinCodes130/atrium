@@ -374,3 +374,78 @@ test("import a Grafana dashboard and put a read on a page: a stat picks the dash
     await prom.close();
   }
 });
+
+test("a start page from three services, then a CPU chart for every machine, published (Wave 2.9 journey)", async ({ browser }) => {
+  const { startFakePrometheus } = await import("../fixtures/fake-prometheus");
+  const { fakeDocker } = await import("../integrations/fakes");
+  const prom = await startFakePrometheus();
+  const docker = await fakeDocker();
+  try {
+    const c = await api(OWNER);
+    const mk = async (data: Record<string, unknown>) => {
+      const r = await c.post("/api/integrations", { data: { secrets: {}, untested: true, ...data } });
+      expect(r.ok()).toBe(true);
+      return (await r.json()).id as string;
+    };
+    const promId = await mk({ packageId: "prometheus", name: `Start Prometheus ${RUN}`, config: { baseUrl: prom.url, authMode: "none" } });
+    const dockerId = await mk({ packageId: "docker", name: `Start Docker ${RUN}`, config: { endpoint: `tcp://127.0.0.1:${docker.port}` } });
+    // Home Assistant is the one beforeAll connected; earlier journeys left other services, unticked below.
+    const ctx = await contextFor(browser, OWNER, { variant: SHELL_VARIANTS[1], viewport: { width: 1440, height: 900 } });
+    const page = await ctx.newPage();
+    let slug = "";
+    await test.step("New app > Start page with the three services ticked", async () => {
+      await page.goto("/");
+      await page.locator("[data-new-app], [data-new-app-tile]").first().click();
+      await page.locator("[data-new-app-name]").fill(`Start ${RUN}`);
+      await page.locator('[data-template-option="start-page"]').click();
+      const mine = [promId, dockerId, haId];
+      for (const x of mine) await expect(page.locator(`[data-start-service="${x}"]`)).toHaveAttribute("aria-checked", "true");
+      for (const other of await page.locator("[data-start-service]").all()) {
+        if (mine.includes((await other.getAttribute("data-start-service"))!)) continue;
+        if ((await other.getAttribute("aria-checked")) === "true") await other.click();
+        await expect(other).toHaveAttribute("aria-checked", "false");
+      }
+      await page.locator("[data-create-app]").click();
+      await page.waitForURL(/\/build\//);
+      slug = page.url().split("/build/")[1]!.split(/[/?]/)[0]!;
+      await expect(page.locator("[data-canvas-root] [data-type='resource-bar']")).toHaveCount(1, { timeout: 8000 });
+      const tiles = page.locator("[data-canvas-root] [data-type='service-tile']");
+      await expect(tiles).toHaveCount(3, { timeout: 8000 });
+      for (const name of [`Start Prometheus ${RUN}`, `Start Docker ${RUN}`, "Home Assistant"]) await expect(tiles.filter({ hasText: name })).toHaveCount(1, { timeout: 8000 });
+      await page.screenshot({ path: shot("start-page-made") });
+    });
+    await test.step("insert a chart, pick CPU for one machine, then Also for: Every machine", async () => {
+      await page.locator('[data-left-tab="insert"]').click();
+      await page.locator('[data-insert-item="chart"]').click();
+      const picker = page.locator("[data-show-picker]");
+      await expect(picker).toHaveAttribute("data-mode", "line");
+      await page.locator("[data-show-search]").fill("cpu");
+      const item = page.locator(`[data-show-item][data-show-integration="${promId}"][data-show-endpoint="machine-cpu"][data-show-thing-value="10.77.99.8:9100"]`).first();
+      await expect(item).toBeVisible({ timeout: 3000 });
+      await item.click();
+      await expect(picker).toHaveCount(0);
+      const g = page.locator('section[data-inspector-group="data"]');
+      await expect(g).toBeVisible();
+      if ((await g.getAttribute("data-open")) === null) await g.locator("h3 > button").click();
+      await page.locator('[data-also-for="*"]').click();
+      await expect(page.locator('[data-chart-line="1"] [data-chart-line-words]')).toContainText("9 lines", { timeout: 15_000 });
+      await expect.poll(async () => (await page.locator("[data-canvas-root] [data-type='chart'] [data-legend-line]").allTextContents()).length, { timeout: 10_000 }).toBeGreaterThan(1);
+      await page.screenshot({ path: shot("start-page-every-machine-chart") });
+    });
+    await test.step("publish and see the start page and the chart in the viewer", async () => {
+      await page.waitForTimeout(1200);
+      await page.locator("[data-publish]").first().click();
+      await page.locator("[data-publish-confirm]").click();
+      await expect(page.locator("[data-publish-glow]")).toBeAttached();
+      await page.goto(`/a/${slug}`);
+      await expect(page.locator("[data-type='resource-bar']")).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator("[data-type='service-tile']")).toHaveCount(3);
+      await expect.poll(async () => (await page.locator("[data-type='chart'] [data-legend-line]").allTextContents()).length, { timeout: 10_000 }).toBeGreaterThan(1);
+      await page.screenshot({ path: shot("start-page-published"), fullPage: true });
+    });
+    await ctx.close();
+  } finally {
+    await prom.close();
+    await docker.close();
+  }
+});
