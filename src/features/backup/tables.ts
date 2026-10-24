@@ -6,6 +6,7 @@ import "server-only";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { sqlite } from "@/core/db";
+import { SYSTEM_INTEGRATION_ID } from "@/features/integrations/repo";
 
 /** Exported, in an order that keeps foreign keys happy on insert (parents first). */
 export const DATA_TABLES = [
@@ -49,6 +50,26 @@ export function unclassifiedTables(): string[] {
 
 export function columnsOf(table: string): { name: string; notnull: boolean; dflt: unknown; pk: boolean }[] {
   return (sqlite().prepare(`PRAGMA table_info("${table.replace(/"/g, "")}")`).all() as { name: string; notnull: number; dflt_value: unknown; pk: number }[]).map((c) => ({ name: c.name, notnull: !!c.notnull, dflt: c.dflt_value, pk: c.pk > 0 }));
+}
+
+/**
+ * A10.6: the built-in `atrium` integration is recreated at startup, so a backup never carries it (or a
+ * row hanging off it), and an import keeps this instance's own. The column that names it, or null.
+ */
+export function builtInColumn(table: string): "id" | "integration_id" | null {
+  if (table === "integration") return "id";
+  return columnsOf(table).some((c) => c.name === "integration_id") ? "integration_id" : null;
+}
+
+/** A WHERE clause (with its argument) that leaves out the built-in integration's rows. */
+export function notBuiltIn(table: string): { where: string; args: string[] } {
+  const col = builtInColumn(table);
+  return col ? { where: `WHERE "${col}" IS NOT ?`, args: [SYSTEM_INTEGRATION_ID] } : { where: "", args: [] };
+}
+
+export function isBuiltInRow(table: string, row: Record<string, unknown>): boolean {
+  const col = builtInColumn(table);
+  return !!col && row[col] === SYSTEM_INTEGRATION_ID;
 }
 
 type Journal = { entries: { idx: number; tag: string }[] };

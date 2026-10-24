@@ -23,7 +23,7 @@ import { checkFile, FILE_RE, MAX_UPLOAD_BYTES, uploadsDir, type Checked } from "
 import { BACKUP_FORMAT, BACKUP_VERSION, type Manifest } from "./export";
 import { countedList } from "./words";
 import { decryptSecrets, resealAll, type SecretValue } from "./secrets";
-import { AUDIT_TABLES, DATA_TABLES, columnsOf, compareSchema, existingTables } from "./tables";
+import { AUDIT_TABLES, DATA_TABLES, columnsOf, compareSchema, existingTables, isBuiltInRow, notBuiltIn } from "./tables";
 
 export const MAX_BACKUP_BYTES = 1024 * 1024 * 1024;
 export const NEWER_MESSAGE = "This backup is from a newer Atrium. Update this Atrium first.";
@@ -117,7 +117,8 @@ export function existingData(ownerId: string): Record<string, number> {
   };
   add("other users", "user", "WHERE id <> ?", ownerId);
   add("apps", "app");
-  add("integrations", "integration");
+  const sys = notBuiltIn("integration");
+  add("integrations", "integration", sys.where, ...sys.args);
   add("saved credentials", "credential");
   add("saved themes", "theme");
   add("uploads", "upload");
@@ -246,7 +247,10 @@ export async function importBackup(p: Principal, bytes: Buffer, opts: ImportOpti
         if (!present.has(t)) continue;
         if (t === "user") db.prepare(`DELETE FROM "user" WHERE id <> ?`).run(p.userId);
         else if (t === "allowlist") db.prepare(`DELETE FROM "allowlist" WHERE lower(pattern) <> lower(?)`).run(ownerEmail);
-        else db.prepare(`DELETE FROM "${t}"`).run();
+        else {
+          const keep = notBuiltIn(t); // the built-in integration stays (A10.6)
+          db.prepare(`DELETE FROM "${t}" ${keep.where}`).run(...keep.args);
+        }
       }
       if (present.has("secret")) db.prepare(`DELETE FROM "secret"`).run();
       if (present.has("control_run") && parsed.data.has("control_run")) db.prepare(`DELETE FROM "control_run"`).run();
@@ -259,6 +263,7 @@ export async function importBackup(p: Principal, bytes: Buffer, opts: ImportOpti
         let n = 0;
         for (const raw of rows) {
           if (t === "user" && raw.id === fromOwner) continue; // mapped onto this owner
+          if (isBuiltInRow(t, raw)) continue; // an older backup that carried it: keep this instance's own
           if (t === "allowlist" && (raw.role === "owner" || String(raw.pattern).toLowerCase() === ownerEmail.toLowerCase())) continue;
           const row: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(raw)) if (names.has(k)) row[k] = decodeValue(mapOwner(v, fromOwner, p.userId));

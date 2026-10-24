@@ -157,6 +157,8 @@ describe("backups", () => {
 
   it("end to end: B restores, integrations pass with no value retyped and no step-up, lock kept, B's key unchanged (AC 43, 45)", async () => {
     const b = await instance(dirB, keyB);
+    // A10.6: B's own built-in integration does not count as data, and the import keeps it.
+    (await import("@/features/integrations/repo")).ensureSystemIntegration();
     const r = await b.imp.importBackup(ownerB, withSecrets, { password: PASSWORD });
     expect(r.secrets).toBe(4); // the credential, two pinned origins, the setup-agent key
     expect(r.usersToReset).toBe(1);
@@ -173,7 +175,8 @@ describe("backups", () => {
     // The file's owner mapped onto B's owner; B's owner login is untouched; the member must reset.
     const users = b.sqlite().prepare(`SELECT id, role, two_factor_enabled FROM "user" ORDER BY id`).all() as { id: string; role: string; two_factor_enabled: number }[];
     expect(users).toEqual([{ id: "u-member-a", role: "member", two_factor_enabled: 0 }, { id: ownerB.userId, role: "owner", two_factor_enabled: 0 }]);
-    const createdBy = (b.sqlite().prepare("SELECT created_by_id FROM integration").all() as { created_by_id: string }[]).map((x) => x.created_by_id);
+    expect(b.sqlite().prepare("SELECT id FROM integration WHERE id = 'atrium'").get()).toEqual({ id: "atrium" });
+    const createdBy = (b.sqlite().prepare("SELECT created_by_id FROM integration WHERE id <> 'atrium'").all() as { created_by_id: string }[]).map((x) => x.created_by_id);
     expect(new Set(createdBy)).toEqual(new Set([ownerB.userId]));
     expect((b.sqlite().prepare("SELECT COUNT(*) AS n FROM secret WHERE owner_type = 'setup-agent' AND owner_id = ?").get(ownerB.userId) as { n: number }).n).toBe(1);
     expect(b.themes.listSavedThemes().map((t) => t.name)).toEqual(["Kept theme"]);

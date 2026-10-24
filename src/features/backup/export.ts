@@ -15,7 +15,7 @@ import { listUploadFiles, uploadsDir } from "@/features/uploads/store";
 import { assertSecretsExportable, encryptSecrets, KDF, MIN_BACKUP_PASSWORD, readAllSecrets } from "./secrets";
 
 export { assertSecretsExportable, EXPORT_LOCKED_MESSAGE } from "./secrets";
-import { AUDIT_TABLES, DATA_TABLES, existingTables, schemaVersion } from "./tables";
+import { AUDIT_TABLES, DATA_TABLES, existingTables, notBuiltIn, schemaVersion } from "./tables";
 
 export const BACKUP_FORMAT = "atrium-backup";
 export const BACKUP_VERSION = 1;
@@ -43,9 +43,10 @@ function atriumVersion(): string {
   }
 }
 
-/** Table rows as JSON-safe values (BLOBs as { $b64 }). */
+/** Table rows as JSON-safe values (BLOBs as { $b64 }), without the built-in integration's rows. */
 function dumpTable(name: string): Record<string, unknown>[] {
-  const rows = sqlite().prepare(`SELECT * FROM "${name}"`).all() as Record<string, unknown>[];
+  const { where, args } = notBuiltIn(name);
+  const rows = sqlite().prepare(`SELECT * FROM "${name}" ${where}`).all(...args) as Record<string, unknown>[];
   return rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Buffer.isBuffer(v) ? { $b64: v.toString("base64") } : v])));
 }
 
