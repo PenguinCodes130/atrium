@@ -11,6 +11,7 @@
 // Pure module: no DOM, no Node APIs, safe on the server and in the browser.
 import type { Theme, ThemeTokens } from "@/core/contracts";
 import { controlRoom, isThemeColor, isThemeGradient, isUploadPath, THEME_FONTS } from "@/features/shell";
+import { controlRadiusOf } from "@/features/shell/theme";
 
 export const BUILT_IN_THEME_IDS = ["control-room", "dusk", "solid", "daylight"] as const;
 export type BuiltInId = (typeof BUILT_IN_THEME_IDS)[number];
@@ -153,7 +154,9 @@ function typeGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["type"], u
 function shapeGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["shape"]): ThemeTokens["shape"] {
   const s = obj(raw);
   if (!s) return bad(ctx, p, { ...fb });
-  return { radiusPx: num(ctx, `${p}.radiusPx`, s.radiusPx, 0, 32, fb.radiusPx), controlRadiusPx: num(ctx, `${p}.controlRadiusPx`, s.controlRadiusPx, 0, 999, fb.controlRadiusPx) };
+  // A11.5 (Wave 2.10 B3): 0 to 24 px or 999 for Pill. A stored 25 to 998 reads as Pill; that is a
+  // change of meaning, not an invalid value, so it is not counted as replaced.
+  return { radiusPx: num(ctx, `${p}.radiusPx`, s.radiusPx, 0, 32, fb.radiusPx), controlRadiusPx: controlRadiusOf(num(ctx, `${p}.controlRadiusPx`, s.controlRadiusPx, 0, 999, fb.controlRadiusPx)) };
 }
 
 function spaceGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["space"]): ThemeTokens["space"] {

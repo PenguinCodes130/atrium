@@ -156,10 +156,89 @@ export const daylight: Theme = {
 export const BUILT_IN_THEMES = { controlRoom, dusk, solid, daylight } as const;
 export type BuiltInThemeId = keyof typeof BUILT_IN_THEMES;
 
-/** The tokens a theme renders with for a viewer scheme (`dark` overrides apply only in auto mode). */
+/** The token groups a dark set may hold (A11.5: the resolver applies `dark` to every one of them). */
+export const TOKEN_GROUPS = ["wallpaper", "color", "surface", "type", "shape", "space", "motion", "chrome", "scrollbar"] as const;
+
+/**
+ * The tokens a theme renders with for a viewer scheme (`dark` overrides apply only in auto mode).
+ * Wave 2.10 B6 (A11.5): every group of the dark set applies, merged field by field over the light
+ * group, so a dark set that holds only some fields of a group keeps the rest from the light set.
+ */
 export function resolveTokens(theme: Theme, scheme: CanvasTone): ThemeTokens {
   if (theme.mode !== "auto" || scheme === "light" || !theme.dark) return theme.tokens;
-  return { ...theme.tokens, ...theme.dark };
+  const out = { ...theme.tokens } as Record<string, unknown>;
+  const dark = theme.dark as Record<string, unknown>;
+  for (const g of TOKEN_GROUPS) {
+    const d = dark[g];
+    if (!d || typeof d !== "object") continue;
+    const base = (theme.tokens as Record<string, unknown>)[g];
+    const merged = { ...(base && typeof base === "object" ? (base as Record<string, unknown>) : {}), ...(d as Record<string, unknown>) };
+    // surface.border is the one nested group.
+    if (g === "surface" && base && (d as Record<string, unknown>).border) merged.border = { ...(base as ThemeTokens["surface"]).border, ...((d as ThemeTokens["surface"]).border ?? {}) };
+    out[g] = merged;
+  }
+  return out as ThemeTokens;
+}
+
+/**
+ * The theme exactly as a viewer with this scheme sees it, as a fixed-tone theme (the editor's Light and
+ * Dark previews, B6). A light or dark theme is returned as it is; an auto theme becomes its light or its
+ * dark set, so the preview never follows the editor's own appearance.
+ */
+export function themeForScheme(theme: Theme, scheme: CanvasTone): Theme {
+  if (theme.mode !== "auto") return theme;
+  const { dark: _dark, ...rest } = theme;
+  void _dark;
+  return { ...rest, mode: scheme, tokens: resolveTokens(theme, scheme) };
+}
+
+/**
+ * A11.5 with design Note 3 (Wave 2.10a r2, item 5): the control radius offers only stops a control can
+ * show, 0 to half the pointer control height of the theme's density (Comfortable 0 to 20, Compact 0 to
+ * 16) in steps of 2, then Pill (999). A stored value above the last stop reads and draws as Pill. Touch
+ * controls (44 px) add no stops.
+ */
+export const PILL_RADIUS = 999;
+/** Pointer control heights (touch stays 44 px minimum): comfortable 40, compact 32 (Note 2). */
+export const CONTROL_HEIGHT_PX = { comfortable: 40, compact: 32 } as const;
+export type Density = keyof typeof CONTROL_HEIGHT_PX;
+/** The last numeric radius stop per density: half the control height. */
+export const CONTROL_RADIUS_MAX_BY_DENSITY = { comfortable: CONTROL_HEIGHT_PX.comfortable / 2, compact: CONTROL_HEIGHT_PX.compact / 2 } as const;
+/** The largest numeric stop at any density (Comfortable's); larger stored values are Pill everywhere. */
+export const CONTROL_RADIUS_MAX = CONTROL_RADIUS_MAX_BY_DENSITY.comfortable;
+export function controlRadiusOf(n: number, density: Density | string = "comfortable"): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const max = density === "compact" ? CONTROL_RADIUS_MAX_BY_DENSITY.compact : CONTROL_RADIUS_MAX_BY_DENSITY.comfortable;
+  if (n > max) return PILL_RADIUS;
+  return Math.round(n);
+}
+
+/** A11.5 and design Note 2: density factors. Compact multiplies pad, gap and title bar by 0.67. */
+export const DENSITY_K = { comfortable: 1, compact: 0.67 } as const;
+const TITLEBAR_PX = 28;
+
+/**
+ * Wave 2.10a r2 (Fix List item 4): the density sizes beyond pad, gap and title bar, as px, so the nav
+ * (canvas-theme.css) and component CSS (service tiles, group headings) read one source. Every size is
+ * the Comfortable value times the density factor, rounded; pointer nav items keep at least 28 px (a
+ * 12 px label needs it), touch keeps 44 px in CSS.
+ */
+export function densitySizes(density: Density | string): Record<string, number> {
+  const k = density === "compact" ? DENSITY_K.compact : DENSITY_K.comfortable;
+  const r = (n: number, min = 0) => Math.max(min, Math.round(n * k));
+  return {
+    "--theme-titlebar-h": r(TITLEBAR_PX),
+    "--theme-nav-item-h": r(36, 28),
+    "--theme-nav-bar-h": r(44, 28),
+    "--theme-nav-pad-y": r(12),
+    "--theme-nav-pad-x": r(16),
+    "--theme-nav-gap": r(8, 4),
+    "--theme-tile-pad-y": r(12),
+    "--theme-tile-pad-x": r(14),
+    "--theme-tile-gap": r(10, 4),
+    "--theme-tile-icon": r(36, 24),
+    "--theme-group-head-h": r(28),
+  };
 }
 
 /** The tone a theme renders in: its mode, or the light set for auto (the dark set follows the viewer). */
@@ -402,7 +481,13 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
   const hardColor = tone === "dark" ? mixAlpha(accent, 0.9) : surfaceText;
   const shadow = t.surface.shadow === "hard" && offset > 0 ? `${offset}px ${offset}px 0 0 ${hardColor}` : t.surface.shadow === "soft" ? SOFT_SHADOW : "none";
   const ty = t.type;
-  const pad = clamp(Math.round(t.space.padPx), 8, 40);
+  // B4: density drives one factor over pad, gap and title bar, and sets the pointer control height.
+  const density = t.space.density === "compact" ? "compact" : "comfortable";
+  const k = DENSITY_K[density];
+  const basePad = clamp(Math.round(t.space.padPx), 8, 40);
+  const pad = Math.floor(basePad * k);
+  const padPhone = Math.floor(Math.max(8, Math.round(basePad * 0.8)) * k);
+  const gap = Math.max(4, Math.floor(clamp(Math.round(t.space.gapPx), 4, 40) * k));
   return {
     "--theme-wallpaper": wallpaperCss(t.wallpaper),
     "--theme-wallpaper-blur": `${[0, 8, 16, 32].includes(t.wallpaper.blurPx) ? t.wallpaper.blurPx : 0}px`,
@@ -438,11 +523,14 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
     "--theme-heading-tracking": `${+clamp(ty.headingTracking, -0.06, 0.02).toFixed(3)}em`,
     "--theme-heading-weight": String(([400, 500, 600, 700, 800] as const).includes(ty.headingWeight) ? ty.headingWeight : 600),
     "--theme-radius": `${clamp(Math.round(t.shape.radiusPx), 0, 32)}px`,
-    "--theme-control-radius": `${clamp(Math.round(t.shape.controlRadiusPx), 0, 999)}px`,
-    "--theme-gap": `${clamp(Math.round(t.space.gapPx), 4, 40)}px`,
+    "--theme-control-radius": `${controlRadiusOf(t.shape.controlRadiusPx, density)}px`,
+    "--theme-gap": `${gap}px`,
     "--theme-pad": `${pad}px`,
-    "--theme-pad-phone": `${Math.max(8, Math.round(pad * 0.8))}px`,
-    "--theme-density": t.space.density === "compact" ? "compact" : "comfortable",
+    "--theme-pad-phone": `${padPhone}px`,
+    "--theme-density": density,
+    "--theme-density-k": String(k),
+    "--theme-control-h": `${CONTROL_HEIGHT_PX[density]}px`,
+    ...Object.fromEntries(Object.entries(densitySizes(density)).map(([name, px]) => [name, `${px}px`])),
     "--theme-motion-enter": ["none", "fade", "rise", "sweep"].includes(t.motion.enter) ? t.motion.enter : "none",
     "--theme-chrome-bg": col(t.chrome.background, fb.chrome.background),
     "--theme-chrome-text": col(t.chrome.text, fb.chrome.text),
@@ -567,7 +655,7 @@ const TypeSchema = z.object({
   headingTracking: clamped(-0.06, 0.02),
   headingWeight: nearest([400, 500, 600, 700, 800] as const),
 });
-const ShapeSchema = z.object({ radiusPx: clamped(0, 32), controlRadiusPx: clamped(0, 999) });
+const ShapeSchema = z.object({ radiusPx: clamped(0, 32), controlRadiusPx: z.number().finite().transform((n) => controlRadiusOf(n)) });
 const SpaceSchema = z.object({ gapPx: clamped(4, 40), padPx: clamped(8, 40), density: z.enum(["comfortable", "compact"]) });
 const MotionSchema = z.object({ enter: z.enum(["none", "fade", "rise", "sweep"]), lightDrift: z.boolean() });
 const ChromeSchema = z.object({ background: color, text: color, activeFill: color, activeText: color, style: z.enum(["bar", "boxed-tabs", "pills", "underline"]) });

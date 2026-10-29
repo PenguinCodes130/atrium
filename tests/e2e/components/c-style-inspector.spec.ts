@@ -75,10 +75,9 @@ test("criteria 35 to 38: hostile node CSS stays inside its node and the frame; s
   expect(r.uploadKept).toBe(true);
   // Round 3 (gauntlet w2-r2 Fix 9, runaway heights): a styled component stops at one and a half screens
   // or 1200px, whichever is taller, so the 5000px style is drawn capped (and still clipped by the frame).
-  // Exact boxes (operator, 2026-10-19): in a grid every box is the size it was drawn, so the 5000px style
-  // cannot grow past its own 8-row slot (64px less the cell's gap), well under the runaway cap.
-  expect(r.hugeHeight).toBeGreaterThan(0);
-  expect(r.hugeHeight).toBeLessThanOrEqual(8 * 8);
+  // Wave 2.10a (A11.2): the viewer never clips a fit box, so a Style panel height is honoured, but only up
+  // to the runaway cap (the line below). Node CSS (untrusted code) still holds its drawn box (j-final).
+  expect(r.hugeHeight).toBeGreaterThan(8 * 8);
   expect(r.hugeHeight).toBeLessThanOrEqual(Math.max(1.5 * page.viewportSize()!.height, 1200) + 1);
   expect(["clip", "hidden"]).toContain(r.frameOverflow);
   // The app switcher (top layer, outside the canvas) is visible and clickable over everything.

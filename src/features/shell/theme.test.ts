@@ -36,6 +36,9 @@ const V4_VARS = [
   "--theme-font-display", "--theme-font-body", "--theme-font-mono", "--theme-type-scale", "--theme-numbers", "--theme-heading-tracking", "--theme-heading-weight",
   "--theme-radius", "--theme-control-radius",
   "--theme-gap", "--theme-pad", "--theme-pad-phone", "--theme-density",
+  "--theme-density-k", "--theme-control-h", "--theme-titlebar-h", // Wave 2.10 B4 (A11.5)
+  // Wave 2.10a r2 item 4: density sizes for nav items, service tiles and group headings (densitySizes)
+  "--theme-nav-item-h", "--theme-nav-bar-h", "--theme-nav-pad-y", "--theme-nav-pad-x", "--theme-nav-gap", "--theme-tile-pad-y", "--theme-tile-pad-x", "--theme-tile-gap", "--theme-tile-icon", "--theme-group-head-h",
   "--theme-motion-enter",
   "--theme-chrome-bg", "--theme-chrome-text", "--theme-chrome-active-fill", "--theme-chrome-active-text", "--theme-chrome-style",
   "--theme-glow", "--theme-room-shaft", "--theme-room-shaft-dim",
@@ -146,11 +149,12 @@ describe("themeToCssVars", () => {
     expect(dark?.["--theme-canvas-text"]).toBe("#F3EFE4");
   });
 
+  // Wave 2.10 B4: padding 99 clamps to 40, then compact density takes it to two thirds (26 px).
   it("is deterministic and clamps out-of-range numbers", () => {
     expect(themeToCssVars(daylight)).toEqual(themeToCssVars(structuredClone(daylight)));
     const t = daylight.tokens;
     const v = tokensToCssVars({ ...t, shape: { radiusPx: 400, controlRadiusPx: -3 }, space: { gapPx: -5, padPx: 99, density: "compact" }, wallpaper: { ...t.wallpaper, dim: 3, blurPx: 7 as 8, grain: 4 }, surface: { ...t.surface, opacity: 0.01, blurPx: 900 }, type: { ...t.type, scale: 9, headingTracking: -1 } }, "light");
-    expect([v["--theme-radius"], v["--theme-control-radius"], v["--theme-gap"], v["--theme-pad"], v["--theme-wallpaper-dim"], v["--theme-wallpaper-blur"], v["--theme-wallpaper-grain"], v["--theme-surface-opacity"], v["--theme-surface-blur"], v["--theme-type-scale"], v["--theme-heading-tracking"]]).toEqual(["32px", "0px", "4px", "40px", "0.6", "0px", "0.3", "0.3", "48px", "1.3", "-0.06em"]);
+    expect([v["--theme-radius"], v["--theme-control-radius"], v["--theme-gap"], v["--theme-pad"], v["--theme-wallpaper-dim"], v["--theme-wallpaper-blur"], v["--theme-wallpaper-grain"], v["--theme-surface-opacity"], v["--theme-surface-blur"], v["--theme-type-scale"], v["--theme-heading-tracking"]]).toEqual(["32px", "0px", "4px", "26px", "0.6", "0px", "0.3", "0.3", "48px", "1.3", "-0.06em"]);
   });
 
   it("never emits an unsafe wallpaper, colour or font, even from unvalidated tokens", () => {

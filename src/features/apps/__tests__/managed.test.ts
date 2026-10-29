@@ -96,8 +96,15 @@ describe("refresh from components (spec 3.3, criterion 5)", () => {
     expect(nodeRefresh({}, managed("d_aaaaaaaa", { refreshSec: 10 }), { defaultRefreshSec: 30, minRefreshSec: 10 })).toBe(30);
     expect(nodeRefresh({ refreshSec: 300 }, managed("d_aaaaaaaa"), { defaultRefreshSec: 30, minRefreshSec: 10 })).toBe(300);
     expect(refreshChoices(10).map((c) => c.sec)).toEqual([10, 30, 60, 300, 3600]);
-    expect(refreshChoices(30).map((c) => c.sec)).toEqual([30, 60, 300, 3600]);
-    expect(refreshChoices(30)[0]!.label).toBe("As fast as allowed (every 30 s)");
+    expect(refreshChoices(10).every((c) => !c.disabled)).toBe(true);
+    // F5: presets faster than the read allows stay listed, disabled.
+    expect(refreshChoices(30).map((c) => [c.sec, c.disabled])).toEqual([[10, true], [30, false], [60, false], [300, false], [3600, false]]);
+    expect(refreshChoices(30).map((c) => c.label)).toEqual(["Every 10 s", "Every 30 s", "Every 1 min", "Every 5 min", "Every 1 hour"]);
+    // A minimum between presets is offered too, as the fastest allowed.
+    const c15 = refreshChoices(15);
+    expect(c15.map((c) => [c.sec, c.disabled])).toEqual([[10, true], [15, false], [30, false], [60, false], [300, false], [3600, false]]);
+    expect(c15[1]!.label).toBe("Every 15 s (fastest allowed)");
+    expect(refreshChoices(5)[0]).toEqual({ sec: 10, label: "Every 10 s", disabled: false });
   });
 });
 

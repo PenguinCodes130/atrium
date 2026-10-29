@@ -33,7 +33,7 @@ export type DraftEvents = {
   onSaved?(rev: number): void;
 };
 
-type Entry = { ops: DraftOp[]; inverse: DraftOp[] };
+type Entry = { id: number; ops: DraftOp[]; inverse: DraftOp[] };
 
 export class DraftClient {
   /** The draft as the server has it. */
@@ -46,6 +46,7 @@ export class DraftClient {
   private timer: unknown = null;
   private undoStack: Entry[] = [];
   private redoStack: Entry[] = [];
+  private entrySeq = 0;
   /** Undo entries added since the last confirmed send (dropped if the batch is refused). */
   private unsent = 0;
   /** Callers waiting for the queue to be saved or refused (whenSaved). */
@@ -67,8 +68,18 @@ export class DraftClient {
     return this.redoStack.length > 0;
   }
 
-  /** Applies an edit locally and queues it. Returns the problems when it cannot apply even locally. */
-  edit(asked: DraftOp[], opts: { history?: "push" | "none" } = {}): Problem[] | null {
+  /** The id of the newest undo entry (0 when there is none), for `edit(..., { history: "merge", into })`. */
+  get lastEntryId(): number {
+    return this.undoStack.at(-1)?.id ?? 0;
+  }
+
+  /**
+   * Applies an edit locally and queues it. Returns the problems when it cannot apply even locally.
+   * `history: "merge"` (Wave 2.10 B1, A11.2) adds the edit to the newest undo entry when that entry is still
+   * `into` and nothing was undone since, so a follow-up (a fit component growing its slot after an insert or
+   * a prop change) undoes in the same step; otherwise it becomes its own entry.
+   */
+  edit(asked: DraftOp[], opts: { history?: "push" | "none" | "merge"; into?: number } = {}): Problem[] | null {
     let ops = asked;
     let r = applyOpsToDoc(this.doc, ops);
     if (!r.ok) return r.problems;
@@ -79,8 +90,12 @@ export class DraftClient {
     }
     const inv = inverseOps(this.doc, ops);
     this.doc = r.doc;
-    if (opts.history !== "none" && inv) {
-      this.undoStack.push({ ops, inverse: inv });
+    const top = this.undoStack.at(-1);
+    if (opts.history === "merge" && inv && top && top.id === opts.into && this.redoStack.length === 0) {
+      // Undo runs the newer inverse first, then the entry's own.
+      this.undoStack[this.undoStack.length - 1] = { id: top.id, ops: [...top.ops, ...ops], inverse: [...inv, ...top.inverse] };
+    } else if (opts.history !== "none" && inv) {
+      this.undoStack.push({ id: ++this.entrySeq, ops, inverse: inv });
       this.redoStack = [];
       this.unsent++;
     }

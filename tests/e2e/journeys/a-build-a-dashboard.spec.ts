@@ -164,9 +164,13 @@ test("build a lights dashboard: create, connect data, compose, pages, fit, publi
   });
 
   await test.step("add a second page from the Pages menu and come back", async () => {
-    page.once("dialog", (dl) => dl.accept("Lights"));
+    // Wave 2.10a round 2 item 13: the page opens at once with its name field focused (no browser prompt).
     await page.locator("[data-page-menu]").click();
     await page.locator("[data-page-add]").click();
+    const name = page.locator("[data-page-name-input]");
+    await expect(name).toBeFocused();
+    await name.fill("Lights");
+    await name.press("Enter");
     await page.waitForURL(new RegExp(`/build/${SLUG}/lights$`));
     await page.locator('[data-select="page"]').click();
     await page.locator('[data-select-menu="page"] [role="option"]').first().click();

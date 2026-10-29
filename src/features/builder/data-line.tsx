@@ -1,6 +1,6 @@
 "use client";
 // The inspector's data parts for Wave 2.9 (direct-data-spec.md 3.3 to 3.5): the one Data line with the
-// component's own refresh ("Shows: CPU in use, pve1, 7.8 %, updates every 30 s [Change]"), a chart's lines
+// component's own refresh ("CPU in use, pve1 · 7.8 % · Proxmox [Change]", then "Refresh: every 30 s"), a chart's lines
 // (name, colour, hide, remove, Add a line, and the Also for and Also show chips), and the stats of a service
 // tile or the readings of a resource bar, each swappable through "What should this show?".
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +15,7 @@ import { addLineOps, axisGroups, chartLines, thirdUnitRefusal, type LineUnit, ty
 
 type Live = { data: Record<string, ShapedData | undefined> };
 const btn = "inline-flex min-h-8 items-center type-caption underline touch:min-h-11";
+const pill = "inline-flex min-h-8 items-center gap-1 border border-line-strong px-2 type-caption hover:bg-bg-sunk touch:min-h-11";
 const chip = "inline-flex min-h-8 items-center border border-line px-2 type-caption hover:bg-fg hover:text-bg touch:min-h-11";
 const field = "h-8 w-full min-w-0 border border-line-strong bg-bg-hi px-2 type-body text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent-ink touch:h-11";
 const SRC = /\{\{\s*([a-z][a-z0-9_]*)/;
@@ -39,8 +40,10 @@ export function valueWords(template: string, live: Live | undefined): string | n
 }
 
 /**
- * "updates every 30 s [Change]" (spec 3.3): the component owns its refresh. A managed source runs at the
- * fastest of its components (A10.1); a source a person made keeps its own interval, so the menu sets that.
+ * The Refresh control (Wave 2.10b F5; spec 3.3 before it): a visible label and the current rate, opening the
+ * presets. Presets faster than the read allows stay listed, disabled, with the reason. The component owns its
+ * refresh: a managed source runs at the fastest of its components (A10.1); a source a person made keeps its
+ * own interval, so the menu sets that.
  */
 export function RefreshControl({ node, def, bindable, apply }: { node: ComponentNode; def: DataSourceDef; bindable: BindableIntegration[]; apply(ops: DraftOp[]): void }) {
   const [open, setOpen] = useState(false);
@@ -63,30 +66,40 @@ export function RefreshControl({ node, def, bindable, apply }: { node: Component
     else apply([{ op: "source.set", source: { ...def, refreshSec: s } }]);
   };
   return (
-    <span ref={ref} className="relative inline-flex items-center" data-refresh={sec}>
-      <button type="button" className={btn} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-refresh-change>updates every {secWords(sec)}</button>
+    <span ref={ref} className="relative inline-flex items-center gap-2" data-refresh={sec}>
+      <span className="type-caption text-fg-2" aria-hidden>Refresh</span>
+      <button type="button" className={pill} aria-label={`Refresh: every ${secWords(sec)}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-refresh-change>
+        every {secWords(sec)}
+        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+      </button>
       {open && (
-        <span role="menu" className="absolute left-0 top-full z-20 flex w-56 flex-col border border-line-strong bg-bg-hi p-1 shadow-window-sm" data-refresh-menu>
+        <span role="menu" className="absolute left-0 top-full z-20 flex w-60 flex-col border border-line-strong bg-bg-hi p-1 shadow-window-sm" data-refresh-menu>
           {choices.map((c) => (
-            <button key={c.sec} type="button" role="menuitemradio" aria-checked={c.sec === sec} className={`flex min-h-8 items-center px-2 text-left type-caption hover:bg-bg-sunk touch:min-h-11 ${c.sec === sec ? "font-medium" : ""}`} onClick={() => choose(c.sec)} data-refresh-option={c.sec}>{c.label}{c.sec === sec ? " (now)" : ""}</button>
+            <button key={c.sec} type="button" role="menuitemradio" aria-checked={c.sec === sec} disabled={c.disabled} className={`flex min-h-8 items-center px-2 text-left type-caption hover:bg-bg-sunk disabled:cursor-not-allowed disabled:text-fg-2 disabled:opacity-60 disabled:hover:bg-transparent touch:min-h-11 ${c.sec === sec ? "font-medium" : ""}`} onClick={() => choose(c.sec)} data-refresh-option={c.sec} data-refresh-disabled={c.disabled ? "yes" : undefined}>{c.label}{c.sec === sec ? " (now)" : ""}</button>
           ))}
-          <span className="px-2 py-1 type-caption text-fg-2" data-refresh-min>This read refreshes at least every {secWords(min)}.</span>
+          {choices.some((c) => c.disabled) && <span className="px-2 py-1 type-caption text-fg-2" data-refresh-min>This service allows every {secWords(min)} at most.</span>}
         </span>
       )}
     </span>
   );
 }
 
-/** The one Data line (spec 3.3): what it shows in words, its value, its refresh and Change. */
+/**
+ * The one Data line (Wave 2.10b F3; spec 3.3 before it): what it shows, its value and its service on one
+ * readable line ("CPU in use, pve1 · 7.8 % · Proxmox") with Change, and the Refresh control under it.
+ */
 export function DataLine({ node, def, template, prop, bindable, live, apply, onChange }: { node: ComponentNode; def: DataSourceDef; template: string; prop: string; bindable: BindableIntegration[]; live?: Live; apply(ops: DraftOp[]): void; onChange(prop: string): void }) {
-  const e = bindable.find((b) => b.integrationId === def.integrationId)?.endpoints.find((x) => x.id === def.endpointId);
+  const integ = bindable.find((b) => b.integrationId === def.integrationId);
+  const e = integ?.endpoints.find((x) => x.id === def.endpointId);
   const what = def.label?.trim() || e?.label || def.name;
   const value = valueWords(template, live);
   return (
-    <span className="flex flex-wrap items-center gap-x-1 type-caption" data-data-line={def.name} data-managed={def.managed ? "yes" : "no"}>
-      <span data-data-line-words>Shows: {what}{value ? `, ${value}` : ""},</span>
+    <span className="flex flex-col gap-1" data-data-line={def.name} data-managed={def.managed ? "yes" : "no"}>
+      <span className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 type-body" data-data-line-words>{[what, value, integ?.integrationName].filter(Boolean).join(" · ")}</span>
+        <button type="button" className={`${btn} flex-none`} onClick={() => onChange(prop)} data-data-change>Change</button>
+      </span>
       <RefreshControl node={node} def={def} bindable={bindable} apply={apply} />
-      <button type="button" className={btn} onClick={() => onChange(prop)} data-data-change>Change</button>
     </span>
   );
 }

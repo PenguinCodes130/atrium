@@ -195,9 +195,14 @@ export function closeGapOps(doc: AppDocument, removedId: string): DraftOp[] {
     // The uncovered rows inside the removed slot, as one block at its bottom edge.
     let a = gone.y + gone.h;
     while (a > gone.y && !covered(a - 1)) a--;
-    const b = gone.y + gone.h;
+    let b = gone.y + gone.h;
+    if (b - a <= 0) continue;
+    // Round 2 (gauntlet r1, low: an empty band stayed on the published page): the empty rows just below the
+    // removed slot join the band, up to the next row something covers, so what was below moves up to meet
+    // what is above.
+    const tops = rest.flatMap((k) => { const s = slotOn(k, device); return s && s.y >= b ? [s.y] : []; });
+    if (tops.length) { const next = Math.min(...tops); while (b < next && !covered(b)) b++; }
     const band = b - a;
-    if (band <= 0) continue;
     const below = rest.filter((k) => (slotOn(k, device)?.y ?? -1) >= b);
     if (!below.length) continue;
     for (const k of below) {

@@ -45,15 +45,21 @@ export function AppChrome({ doc, current, hrefFor }: { doc: AppDocument; current
       </nav>
     );
   }
+  // Round 2 item 10 (gauntlet r1, phones): the title and the items share one line. The items sit in their
+  // own row that never wraps; when they do not fit (a phone, many pages) it scrolls sideways with a soft
+  // edge, so no nav takes two lines and every Boxed tab stays joined to the rule under the nav. The row
+  // follows the nav's own alignment (each nav style sets it), so tabs still meet the bottom edge.
   return (
-    <nav data-canvas-nav data-app-chrome={layout} aria-label={`${title} pages`} className={`flex flex-wrap items-center gap-2 px-4 ${layout === "tabs" ? "py-2" : "py-3"}`}>
+    <nav data-canvas-nav data-app-chrome={layout} aria-label={`${title} pages`} className={`flex flex-nowrap items-center gap-2 px-4 max-sm:gap-1 max-sm:px-3 ${layout === "tabs" ? "py-2" : "py-3"}`}>
       {layout === "topbar" && (
-        <span className="mr-4 flex items-center gap-2 type-title-3" data-app-title>
-          {doc.chrome.logo ? <img src={doc.chrome.logo} alt="" className="h-7 w-auto" /> : null}
-          {title}
+        <span className="mr-4 flex min-w-0 max-w-[45%] flex-none items-center gap-2 type-title-3 max-sm:mr-2" data-app-title>
+          {doc.chrome.logo ? <img src={doc.chrome.logo} alt="" className="h-7 w-auto flex-none" /> : null}
+          <span className="min-w-0 truncate">{title}</span>
         </span>
       )}
-      {items}
+      <div className="atr-nav-items flex min-w-0 flex-1 flex-nowrap items-[inherit] gap-2 self-stretch overflow-x-auto [scrollbar-width:none] max-sm:gap-1 [&::-webkit-scrollbar]:hidden [&>a]:flex-none [&>a]:whitespace-nowrap [&>a:focus-visible]:outline-offset-[-2px]" data-app-nav-items>
+        {items}
+      </div>
     </nav>
   );
 }

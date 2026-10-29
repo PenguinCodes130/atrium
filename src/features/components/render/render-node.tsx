@@ -17,6 +17,7 @@ import "../components.css";
 import type { ComponentNode, PropValue, RenderContext } from "@/core/contracts";
 import { transitionFor, useReducedMotion } from "@/features/shell";
 import { isBinding, sourcesInTemplate, templatesIn, usesNow, type PropError } from "../bindings";
+import { sizingOf } from "../catalogue/meta";
 import { getComponentDef } from "../catalogue/defs";
 import { NOT_CONNECTED, sampleProps } from "../catalogue/samples";
 import { expandInstance } from "../library-instance";
@@ -246,8 +247,10 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
     <motion.div
       data-node={node.id}
       data-type={node.type}
+      data-sizing={sizingOf(eff)}
       className="atr-node"
       data-node-styled={styled ? "" : undefined}
+      data-node-has-css={node.css && !isLayoutType(node.type) ? "" : undefined}
       data-sample={sample && edit ? "" : undefined}
       data-hidden-node={hiddenTag ? "" : undefined}
       data-hidden-device={offDevice && edit ? device : undefined}

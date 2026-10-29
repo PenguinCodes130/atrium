@@ -167,27 +167,28 @@ test("criteria 4, 5: two Stats share one fetch; changing one leaves the other; t
   await expect(canvasNode(page, a)).toContainText("34.6");
   await expect(canvasNode(page, b)).toContainText("34.6");
 
-  // Criterion 5: the refresh control offers only intervals at or above the read's minimum.
+  // Criterion 5, and Wave 2.10b F3/F5: the Data line is the inspector's first row; the Refresh control offers
+  // every preset, and those faster than the read's minimum are disabled with the reason.
   await selectLayer(page, b);
-  await openDataGroup(page);
-  await expect(page.locator("[data-data-line]")).toContainText("Shows: CPU in use, pve1, 34.6 %");
-  await expect(page.locator("[data-refresh-change]")).toHaveText("updates every 30 s");
+  await expect(page.locator("[data-data-top] [data-data-line]")).toContainText("CPU in use, pve1 · 34.6 %");
+  await expect(page.locator("[data-refresh-change]")).toHaveText("every 30 s");
   await page.locator("[data-refresh-change]").click();
-  const offered = (await page.locator("[data-refresh-option]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-refresh-option"))))) as number[];
-  const min = offered[0]!;
-  expect(offered.every((s) => s >= min)).toBe(true);
-  await expect(page.locator("[data-refresh-min]")).toHaveText(`This read refreshes at least every ${min} s.`);
-  expect(offered).toEqual([min, ...[10, 30, 60, 300, 3600].filter((s) => s > min)]);
+  const opts = (await page.locator("[data-refresh-option]").evaluateAll((els) => els.map((e) => [Number(e.getAttribute("data-refresh-option")), (e as HTMLButtonElement).disabled] as const))) as (readonly [number, boolean])[];
+  const enabled = opts.filter(([, d]) => !d).map(([s]) => s);
+  const min = enabled[0]!;
+  expect(opts.filter(([, d]) => d).every(([s]) => s < min)).toBe(true);
+  for (const s of [10, 30, 60, 300, 3600]) expect(opts.map(([x]) => x)).toContain(s);
+  if (opts.some(([, d]) => d)) await expect(page.locator("[data-refresh-min]")).toHaveText(`This service allows every ${min} s at most.`);
   await page.screenshot({ path: shot("c5-refresh-menu-dark") });
   await page.locator(`[data-refresh-option="${min}"]`).click();
-  await expect(page.locator("[data-refresh-change]")).toHaveText(`updates every ${min} s`);
+  await expect(page.locator("[data-refresh-change]")).toHaveText(`every ${min} s`);
   d = await untilDraft(id, (x) => x.doc.dataSources[0]?.refreshSec === min);
   expect(nodeIn(d, b)!.refreshSec).toBe(min);
   expect(nodeIn(d, a)!.refreshSec).toBeUndefined();
   // The shared fetch runs at the faster of the two; each Stat still says its own setting.
   expect(d.doc.dataSources[0]!.refreshSec).toBe(min);
   await selectLayer(page, a);
-  await expect(page.locator("[data-refresh-change]")).toHaveText("updates every 30 s");
+  await expect(page.locator("[data-refresh-change]")).toHaveText("every 30 s");
 
   // Criterion 4: one fetch per interval for both Stats (the stand-in's own request log).
   await page.waitForTimeout(1500);
@@ -530,11 +531,15 @@ test("spec 3.2 Cancel and Esc: the picker leaves the component exactly as it was
   await openDataGroup(page);
   // The new Data line names its data and its refresh; nothing is renamed or turned into managed data.
   await expect(page.locator("[data-data-line]")).toHaveAttribute("data-managed", "no");
-  await expect(page.locator("[data-data-line-words]")).toContainText("Shows: CPU in use, ACE");
-  await expect(page.locator("[data-refresh-change]")).toHaveText("updates every 30 s");
-  // Change, then Escape: nothing changes.
+  await expect(page.locator("[data-data-line-words]")).toContainText("CPU in use, ACE");
+  await expect(page.locator("[data-refresh-change]")).toHaveText("every 30 s");
+  // Change, then Escape: nothing changes. Wave 2.10b F3: Change opens on the current choice, marked and in view.
   await page.locator("[data-data-change]").click();
   await expect(picker(page)).toBeVisible();
+  await expect(page.locator('[data-show-current="yes"]')).toBeInViewport({ timeout: 8000 });
+  await expect(page.locator('[data-show-current="yes"]')).toHaveAttribute("data-show-endpoint", "machine-cpu");
+  await expect(page.locator('[data-show-current="yes"]')).toHaveAttribute("data-show-thing-value", ACE);
+  await page.screenshot({ path: shot("f3-change-opens-on-current") });
   await page.keyboard.type("memory");
   await expect(page.locator("[data-show-item]").first()).toBeVisible({ timeout: 3000 });
   await page.keyboard.press("Escape");
@@ -545,6 +550,16 @@ test("spec 3.2 Cancel and Esc: the picker leaves the component exactly as it was
   await expect(picker(page)).toHaveCount(0);
   // The old single-source chart keeps drawing every series it holds.
   await expect(canvasNode(page, "c_oldchartaa").locator("[data-series]").first()).toBeVisible({ timeout: 10_000 });
+  // Wave 2.10b F8: Navigation sits on the builder bar beside Pages and opens the nav settings on their own.
+  await page.locator("[data-builder-navigation]").click();
+  const nav = page.locator('[data-app-look-sheet="navigation"]');
+  await expect(nav).toBeVisible();
+  await expect(nav.getByRole("heading", { name: "Layout", exact: true })).toBeVisible();
+  await expect(nav.getByRole("heading", { name: "Navigation style" })).toBeVisible();
+  await expect(nav.getByRole("heading", { name: "App theme" })).toHaveCount(0);
+  await page.screenshot({ path: shot("f8-navigation-sheet") });
+  await page.keyboard.press("Escape");
+  await expect(nav).toHaveCount(0);
   await page.waitForTimeout(800);
   const after = await draft(id);
   expect(after.rev).toBe(before.rev);

@@ -8,7 +8,7 @@
 // The Wave 2.5 to 2.8 picker stays one click away ("Set it up by hand") for data already in the app, a
 // typed template, a card for each, or a read's own settings.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogueItem, CatalogueResponse, CatalogueService, ComponentNode, DataShapeKind, DraftOp, Measure, PeekResponse, PropValue, ShapedData } from "@/core/contracts";
+import type { CatalogueItem, CatalogueResponse, CatalogueService, ComponentNode, DataShapeKind, DraftOp, Measure, PeekResponse, PropValue, ShapedData, ValueFormat } from "@/core/contracts";
 import { Button, Sheet } from "@/features/shell";
 import { findNode, nodeLabel } from "@/features/apps/doc";
 import type { AppDocument } from "@/core/contracts";
@@ -16,7 +16,8 @@ import { META } from "@/features/components/catalogue/meta";
 import { PackageIcon } from "@/features/integrations/ui/package-icon";
 import { PICK_RETURN_KEY } from "@/features/integrations/ui/return-to-builder";
 import { SelectMenu } from "@/features/settings/ui/controls";
-import { paramFields, showChoices, type ParamField } from "./data-pick";
+import { cardForEachOps, keyColumn, mainColumns, paramFields, repeatAround, rowFields, rowTemplate, showChoices, type ParamField } from "./data-pick";
+import { formatValue } from "@/features/components/render/format";
 import { liveWords, type BindableIntegration } from "./data-picker";
 import { addLineOps, axisGroups, bindItemOps, chartLines, fitsFor, getAtPath, itemFits, itemWords, lineRead, propKind, setAtPath, thirdUnitRefusal, unitWords, type LineUnit, type PickItem } from "./direct-data";
 
@@ -170,6 +171,33 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   const listed = typed ? items : browse === "service" && service && thing !== null ? items.filter((it) => (it.thing ? `${it.thing.param}=${it.thing.value}` : "") === thing) : browse === "measure" && measure ? items : [];
   const fitting = listed.filter((i) => i.fit);
   const other = listed.filter((i) => !i.fit);
+
+  // Wave 2.10b F3: Change opens on the current choice: its service, then its thing, with its row marked
+  // and scrolled into view. Runs once; browsing away afterwards is the person's own choice.
+  const currentDef = target.source ? doc.dataSources.find((d) => d.name === target.source) ?? null : null;
+  const startOn = useRef<"service" | "item" | "done">(currentDef ? "service" : "done");
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!currentDef || typed || startOn.current === "done") return;
+    if (startOn.current === "service") {
+      if (service || !services) return;
+      const s = services.find((x) => x.integrationId === currentDef.integrationId);
+      startOn.current = s ? "item" : "done";
+      if (s) setService(s);
+      return;
+    }
+    // Wait for the service's own listing, not the overview still on screen.
+    if (!service || !res || !res.items.length || res.items.some((it) => it.integrationId !== service.integrationId)) return;
+    startOn.current = "done";
+    const it = res.items.find((x) => x.endpointId === currentDef.endpointId && Object.entries(x.params).every(([k, v]) => JSON.stringify(currentDef.params?.[k]) === JSON.stringify(v)));
+    if (!it) return;
+    setThing(it.thing ? `${it.thing.param}=${it.thing.value}` : "");
+    setCurrentKey(it.key);
+  }, [currentDef, typed, service, services, res]);
+  useEffect(() => {
+    if (!currentKey) return;
+    document.querySelector(`[data-show-item="${CSS.escape(currentKey)}"]`)?.scrollIntoView({ block: "center" });
+  }, [currentKey, listed.length]);
   // Values for the first 20 rows at once, and for any further row once it scrolls into view (a long list,
   // or many services answering the same words, never leaves a row on the screen waiting).
   const [inView, setInView] = useState<ReadonlySet<string>>(() => new Set());
@@ -188,6 +216,20 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
 
   const close = () => onClose();
 
+  // Round 2 item 11: inside a repeat, "This row" and its fields come first (the repeat passes each row as $item).
+  const around = node ? repeatAround(doc, node.id) : null;
+  const rowList = around?.source ? rowFields(data[around.source]) : [];
+  const pickRow = (key: string, label: string) => {
+    if (!node) return close();
+    const bindAt = kind === "gauge" ? "value" : target.prop;
+    let props = setAtPath(node.props, bindAt, { $bind: rowTemplate(key) });
+    // A stat (or a tile's stat, a bar reading) with no label of its own takes the field's name.
+    const labelAt = /^(stats|items)\.(\d+)\.value$/.test(target.prop) ? target.prop.replace(/value$/, "label") : bindAt === "value" && ["stat", "gauge", "progress"].includes(type) ? "label" : null;
+    if (labelAt && !getAtPath(node.props, labelAt)) props = setAtPath(props, labelAt, label.slice(0, 40));
+    apply([{ op: "node.update", nodeId: node.id, patch: { props } } as DraftOp]);
+    close();
+  };
+
   /** Binds an item (spec 3.2) and closes: the value shows on the canvas at once from the peek. */
   const pick = (item: PickItem, opts: { switchTo?: string } = {}) => {
     if (!node) return close();
@@ -204,10 +246,20 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
       const hasLabel = entry && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).label === "string" && (entry as Record<string, string>).label;
       if (!hasLabel) ops = ops.map((o) => (o.op === "node.update" && o.nodeId === node.id ? { ...o, patch: { ...o.patch, props: setAtPath(o.patch.props as Record<string, PropValue>, `${m[1]}.${m[2]}.label`, (item.thing ? item.thing.label : item.label).slice(0, 40)) } } : o));
     }
-    apply(ops);
     const v = item.key ? peeked[item.key]?.data : undefined;
-    if (v) onPeeked(r.name, v);
-    close();
+    // Round 2 items 11 and 14: an empty repeat bound to rows becomes one ready card per row (titled by the
+    // row's name, its main values as stats), and a table of a wide read starts on its main columns.
+    const wants = (node.type === "repeat" && !(node.children ?? []).length) || (node.type === "table" && !(Array.isArray(node.props.columns) && node.props.columns.length));
+    const finish = (d: ShapedData | undefined) => {
+      // The ready cards carry the repeat's own items binding, so only then is the plain bind left out
+      // (a repeat that already has a child keeps the bind: lead follow-up, the binding was dropped).
+      const ready = readyOps(node, r.name, d, newNodeId);
+      apply([...ops.filter((o) => !(ready.length && o.op === "node.update" && o.nodeId === node.id)), ...ready].map((o) => (node.type === "table" && o.op === "node.update" && o.nodeId === node.id ? withColumns(o, d) : o)));
+      if (d) onPeeked(r.name, d);
+      close();
+    };
+    if (wants && !v) { void peekOne(item).then(finish); return; }
+    finish(v);
   };
 
   /** Adds a chart line (spec 3.4), refusing a third unit with its two ways out. */
@@ -306,11 +358,11 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
     const v = valueWords(peeked[it.key]);
     return (
       <li key={it.key} className="flex items-stretch gap-1">
-        <button ref={observe} type="button" className={`${row} flex-1`} onClick={() => pick(it)} data-show-item={it.key} data-show-integration={it.integrationId} data-show-endpoint={it.endpointId} data-show-thing-value={it.thing?.value ?? ""} data-fits={it.fit ? "yes" : "no"}>
+        <button ref={observe} type="button" className={`${row} flex-1 ${it.key === currentKey ? "border-fg bg-bg-sunk" : ""}`} aria-current={it.key === currentKey || undefined} onClick={() => pick(it)} data-show-item={it.key} data-show-current={it.key === currentKey ? "yes" : undefined} data-show-integration={it.integrationId} data-show-endpoint={it.endpointId} data-show-thing-value={it.thing?.value ?? ""} data-fits={it.fit ? "yes" : "no"}>
           <span className="flex-none"><PackageIcon id={it.serviceIcon || it.packageId} size={20} /></span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="type-body truncate font-medium" data-show-item-words>{itemWords(it)}</span>
-            <span className="type-caption truncate text-fg-2">{it.integrationName}{it.needsSettings ? " · asks for a setting" : ""}{it.from ? ` · ${it.from}` : ""}</span>
+            <span className="type-caption truncate text-fg-2">{it.key === currentKey ? <span className="font-medium text-fg" data-show-now>Showing now · </span> : null}{it.integrationName}{it.needsSettings ? " · asks for a setting" : ""}{it.from ? ` · ${it.from}` : ""}</span>
           </span>
           <span className={`type-caption flex-none font-mono ${v?.failed ? "text-fg-2" : ""}`} data-show-value={v ? (v.failed ? "none" : "yes") : "loading"}>{v ? v.text : it.needsSettings ? "" : "…"}</span>
         </button>
@@ -334,6 +386,22 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
         </div>
       }>
       <div className="flex flex-col gap-4" data-data-picker data-show-picker data-target={targetWords} data-mode={lineMode ? "line" : kind}>
+        {rowList.length > 0 && !lineMode && (
+          <section className="flex flex-col gap-1" data-show-this-row={around!.repeatId}>
+            <h3 className="type-label m-0">This row</h3>
+            <p className="type-caption m-0 text-fg-2">Each copy shows its own row. The values are the first row&apos;s.</p>
+            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+              {rowList.map((f) => (
+                <li key={f.key}>
+                  <button type="button" className={row} onClick={() => pickRow(f.key, f.label)} data-show-row-field={f.key}>
+                    <span className="type-body min-w-0 flex-1 truncate font-medium">{f.label}</span>
+                    <span className="type-caption flex-none font-mono text-fg-2">{rowValueWords(f.value, f.format)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <label className="flex flex-col gap-1">
           <span className="sr-only">Search your data</span>
           <input ref={searchRef} autoFocus type="search" className={input} value={q} onChange={(e) => { setQ(e.target.value); setSettingsFor(null); setAnother(null); setSwitchFor(null); setRefusal(null); }} placeholder={lineMode ? "Search: cpu, memory, network..." : "Search: cpu, memory, containers..."} aria-label="Search your data" data-show-search />
@@ -461,6 +529,34 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
     </Sheet>
   );
 }
+
+/** A row field's first value, short: formatted numbers, plain text cut to 24 characters. */
+function rowValueWords(v: unknown, format?: ValueFormat): string {
+  if (v === undefined || v === null) return "";
+  if (typeof v === "number") return format ? formatValue(v, format) : String(Math.round(v * 100) / 100);
+  const t = typeof v === "string" ? v : JSON.stringify(v);
+  return t.length > 24 ? `${t.slice(0, 23)}…` : t;
+}
+
+/** Whether rows can make ready cards (a table or a status list). */
+function readyCards(d: ShapedData): boolean {
+  return d.kind === "table" || d.kind === "status";
+}
+/** Round 2 item 11: an empty repeat bound to rows gets one ready card per row (as Insert > Card for each does). */
+function readyOps(node: ComponentNode, src: string, d: ShapedData | undefined, newNodeId: () => string): DraftOp[] {
+  if (node.type !== "repeat" || (node.children ?? []).length || !d || !readyCards(d)) return [];
+  return cardForEachOps(node, src, d, mainColumns(d), { makeId: () => newNodeId() });
+}
+/** Round 2 item 14: a new table on a read with many columns shows its name and main columns first (Columns lists the rest). */
+function withColumns(op: DraftOp, d: ShapedData | undefined): DraftOp {
+  if (op.op !== "node.update" || !d || d.kind !== "table" || d.columns.length <= TABLE_START_COLUMNS) return op;
+  const props = op.patch.props as Record<string, PropValue> | undefined;
+  if (!props || (Array.isArray(props.columns) && props.columns.length)) return op;
+  const key = keyColumn(d)?.key;
+  const cols = [...(key ? [key] : []), ...mainColumns(d)].slice(0, TABLE_START_COLUMNS);
+  return { ...op, patch: { ...op.patch, props: { ...props, columns: cols } } } as DraftOp;
+}
+const TABLE_START_COLUMNS = 5;
 
 function insertChild(root: ComponentNode, parentId: string, child: ComponentNode): ComponentNode {
   if (root.id === parentId) return { ...root, children: [...(root.children ?? []), child] };

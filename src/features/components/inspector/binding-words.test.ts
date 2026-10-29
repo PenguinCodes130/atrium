@@ -1,6 +1,6 @@
 // Bindings in words (builder ease spec 3.2, 3.3; criteria 12 and 14).
 import { describe, expect, it } from "vitest";
-import { chipFrom, chipLine, chipValue, closestName, dataSentence, lastReadWords, refreshWords, unknownRootSentence, unknownSourceSentence } from "./binding-words";
+import { chipFrom, chipLine, chipValue, closestName, dataSentence, fieldAfterRoot, lastReadWords, refreshWords, unknownRootSentence, unknownSourceSentence } from "./binding-words";
 
 describe("binding errors in words (criterion 14)", () => {
   it("names the source and offers the closest real one", () => {
@@ -35,5 +35,26 @@ describe("the data chip and the Data sentence (criterion 12)", () => {
     const now = Date.parse("2026-10-20T12:00:00Z");
     expect(lastReadWords("2026-10-20T11:57:00Z", now)).toBe("Last read 3 min ago");
     expect(lastReadWords(undefined, now)).toBe("Not read yet");
+  });
+});
+
+describe("Wave 2.10a round 2: a row guess inside a repeat, and sources by label", () => {
+  const sources = ["d_l7sio4ax", "d_k2m9q0zz", "lights"];
+  const labels = { d_l7sio4ax: "Machines, Proxmox", d_k2m9q0zz: "A read from Home Assistant", lights: "lights" };
+  it("suggests $item for row, item and this inside a repeat", () => {
+    expect(unknownSourceSentence("row", sources, { labels, inRepeat: true }, "name")).toBe("There is no data source called row. Inside a repeat, each row is $item: write {{ $item.name }}.");
+    expect(unknownSourceSentence("item", sources, { labels, inRepeat: true }, "status")).toBe("There is no data source called item. Inside a repeat, each row is $item: write {{ $item.status }}.");
+    expect(unknownSourceSentence("this", sources, { labels, inRepeat: true })).toContain("{{ $item.name }}");
+    expect(fieldAfterRoot("{{ row.name | upper }}", "row")).toBe("name");
+    expect(fieldAfterRoot("{{ $item.row }}", "row")).toBeUndefined();
+  });
+  it("lists sources by label and never by a d_ id", () => {
+    const out = unknownSourceSentence("machines", sources, { labels });
+    expect(out).toBe("There is no data source called machines. This app's sources are Machines, Proxmox, A read from Home Assistant and lights.");
+    expect(out).not.toMatch(/d_[a-z0-9]/);
+    // Without labels a generated id is left out, and never offered as the closest name.
+    const bare = unknownSourceSentence("d_l7sio4az", ["d_l7sio4ax"]);
+    expect(bare.replace("d_l7sio4az", "")).not.toMatch(/d_[a-z0-9]/);
+    expect(unknownSourceSentence("row", sources, { labels })).not.toMatch(/d_[a-z0-9]/);
   });
 });

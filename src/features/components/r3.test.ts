@@ -49,7 +49,7 @@ describe("Fixes 1, 2 and 9: the guard pins the node's own box whatever value rea
   it("the node cannot move, grow, pad or animate itself out of its slot", () => {
     for (const decl of ["max-height: max(150vh, 1200px) !important", "inset: auto !important", "z-index: auto !important", "margin: 0 !important", "padding: 0 !important", "height: auto !important", "min-height: auto !important", "max-height: none !important", "width: auto !important", "zoom: 1 !important", "animation: none !important", "float: none !important"]) expect(guard, decl).toContain(decl);
   });
-  it("clip margins: 12px for styled nodes, 104px for plain nodes (room for child shadows up to the reach cap)", () => {
+  it("clip margins: 12px for styled nodes (kept in Wave 2.10a for containment), 104px for plain nodes (room for child shadows up to the reach cap)", () => {
     expect(guard).toContain("overflow-clip-margin: 104px !important");
     expect(guard).toMatch(/\[data-node-styled\][^{]*\{\s*overflow-clip-margin: 12px !important;/);
     expect(104).toBeGreaterThan(SHADOW_REACH_MAX);

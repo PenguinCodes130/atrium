@@ -208,19 +208,21 @@ export function SelectMenu<T extends string>({ label, value, options, onChange, 
  * on a 390px phone), the thumb sits at the value and grows on `pop` while it is held (instant under
  * reduced motion); a pointer or a finger drags it.
  */
-export function RangeField({ label, min, max, step, value, text, onSlide, onType, error, name }: { label: string; min: number; max: number; step: number; value: number; text: string; onSlide(v: number): void; onType(text: string): void; error?: string; name?: string }) {
+// Wave 2.10a B3: `rangeText` replaces the "(min to max)" note and `valueText` is read out for the thumb,
+// for a slider whose last stop is a word (the control radius's Pill).
+export function RangeField({ label, min, max, step, value, text, onSlide, onType, error, name, rangeText, valueText, note }: { label: string; min: number; max: number; step: number; value: number; text: string; onSlide(v: number): void; onType(text: string): void; error?: string; name?: string; rangeText?: string; valueText?: string; note?: string }) {
   const id = useId();
   const reduced = useReducedMotion();
   const clamped = Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
   return (
     <div className="flex min-w-0 flex-col gap-1.5" data-range={name}>
-      <label htmlFor={id} className={LABEL_CLASS}>{label} <span className="text-fg-3">({min} to {max})</span></label>
+      <label htmlFor={id} className={LABEL_CLASS}>{label} <span className="text-fg-3">({rangeText ?? `${min} to ${max}`})</span></label>
       <div className="flex min-w-0 items-center gap-3">
         <Slider.Root min={min} max={max} step={step} value={[clamped]} onValueChange={([v]) => v !== undefined && onSlide(v)} className="relative flex h-9 min-w-24 flex-1 cursor-pointer touch-none select-none items-center touch:h-11" aria-label={label} data-slider={name}>
           <Slider.Track className="relative h-1 grow border border-line-strong bg-bg-sunk" data-slider-track>
             <Slider.Range className="absolute h-full bg-[color:var(--ink)] dark:bg-fg" />
           </Slider.Track>
-          <Slider.Thumb asChild aria-label={label}>
+          <Slider.Thumb asChild aria-label={label} {...(valueText ? { "aria-valuetext": valueText } : {})}>
             <motion.span
               className="block size-4 cursor-grab border border-[color:var(--ink)] bg-accent outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ink)] active:cursor-grabbing touch:size-6 dark:border-line-strong dark:focus-visible:ring-fg"
               whileTap={reduced ? undefined : { scale: 1.25 }}
@@ -231,6 +233,7 @@ export function RangeField({ label, min, max, step, value, text, onSlide, onType
         </Slider.Root>
         <input id={id} inputMode="decimal" value={text} onChange={(e) => onType(e.target.value)} className={`${MONO_FIELD_CLASS} w-20 flex-none text-right`} data-field={name} aria-invalid={!!error} />
       </div>
+      {note && <span className="type-caption text-fg-2" data-range-note={name}>{note}</span>}
       {error && <span role="alert" className="type-caption text-bad" data-field-error={name}>{error}</span>}
     </div>
   );

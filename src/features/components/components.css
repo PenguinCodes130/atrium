@@ -71,6 +71,9 @@
   [data-atrium-canvas] .atr-cell > [data-node], .atr-render-root .atr-cell > [data-node] {
     display: flex !important;
   }
+  /* Wave 2.10a: a node with its own CSS keeps its 12px clip (containment beats A11.2's offset plus 4px
+     here: at 16px, hostile node CSS reached a neighbour's clicks in the containment suites). Plain nodes
+     keep 104px. A plain length either way: Chromium drops math functions in overflow-clip-margin. */
   [data-atrium-canvas] [data-node][data-node-styled], .atr-render-root [data-node][data-node-styled] {
     overflow-clip-margin: 12px !important;
   }
@@ -101,13 +104,37 @@
   /* The node box's window shadow and radius (w2-r3 item 1): resolved here, above every node, from the
      theme; the guard pins both on each node box to the parent's value, so no node's CSS can change them. */
   :is([data-atrium-canvas], .atr-render-root) { --atr-node-shadow: var(--theme-shadow, none); --atr-node-radius: var(--theme-radius, 0px); }
+  /* Round 2 item 4 (A11.5, design Note 2): density tightens component spacing the way it tightens card
+     padding and gaps. Tiles and group headings read the theme's own density sizes (--theme-tile-*,
+     --theme-group-head-h, shell/theme.ts densitySizes); other spacing scales by the factor
+     --theme-density-k (1, or 0.67 at Compact). Text sizes and touch targets stay. */
+  :is([data-atrium-canvas], .atr-render-root) { --atr-k: var(--theme-density-k, 1); }
   .atr-node { position: relative; min-width: 0; }
   .atr-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .atr-cell > .atr-node { flex: 1 1 auto; display: flex; flex-direction: column; }
   .atr-cell > .atr-node > [data-slot="root"] { flex: 1 1 auto; }
-  /* Exact boxes (layout.tsx GridView): the node fills its fixed cell and its content scrolls inside the
-     root part; the root's own shadow stays outside the clip, in the cell's padding. */
-  .atr-grid[data-fixed-rows] > .atr-cell > .atr-node > [data-slot="root"] { min-height: 0; overflow: auto; }
+  /* Exact boxes (layout.tsx GridView): the node fills its fixed cell; the root's own shadow stays outside
+     any clip, in the cell's padding. A11.2 (Wave 2.10a B1, B2): only a scrolling kind (table, list, repeat)
+     scrolls its content inside the root. Every other root never scrolls: content taller than the box is
+     clipped 16px past the box (the largest hard shadow offset, 12px, plus 4px; a plain length, as
+     Chromium drops math functions here), so a child's hover
+     lift, focus ring and shadow edge stay visible; the builder grows fit boxes and marks one that is cut,
+     and the viewer grows its rows (below), so nothing is cut there. */
+  .atr-grid[data-fixed-rows] > .atr-cell > .atr-node > [data-slot="root"] { min-height: 0; overflow: clip; overflow-clip-margin: 16px; }
+  .atr-grid[data-fixed-rows] > .atr-cell > .atr-node[data-sizing="scroll"] > [data-slot="root"] { overflow: auto; }
+  /* A node carrying its own CSS is still clipped 12px past its box by the guard (its node box), and in the
+     viewer its box holds the drawn size (below), so node CSS can never take clicks or room from a
+     neighbour (gauntlet w2-r2 Fixes 1, 2 and 9). */
+  /* The viewer's rows (layout.tsx data-grow-rows): fit and scale boxes give their content height, so a fit
+     box taller than drawn grows its rows; a scrolling kind and a group that keeps its height give none and
+     hold the drawn box. */
+  .atr-grid[data-grow-rows] > .atr-cell:is([data-sizing="scroll"], [data-sizing="reflow"]) { contain: size; }
+  /* Round 2 item 2: auto rows never stretch to fill the page's minimum height (the fixed 8px rows never
+     did), and a scale kind holds exactly its own rows (layout.tsx --atr-rows, from its unstretched slot),
+     so an icon draws the same in the viewer as in the builder, whatever grows beside it. */
+  .atr-grid[data-grow-rows] { align-content: start; }
+  .atr-grid[data-grow-rows] > .atr-cell[data-sizing="scale"] { contain: size; align-self: start; height: calc(var(--atr-rows, 1) * 8px); }
+  .atr-grid[data-grow-rows] > .atr-cell:has(> [data-node-has-css]) { contain: size; }
   /* A styled node's window shadow is drawn by the node box, outside the node's 12px clip (w2-r2 Fix 7):
      the theme shadow moves from the root part to the node box (same box, same radius). A Style panel
      shadow does the same through the node-box rule compileStyle writes, which wins (atrium-custom). */
@@ -129,19 +156,20 @@
   /* A7.6: an HTML block that fills the window ends at the window's edge, with no gap under it. */
   .atr-grid > .atr-cell[data-fill-cell] { padding-bottom: 0; }
   .atr-stack { display: flex; gap: var(--theme-gap, 16px); }
-  .atr-repeat { display: grid; gap: var(--theme-gap, 16px); }
+  /* Rows keep their content's height: a box grown taller never spreads its cards apart (w210a r3). */
+  .atr-repeat { display: grid; gap: var(--theme-gap, 16px); align-content: start; }
   .atr-section { display: flex; flex-direction: column; gap: calc(var(--theme-gap, 16px) / 2); }
   .atr-section-title { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking, -0.02em); font-size: calc(22px * var(--theme-type-scale, 1)); color: var(--theme-canvas-text); }
   .atr-section-desc { margin: 0; color: var(--theme-surface-muted); font-size: calc(14px * var(--theme-type-scale, 1)); }
   .atr-section-body { display: flex; flex-direction: column; gap: var(--theme-gap, 16px); }
 
   .atr-surface { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-  .atr-card { display: flex; flex-direction: column; gap: 12px; }
+  .atr-card { display: flex; flex-direction: column; gap: calc(12px * var(--atr-k, 1)); }
   .atr-card-title h3 { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(17px * var(--theme-type-scale, 1)); }
   .atr-card-title p { margin: 2px 0 0; color: var(--theme-surface-muted); font-size: calc(13px * var(--theme-type-scale, 1)); }
-  .atr-card-body { display: flex; flex-direction: column; gap: 12px; }
+  .atr-card-body { display: flex; flex-direction: column; gap: calc(12px * var(--atr-k, 1)); }
 
-  .atr-tablist { display: flex; gap: 4px; border-bottom: 1px solid var(--theme-line); margin-bottom: 12px; overflow-x: auto; }
+  .atr-tablist { display: flex; gap: 4px; border-bottom: 1px solid var(--theme-line); margin-bottom: 12px; flex-wrap: wrap; }
   .atr-tablist [role="tab"] { appearance: none; border: 0; background: transparent; color: var(--theme-canvas-text); padding: 8px 12px; font: inherit; font-size: calc(14px * var(--theme-type-scale, 1)); cursor: pointer; border-bottom: 2px solid transparent; min-height: 36px; }
   .atr-tablist [role="tab"][aria-selected="true"] { border-bottom-color: var(--theme-accent); font-weight: 600; }
 
@@ -179,7 +207,11 @@
   .atr-stat-value { overflow-wrap: anywhere; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(40px * var(--theme-type-scale, 1)); line-height: 1; font-variant-numeric: var(--theme-numbers, tabular-nums); }
   /* Words never break inside: the size steps down with the tile width, then ellipsis (Fix 10). */
   .atr-stat-value[data-text-value] { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%; font-size: clamp(14px, calc(100cqi / (var(--atr-chars, 6) * 0.8)), calc(40px * var(--theme-type-scale, 1))); }
-  .atr-stat-unit { font-size: calc(16px * var(--theme-type-scale, 1)); color: var(--theme-surface-muted); }
+  /* Recheck M2 (Wave 2.10a round 3): a number never breaks inside itself ("41." over "2"), and its unit
+     stays beside it: in a narrow stat (the builder's Fit canvas, a small card) the value steps down in size
+     to fit its line with the unit, as words do above; where there is room it stays at full size. */
+  .atr-stat-value[data-num-value] { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; font-size: clamp(14px, calc((100cqi - var(--atr-unit-w, 0px)) / (var(--atr-chars, 6) * 0.7)), calc(40px * var(--theme-type-scale, 1))); }
+  .atr-stat-unit { font-size: calc(16px * var(--theme-type-scale, 1)); color: var(--theme-surface-muted); white-space: nowrap; }
   .atr-stat-label { font-family: var(--theme-font-mono); font-size: calc(12px * var(--theme-type-scale, 1)); color: var(--theme-surface-muted); }
   .atr-stat-delta { font-size: 12px; color: var(--theme-surface-muted); font-variant-numeric: tabular-nums; }
   .atr-stat[data-level="warn"] .atr-stat-value { color: var(--theme-warn); }
@@ -191,8 +223,12 @@
 
   .atr-table-wrap { overflow-x: auto; }
   .atr-table { width: 100%; border-collapse: collapse; font-size: calc(13px * var(--theme-type-scale, 1)); }
-  .atr-table th { text-align: left; font-family: var(--theme-font-mono); font-weight: 400; font-size: 11px; color: var(--theme-surface-muted); padding: 10px 12px 6px; border-bottom: 1px solid var(--theme-line); }
-  .atr-table td { padding: 7px 12px; border-bottom: 1px solid var(--theme-line); }
+  .atr-table th { text-align: left; font-family: var(--theme-font-mono); font-weight: 400; font-size: 11px; color: var(--theme-surface-muted); padding: calc(10px * var(--atr-k, 1)) 12px calc(6px * var(--atr-k, 1)); border-bottom: 1px solid var(--theme-line); }
+  .atr-table td { padding: calc(7px * var(--atr-k, 1)) 12px; border-bottom: 1px solid var(--theme-line); }
+  /* A number and its unit stay on one line (round 2 low: "7.8 / %" at 390px). */
+  .atr-table td[data-type="number"], .atr-table td .atr-num { white-space: nowrap; }
+  /* Round 2 item 15: Columns names that match no column, in the builder only. */
+  .atr-table-note { margin: 0; padding: 6px 12px; font-size: 12px; color: var(--theme-surface-text); border-left: 3px solid var(--theme-warn); }
   .atr-table [data-type="number"] { text-align: right; font-variant-numeric: var(--theme-numbers, tabular-nums); }
   .atr-count { margin: 0; padding: 6px 12px 10px; font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-muted); }
   .atr-num { font-variant-numeric: var(--theme-numbers, tabular-nums); }
@@ -201,12 +237,12 @@
   .atr-muted { color: var(--theme-surface-muted); margin: 0; font-size: 13px; }
 
   .atr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .atr-list li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--theme-line); font-size: calc(14px * var(--theme-type-scale, 1)); }
+  .atr-list li { display: flex; justify-content: space-between; gap: 12px; padding: calc(7px * var(--atr-k, 1)) 0; border-bottom: 1px solid var(--theme-line); font-size: calc(14px * var(--theme-type-scale, 1)); }
   .atr-list li:last-child { border-bottom: 0; }
   .atr-list-detail { color: var(--theme-surface-muted); font-variant-numeric: tabular-nums; }
 
   /* status: shape, word and colour (never colour alone) */
-  .atr-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .atr-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(8px * var(--atr-k, 1)); }
   .atr-status[data-layout="grid"] { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .atr-status li { display: flex; align-items: center; gap: 8px; font-size: calc(14px * var(--theme-type-scale, 1)); flex-wrap: wrap; }
   /* The label takes the room and the state word stays inline at the right (Fix 15). */
@@ -257,6 +293,10 @@
   .atr-image { display: block; width: 100%; border-radius: var(--theme-radius, 0px); }
   .atr-image-placeholder { display: grid; place-items: center; background: color-mix(in oklab, var(--theme-surface-text) 8%, transparent); color: var(--theme-surface-muted); }
   .atr-icon { display: inline-flex; color: var(--theme-canvas-text); }
+  /* B8 (A11.2 scale): a filling icon in a grid cell is drawn at half its box's shorter side, centred, so it
+     grows and shrinks with the box (insert.ts ICON_FILL_SHARE; the inserted box hugs it, ICON_HUG_PX). */
+  .atr-cell > .atr-node > .atr-icon[data-fill] { display: flex; align-items: center; justify-content: center; container-type: size; min-width: 0; min-height: 0; }
+  .atr-cell > .atr-node > .atr-icon[data-fill] > svg { width: calc(min(100cqw, 100cqh) * 0.5); height: calc(min(100cqw, 100cqh) * 0.5); flex: none; }
   .atr-divider { border: 0; border-top: 1px solid var(--theme-line); width: 100%; }
   .atr-clock { display: flex; flex-direction: column; gap: 2px; color: var(--theme-canvas-text); }
   .atr-clock-time { font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(44px * var(--theme-type-scale, 1)); line-height: 1; font-variant-numeric: tabular-nums; }
@@ -292,7 +332,8 @@
      the canvas says titlebars on. 28px, mono label, door glyph, path on the left, status on the right. */
   .atr-titlebar { display: none; }
   [data-canvas-titlebars="on"] .atr-titlebar {
-    display: flex; align-items: center; gap: 8px; flex: none; height: 28px; padding: 0 10px; min-width: 0;
+    /* Round 2 item 4: the height is the density's (--theme-titlebar-h, 28px or 19px at Compact). */
+    display: flex; align-items: center; gap: 8px; flex: none; height: var(--theme-titlebar-h, 28px); padding: 0 10px; min-width: 0;
     margin: calc(-1 * var(--theme-pad, 16px)) calc(-1 * var(--theme-pad, 16px)) 0;
     background: var(--titlebar, var(--theme-surface-text)); color: var(--titlebar-fg, var(--theme-surface));
     font-family: var(--theme-font-mono); font-size: 12px; line-height: 16px; letter-spacing: -0.01em;
@@ -313,7 +354,7 @@
   .atr-titlebar-status[data-tone="warn"] .atr-titlebar-dot { background: var(--theme-warn); border-radius: 0; }
   .atr-titlebar-status[data-tone="bad"] .atr-titlebar-dot { background: var(--theme-bad); border-radius: 0; }
   .atr-titlebar-status[data-tone="off"] .atr-titlebar-dot { background: transparent; border: 1px solid currentColor; }
-  [data-canvas-titlebars="on"] .atr-marks { top: 36px; }
+  [data-canvas-titlebars="on"] .atr-marks { top: calc(var(--theme-titlebar-h, 28px) + 8px); }
   [data-canvas-titlebars="on"] .atr-card > .atr-card-title h3 { font-size: calc(15px * var(--theme-type-scale, 1)); }
 
   /* Library cards (Fix 4 and 12): the card's own window carries the only title bar, with a neutral sample state. */
@@ -359,19 +400,46 @@
 
   /* Service tile (reference 1 and 2): icon, name and a line about it, the badge at the right, then up to
      four small numbers in a sunk well. The whole tile is the link. */
-  .atr-tile { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; min-width: 0; color: var(--theme-surface-text); text-decoration: none; }
-  a.atr-tile-link { cursor: pointer; transition: transform 120ms cubic-bezier(0.2, 0, 0, 1); }
-  a.atr-tile-link:hover { transform: translateY(-2px); }
+  .atr-tile { position: relative; display: flex; flex-direction: column; gap: var(--theme-tile-gap, calc(10px * var(--atr-k, 1))); padding: var(--theme-tile-pad-y, calc(12px * var(--atr-k, 1))) var(--theme-tile-pad-x, calc(14px * var(--atr-k, 1))); min-width: 0; color: var(--theme-surface-text); text-decoration: none; }
+  /* Round 2 item 6: a tile in a group or a grid cell is a size container, so its head can make room for
+     the name when the tile is narrow (below). Not in a stack, where the tile's own width is its content. */
+  :is(.atr-group-item, .atr-cell) > .atr-node > .atr-tile { container: atr-tile / inline-size; }
+  /* Round 2 low: the lift also deepens the shadow, on the same 120ms curve, so it reads on soft themes.
+     The added layer reaches at most 14px, inside the 16px clip margin. */
+  a.atr-tile-link { cursor: pointer; transition: transform 120ms cubic-bezier(0.2, 0, 0, 1), box-shadow 120ms cubic-bezier(0.2, 0, 0, 1); }
+  a.atr-tile-link:hover { transform: translateY(-2px); box-shadow: var(--theme-shadow, none), 0 6px 14px -6px rgb(0 0 0 / 0.32); }
   a.atr-tile-link:active { transform: translateY(0); }
   a.atr-tile-link:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
   .atr-tile-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .atr-tile-icon { flex: none; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; color: var(--theme-accent-ink, var(--theme-accent)); }
+  .atr-tile-icon { flex: none; width: var(--theme-tile-icon, 36px); height: var(--theme-tile-icon, 36px); display: inline-flex; align-items: center; justify-content: center; color: var(--theme-accent-ink, var(--theme-accent)); }
   .atr-tile-img { width: 30px; height: 30px; object-fit: contain; }
+  /* The glyph or picture is 30px in the 36px box, and shrinks with a Compact box (24px). */
+  .atr-tile-icon > :is(svg, .atr-tile-img) { width: calc(var(--theme-tile-icon, 36px) * 5 / 6); height: calc(var(--theme-tile-icon, 36px) * 5 / 6); }
   .atr-tile-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
   .atr-tile-name { font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking, -0.02em); font-size: calc(15px * var(--theme-type-scale, 1)); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atr-tile-desc { color: var(--theme-surface-muted); font-size: calc(12px * var(--theme-type-scale, 1)); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atr-tile-side { flex: none; display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
   .atr-tile-side .atr-marks { position: static; }
+  /* Round 2 item 6: the name always shows. A narrow tile draws its badge as the dot alone (the word stays
+     in its title and for screen readers); a narrower one takes a smaller icon and lets the name use two
+     lines. */
+  @container atr-tile (max-width: 230px) {
+    .atr-tile-head .atr-badge { padding: 4px; gap: 0; }
+    .atr-tile-head .atr-badge > .atr-badge-word { display: none; }
+  }
+  @container atr-tile (max-width: 170px) {
+    .atr-tile-head { gap: 8px; }
+    .atr-tile-icon { width: min(28px, var(--theme-tile-icon, 36px)); height: min(28px, var(--theme-tile-icon, 36px)); }
+    .atr-tile-icon > :is(svg, .atr-tile-img) { width: calc(min(28px, var(--theme-tile-icon, 36px)) * 6 / 7); height: calc(min(28px, var(--theme-tile-icon, 36px)) * 6 / 7); }
+    .atr-tile-name { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  }
+  /* Round 2 item 7: an address Atrium does not check reads Not checked, neutral, with a hollow dot; the
+     reason shows over the tile on keyboard focus and after a tap on the badge (a second tap hides it: the
+     overlay lets taps through), and in the badge's hover title. */
+  .atr-badge[data-badge-state="unchecked"] .atr-badge-dot { background: none; border: 1.5px solid var(--theme-surface-muted); box-sizing: border-box; }
+  .atr-badge[data-badge-state="unchecked"] { cursor: help; }
+  .atr-tile-reason { position: absolute; inset: 0; z-index: 2; display: none; align-items: center; margin: 0; padding: 8px 12px; overflow: hidden; background: var(--theme-surface); color: var(--theme-surface-text); border-radius: inherit; font-size: 12px; line-height: 1.35; text-align: left; pointer-events: none; }
+  .atr-tile[data-reason-open] .atr-tile-reason, a.atr-tile:focus-visible .atr-tile-reason { display: flex; }
   .atr-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 1px solid var(--atr-tone, var(--theme-line)); border-radius: max(2px, calc(var(--theme-radius, 0px) / 3)); font-family: var(--theme-font-mono); font-size: 10.5px; line-height: 14px; text-transform: uppercase; color: var(--theme-surface-text); background: color-mix(in oklab, var(--atr-tone, var(--theme-line)) 14%, transparent); white-space: nowrap; }
   .atr-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--atr-tone, var(--theme-surface-muted)); }
   .atr-badge[data-tone="ok"] { --atr-tone: var(--theme-ok); }
@@ -380,7 +448,7 @@
   .atr-badge[data-tone="bad"] .atr-badge-dot { border-radius: 1px; }
   .atr-badge[data-tone="warn"] .atr-badge-dot { border-radius: 0; transform: rotate(45deg) scale(0.85); }
   .atr-badge-wait .atr-badge-dot { animation: atr-shimmer 1.6s ease-in-out infinite; }
-  .atr-tile-stats { display: grid; gap: 4px; margin: 0; padding: 6px 4px; background: color-mix(in oklab, var(--theme-surface-text) 6%, transparent); border-radius: max(0px, calc(var(--theme-radius, 0px) / 2)); }
+  .atr-tile-stats { display: grid; gap: 4px; margin: 0; padding: calc(6px * var(--atr-k, 1)) 4px; background: color-mix(in oklab, var(--theme-surface-text) 6%, transparent); border-radius: max(0px, calc(var(--theme-radius, 0px) / 2)); }
   .atr-tile-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; text-align: center; }
   .atr-tile-stat dd { margin: 0; font-family: var(--theme-font-mono); font-size: calc(13px * var(--theme-type-scale, 1)); font-weight: 600; font-variant-numeric: var(--theme-numbers, tabular-nums); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .atr-tile-stat dd small { font-size: 0.85em; font-weight: 500; color: var(--theme-surface-muted); }
@@ -391,8 +459,8 @@
   .atr-letters { display: inline-flex; align-items: center; justify-content: center; font-family: var(--theme-font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 
   /* Group (reference 2 to 4): a heading on the page, then its children in equal columns, in order. */
-  .atr-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .atr-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+  .atr-group { display: flex; flex-direction: column; gap: calc(8px * var(--atr-k, 1)); min-width: 0; }
+  .atr-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--theme-group-head-h, calc(28px * var(--atr-k, 1))); }
   .atr-group-title { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking, -0.02em); font-size: calc(17px * var(--theme-type-scale, 1)); color: var(--theme-canvas-text); }
   .atr-group-fold { appearance: none; border: 1px solid transparent; background: transparent; color: var(--theme-canvas-text); width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border-radius: var(--theme-control-radius, 0px); }
   .atr-group-fold:hover { border-color: var(--theme-line); }
@@ -402,13 +470,16 @@
   .atr-group-item > .atr-node { flex: 1 1 auto; }
   /* Tiles in one row of a group are the same height, as on a Homepage board. */
   .atr-group-item > .atr-node > .atr-tile { height: 100%; box-sizing: border-box; }
+  /* B1 reflow: the cell in place of the children a kept-height group has no room for. */
+  .atr-group-more { margin: 0; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 6px 10px; font-family: var(--theme-font-mono); font-size: 12px; color: var(--theme-canvas-text); opacity: 0.8; border: 1px dashed var(--theme-line); text-align: center; }
   .atr-group-empty { margin: 0; padding: 16px; border: 1px dashed var(--theme-line); color: var(--theme-canvas-text); opacity: 0.7; font-size: 13px; grid-column: 1 / -1; text-align: center; }
 
   /* Resource bar (reference 1 to 4): one thin strip; on phones the readings wrap two to a row. */
-  .atr-bar { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; padding: 8px 14px; min-width: 0; }
+  .atr-bar { display: flex; align-items: center; gap: calc(12px * var(--atr-k, 1)) calc(20px * var(--atr-k, 1)); flex-wrap: wrap; padding: calc(8px * var(--atr-k, 1)) calc(14px * var(--atr-k, 1)); min-width: 0; }
   .atr-bar .atr-marks { top: 4px; right: 6px; }
-  .atr-bar { flex-wrap: nowrap; }
-  .atr-bar-items { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; flex: 1 1 0; min-width: 0; }
+  /* Lead w210a: the readings start at 240px so a narrow bar moves its clock and search onto a second line
+     instead of squeezing the readings into a sliver that spills over them. */
+  .atr-bar-items { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; flex: 1 1 240px; min-width: 0; }
   .atr-bar-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .atr-bar-icon { color: var(--theme-surface-muted); display: inline-flex; }
   .atr-bar-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -420,10 +491,10 @@
   .atr-bar-fill[data-level="warn"] { background: var(--theme-warn); }
   .atr-bar-fill[data-level="bad"] { background: var(--theme-bad); }
   .atr-sample-note { font-family: var(--theme-font-mono); font-size: 10.5px; color: var(--theme-surface-muted); align-self: center; }
-  .atr-bar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; }
+  .atr-bar-end { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: 0 1 auto; min-width: 0; max-width: 100%; }
   .atr-bar-clock { font-family: var(--theme-font-mono); font-size: calc(12.5px * var(--theme-type-scale, 1)); white-space: nowrap; font-variant-numeric: var(--theme-numbers, tabular-nums); }
   .atr-bar-search { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--theme-line); border-radius: var(--theme-control-radius, 0px); background: color-mix(in oklab, var(--theme-surface-text) 4%, transparent); }
-  .atr-bar-search input { appearance: none; border: 0; background: transparent; color: var(--theme-surface-text); font: inherit; font-size: 13px; padding: 5px 8px; width: 150px; min-width: 0; outline: none; }
+  .atr-bar-search input { appearance: none; border: 0; background: transparent; color: var(--theme-surface-text); font: inherit; font-size: 13px; padding: 5px 8px; width: 150px; min-width: 0; flex: 0 1 auto; outline: none; }
   .atr-bar-search input::placeholder { color: var(--theme-surface-muted); }
   .atr-bar-search:focus-within { outline: 2px solid var(--theme-accent); outline-offset: 1px; }
   .atr-bar-search button { appearance: none; border: 0; border-left: 1px solid var(--theme-line); background: transparent; color: var(--theme-surface-text); padding: 0 8px; cursor: pointer; display: inline-flex; align-items: center; }
@@ -435,9 +506,9 @@
   .atr-render-root[data-device="mobile"] .atr-bar-track { width: 100%; }
 
   /* Bookmarks (reference 4): compact rows of two letters or an icon, a name and the domain. */
-  .atr-bookmarks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+  .atr-bookmarks { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(6px * var(--atr-k, 1)); min-width: 0; }
   .atr-bookmarks.atr-muted { display: block; padding: 8px; color: var(--theme-canvas-text); }
-  .atr-bookmark { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; background: var(--theme-surface-fill, var(--theme-surface)); color: var(--theme-surface-text); border: var(--theme-border-width, 1px) solid var(--theme-border-color, var(--theme-line)); border-radius: max(0px, calc(var(--theme-radius, 0px) / 2)); text-decoration: none; min-width: 0; }
+  .atr-bookmark { display: flex; align-items: center; gap: 10px; min-height: calc(36px * var(--atr-k, 1)); padding: calc(6px * var(--atr-k, 1)) 10px; background: var(--theme-surface-fill, var(--theme-surface)); color: var(--theme-surface-text); border: var(--theme-border-width, 1px) solid var(--theme-border-color, var(--theme-line)); border-radius: max(0px, calc(var(--theme-radius, 0px) / 2)); text-decoration: none; min-width: 0; }
   a.atr-bookmark:hover { border-color: var(--theme-accent); }
   a.atr-bookmark:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
   .atr-bookmark-inert { opacity: 0.6; cursor: not-allowed; }

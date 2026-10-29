@@ -7,7 +7,8 @@ export { evaluateBinding, evaluateTemplate, isBinding, sourcesInTemplate, usesNo
 export type { BindingResult, BindingFailure } from "./bindings";
 export { sourcesUsed, resolveGuestValues, pageScope, libraryRefs, findPage, eachNode } from "./page";
 export { suggestComponent, suggestedType } from "./suggest";
-export { insertCatalogue, newNode } from "./insert";
+export { insertCatalogue, newNode, hugSlot, ICON_HUG_PX, NEW_SIZE } from "./insert";
+export { SIZING, sizingOf } from "./catalogue/meta";
 export type { InsertGroup } from "./insert";
 export { InspectorPanels, HtmlCodeWindow, BindingField, InspectorHeader, nodeDisplayName, CODE_DOCK_SELECTOR } from "./inspector/inspector";
 export type { InspectorProps } from "./inspector/inspector";
@@ -25,7 +26,10 @@ export { META as CATALOGUE_META } from "./catalogue/meta";
 export { getPropPath, setPropPath } from "./props-path";
 export { planLines, thirdUnitSentence, axisKey, lineSeriesName, MAX_LINE_SERIES } from "./render/lines";
 export type { LinesPlan, LineInput } from "./render/lines";
-export { statusBadge, iconRefKind, initials, domainOf, searchHref } from "./render/tiles-logic";
+export { statusBadge, iconRefKind, initials, domainOf, searchHref, isNotChecked } from "./render/tiles-logic";
+// Wave 2.10a round 2 (items 2, 14, 15): table columns by header, a table's sideways overflow, a new icon's square slot.
+export { matchColumns, tableOverflowOf, measureTableOverflow, iconSlotIn } from "./render/measure";
+export type { TableOverflow } from "./render/measure";
 export { ICON_NAMES, SERIES_COLORS, MAX_CHART_LINES, MAX_TILE_STATS, MAX_BAR_ITEMS, MAX_BOOKMARKS, DEFAULT_SEARCH_URL } from "./catalogue/schemas";
 export type { IconName } from "./catalogue/schemas";
 export { lineDataKey } from "./page";

@@ -231,6 +231,13 @@ test("Fit on the drag bar: shows only while content scrolls, grows that box, pus
   const page = await ctx.newPage();
   await page.goto(`/build/${slug}`);
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
+  // Round 2 item 1: opening the page grows too-small boxes as one undo step. Undo it, so the stat is back
+  // in its drawn box (too small for its content) and the Fit button has something to fit.
+  await untilDraft(appId, (x) => slotOf(x, ids.stat).h > 16, 8000);
+  await page.locator("[data-builder-canvas]").focus();
+  await page.keyboard.press("Control+z");
+  await untilDraft(appId, (x) => slotOf(x, ids.stat).h === 16);
+  await page.waitForTimeout(400);
   expect(await overflowing(page)).toContain(ids.stat);
   // A widget that fits has no Fit button.
   await page.locator('[data-left-tab="layers"]').click();

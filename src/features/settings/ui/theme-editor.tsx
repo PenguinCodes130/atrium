@@ -8,10 +8,18 @@
 // segments, menus, sliders and checkboxes instead of native controls (item 6); 44px segments and a
 // Save that stays in reach on phones (item 9); a sampled contrast warning over image wallpapers
 // (item 11); gradients parsed into stops and an angle, never overwritten silently (item 12).
+// Wave 2.10a (operator try-out): B3 the control radius runs 0 to 24 px in steps of 2, then Pill; B6 the
+// preview shows Light, Dark or Side by side with the real dark set, a theme with no dark set says so and
+// offers "Make a dark set", and an auto theme's dark set is edited with the same fields as the light set
+// (Editing: Light set / Dark set). B4 and B5 show in the preview because it draws the app's own nav and
+// full-size controls (themes/ui/theme-sample.tsx).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import type { Theme, ThemeTokens } from "@/core/contracts";
 import { Button, Switch, THEME_FONTS, Window, contrastReport, isThemeColor, isThemeGradient, toast } from "@/features/shell";
 import { NUMBER_FIELDS, numberFieldError } from "@/features/themes/fields";
+import { makeDarkSet } from "@/features/themes/dark-set";
+import { CONTROL_RADIUS_MAX_BY_DENSITY, DENSITY_K, PILL_RADIUS, controlRadiusOf, resolveTokens, type Density } from "@/features/shell/theme";
 import { ThemeSample } from "@/features/themes/ui/theme-sample";
 import { refreshThemePicker } from "@/features/themes/ui/theme-picker";
 import { UploadField } from "@/features/uploads/ui/upload-field";
@@ -24,7 +32,7 @@ import { UsedBy } from "./used-by";
 import { UseOnApp } from "./use-on-app";
 
 type Use = { appId: string; slug: string; name: string; draft: boolean; published: boolean };
-export type EditorProps = { id: string; rev: number; theme: Theme; invalid: number; usedBy: Use[]; savedCss?: string };
+export type EditorProps = { id: string; rev: number; theme: Theme; invalid: number; usedBy: Use[]; savedCss?: string; /** r2 low L8: an unsaved new theme, stored on the first Save. */ isNew?: boolean };
 
 type GroupKey = "surfaces" | "colours" | "type" | "shape" | "motion" | "chrome" | "dark" | "advanced";
 const GROUP_OF_CONTRAST: Record<string, GroupKey> = { "color.surfaceText": "colours", "color.surfaceMuted": "colours", "color.canvasText": "colours", "color.accentText": "colours" };
@@ -46,11 +54,25 @@ function setPath<T>(obj: T, path: string, value: unknown): T {
   cur[keys[keys.length - 1]!] = value;
   return root as T;
 }
+/**
+ * Write a token path. While the dark set is being edited, `tokens.<group>...` goes to `dark.<group>...`,
+ * starting from the whole group as dark viewers see it now, so the saved dark group is always complete.
+ */
+function writeToken(cur: Theme, path: string, value: unknown, editing: Scheme): Theme {
+  if (editing !== "dark" || !path.startsWith("tokens.") || cur.mode !== "auto" || !cur.dark) return setPath(cur, path, value);
+  const group = path.split(".")[1] as keyof ThemeTokens;
+  const full = resolveTokens(cur, "dark");
+  const next: Theme = { ...cur, dark: { ...cur.dark, [group]: structuredClone(full[group]) } };
+  return setPath(next, `dark.${path.slice("tokens.".length)}`, value);
+}
+type Scheme = "light" | "dark";
+type PreviewMode = "light" | "dark" | "both";
 function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), obj);
 }
 
-export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, usedBy: initialUse, savedCss }: EditorProps) {
+export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, usedBy: initialUse, savedCss, isNew = false }: EditorProps) {
+  const router = useRouter();
   const [theme, setTheme] = useState<Theme>(initial);
   const [rev, setRev] = useState(initialRev);
   const [usedBy, setUsedBy] = useState(initialUse);
@@ -61,24 +83,78 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
   const [offerUpdate, setOfferUpdate] = useState<Use[] | null>(null);
   const groupRefs = useRef<Partial<Record<GroupKey, HTMLElement | null>>>({});
   const contrast = useMemo(() => contrastReport(theme), [theme]);
+  const hasDark = theme.mode === "auto" && !!theme.dark;
+  const [editingRaw, setEditing] = useState<Scheme>("light");
+  const editing: Scheme = hasDark ? editingRaw : "light";
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("light");
+  // r2 item 3: on a phone the preview docks above the Save bar, one tap away, while the fields scroll.
+  const [docked, setDocked] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const editingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = actionsRef.current, root = rootRef.current;
+    if (!bar || !root || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => root.style.setProperty("--editor-actions-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
   // Over an image the shell's report can only assume white and black; the sampled check replaces it.
   const shownWarnings = contrast.warnings.filter((w) => !(theme.tokens.wallpaper.kind === "image" && w.field === "color.canvasText"));
-  const t = theme.tokens;
+  // The token set the fields show and write: the light set, or the dark set as dark viewers see it.
+  const t = editing === "dark" ? resolveTokens(theme, "dark") : theme.tokens;
   const uploadedFamilies = (theme.fonts ?? []).map((f) => f.family);
 
-  const set = (path: string, value: unknown) => setTheme((cur) => setPath(cur, path, value));
+  const set = (path: string, value: unknown) => setTheme((cur) => writeToken(cur, path, value, editing));
+  // r2 item 5 (design Note 3): a radius above the new density's last stop becomes Pill, as it draws.
+  const setDensity = (d: Density) =>
+    setTheme((cur) => {
+      let next = writeToken(cur, "tokens.space.density", d, editing);
+      const r = (editing === "dark" ? resolveTokens(next, "dark") : next.tokens).shape.controlRadiusPx;
+      if (r !== PILL_RADIUS && controlRadiusOf(r, d) === PILL_RADIUS) next = writeToken(next, "tokens.shape.controlRadiusPx", PILL_RADIUS, editing);
+      return next;
+    });
   // Item 5: the nav's active fill and text follow the accent and accent text while they match them
   // (Dusk and every copy of it); "Set apart" keeps them as they are.
   const [chromeApart, setChromeApart] = useState(() => !(same(initial.tokens.chrome.activeFill, initial.tokens.color.accent) && same(initial.tokens.chrome.activeText, initial.tokens.color.accentText)));
   const setAccent = (key: "accent" | "accentText", v: string) =>
     setTheme((cur) => {
-      let next = setPath(cur, `tokens.color.${key}`, v);
-      if (!chromeApart) next = setPath(next, key === "accent" ? "tokens.chrome.activeFill" : "tokens.chrome.activeText", v);
+      let next = writeToken(cur, `tokens.color.${key}`, v, editing);
+      if (!chromeApart) next = writeToken(next, key === "accent" ? "tokens.chrome.activeFill" : "tokens.chrome.activeText", v, editing);
       return next;
     });
   const followAccent = (follow: boolean) => {
     setChromeApart(!follow);
-    if (follow) setTheme((cur) => setPath(setPath(cur, "tokens.chrome.activeFill", cur.tokens.color.accent), "tokens.chrome.activeText", cur.tokens.color.accentText));
+    if (follow)
+      setTheme((cur) => {
+        const c = editing === "dark" ? resolveTokens(cur, "dark").color : cur.tokens.color;
+        return writeToken(writeToken(cur, "tokens.chrome.activeFill", c.accent, editing), "tokens.chrome.activeText", c.accentText, editing);
+      });
+  };
+  // B6: a full dark set filled from the light set (darker surfaces, dimmer wallpaper, same accent),
+  // checked for contrast; the theme becomes Auto so dark viewers get it, and the editor switches to it.
+  const makeDark = () => {
+    const wasMode = theme.mode;
+    setTheme((cur) => ({ ...cur, mode: "auto", dark: makeDarkSet(cur.tokens) }));
+    setEditing("dark");
+    setPreviewMode("both");
+    toast({ kind: "success", title: "Dark set made from the light set", description: `You are now editing the Dark set: the Editing switch at the top goes back to the Light set. ${wasMode === "auto" ? "" : "Mode is now Auto, so dark viewers get it. "}Adjust it, then save.` });
+    // r2 low L6: bring the Editing switch it moved to into view, and mark it for a moment.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = editingRef.current;
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      el.setAttribute("data-just-switched", "");
+      window.setTimeout(() => el.removeAttribute("data-just-switched"), 2400);
+    }));
+  };
+  const removeDark = () => {
+    setTheme((cur) => {
+      const { dark: _d, ...rest } = cur;
+      void _d;
+      return rest;
+    });
+    setEditing("light");
   };
   const imageContrast = useImageContrast(t.wallpaper, t.color.canvasText);
   const err = (path: string, msg: string | null) => setFieldErr((e) => { const n = { ...e }; if (msg) n[path] = msg; else delete n[path]; return n; });
@@ -96,6 +172,13 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
     setBusy(true);
     setSaveError(null);
     try {
+      if (isNew) {
+        const c = await api<{ id: string; name: string }>("/api/settings/themes", { body: { theme } });
+        toast({ kind: "success", title: `Saved ${c.name}` });
+        refreshThemePicker();
+        router.replace(`/settings/themes/${c.id}`);
+        return;
+      }
       const r = await api<{ rev: number; name: string; usedBy: Use[] }>(`/api/settings/themes/${id}`, { method: "PUT", body: { theme, rev } });
       setRev(r.rev);
       setUsedBy(r.usedBy);
@@ -112,13 +195,16 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
     }
   }
 
+  // r2 item 8 (design Note 3): published apps keep their snapshot. An app whose draft no longer points
+  // at this theme (it holds a copy) can have its draft pointed back, so its next publish carries it.
   async function updateApps() {
-    if (!offerUpdate) return;
+    const stale = (offerUpdate ?? []).filter((u) => !u.draft);
+    if (!stale.length) return;
     setBusy(true);
     try {
-      const r = await api<{ updated: { name: string }[] }>(`/api/settings/themes/${id}/update-apps`, { body: { appIds: offerUpdate.map((u) => u.appId) } });
+      const r = await api<{ updated: { name: string }[] }>(`/api/settings/themes/${id}/update-apps`, { body: { appIds: stale.map((u) => u.appId) } });
       toast({ kind: "success", title: `Updated ${r.updated.length} app draft${r.updated.length === 1 ? "" : "s"}`, description: "Publish each app to carry the theme to its live version." });
-      setOfferUpdate(null);
+      setOfferUpdate((cur) => (cur ? cur.map((u) => ({ ...u, draft: true })) : cur));
     } catch (x) {
       toast({ kind: "error", title: errorText(x) });
     } finally {
@@ -153,7 +239,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
   );
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]" data-theme-editor>
+    <div ref={rootRef} className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]" data-theme-editor data-preview-docked={docked ? "true" : "false"}>
       <div className="flex min-w-0 flex-col gap-6">
         {invalid > 0 && (
           <p role="status" className="border border-line-strong bg-bg-hi p-3 type-body text-fg" data-invalid-note>
@@ -161,7 +247,13 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
           </p>
         )}
         <Window title={`themes / ${theme.name} / basics`} data-basics>
-          <div className="grid gap-4 sm:grid-cols-2">
+          {hasDark && (
+            <div ref={editingRef} className="mb-4 flex scroll-mt-24 flex-col gap-1.5 border-b border-line pb-4 outline-offset-4 data-[just-switched]:outline-2 data-[just-switched]:outline-[color:var(--accent)] data-[just-switched]:outline" data-editing-scheme={editing}>
+              <ChoiceField label="Editing" name="editing.scheme" value={editing} options={["light", "dark"] as const} labels={{ light: "Light set", dark: "Dark set" }} onChange={(v) => { setEditing(v); setPreviewMode(v); }} />
+              <p className="type-caption text-fg-2">{editing === "dark" ? "Every field below changes the set dark viewers see. Name and mode belong to the whole theme." : "Every field below changes the set light viewers see."}</p>
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2" key={`basics-${editing}`}>
             <label className="flex flex-col gap-1.5 sm:col-span-2">
               <span className={LABEL_CLASS}>Name</span>
               <input value={theme.name} maxLength={80} onChange={(e) => { set("name", e.target.value); err("name", e.target.value.trim() ? null : "Give the theme a name."); }} className={INPUT_CLASS} data-field="name" aria-invalid={!!fieldErr.name} />
@@ -189,7 +281,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
               {shownWarnings.map((w) => (
                 <li key={`${w.field}-${w.scheme}`} className="flex flex-wrap items-center gap-x-2 type-body text-fg" data-contrast-warning={w.field}>
                   <span aria-hidden className="text-warning">▲</span>
-                  <span>{PAIR[w.field]}: {w.ratio.toFixed(2)}:1{theme.mode === "auto" ? ` (${w.scheme})` : ""}, below 4.5:1.</span>
+                  <span>{PAIR[w.field]}: {w.ratio.toFixed(2)}:1{theme.mode === "auto" ? ` (${w.scheme})` : ""}, below 4.5:1.{assumesWorstCase(theme, w) ? " Measured with the glass over black and over white, the worst case, because the wallpaper image shows through it. Over this image it may read better." : ""}</span>
                   <button type="button" className="min-h-11 cursor-pointer underline type-body text-fg" onClick={() => openGroup(GROUP_OF_CONTRAST[w.field] ?? "colours")} data-open-group>Open Colours</button>
                 </li>
               ))}
@@ -197,7 +289,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
           )}
         </Window>
 
-        <div className="flex flex-col gap-3" data-more>
+        <div className="flex flex-col gap-3" data-more key={`more-${editing}`}>
           <h2 className={LABEL_CLASS}>More</h2>
           {group("surfaces", "Surfaces", <>
             {choice("surface.material", "Material", ["solid", "glass"] as const)}
@@ -232,10 +324,11 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
           </>)}
           {group("shape", "Shape and space", <>
             {num("shape.radiusPx")}
-            {num("shape.controlRadiusPx")}
-            {num("space.gapPx")}
-            {num("space.padPx")}
-            {choice("space.density", "Density", ["comfortable", "compact"] as const)}
+            <ControlRadiusField key={`shape.controlRadiusPx-${t.space.density}`} density={t.space.density} value={t.shape.controlRadiusPx} error={fieldErr["shape.controlRadiusPx"]} onValid={(v) => set("tokens.shape.controlRadiusPx", v)} onError={(m) => err("shape.controlRadiusPx", m)} />
+            <NumberField key="space.gapPx" path="space.gapPx" value={t.space.gapPx} error={fieldErr["space.gapPx"]} onValid={(v) => set("tokens.space.gapPx", v)} onError={(m) => err("space.gapPx", m)} inForce={inForce("gap", t)} />
+            <NumberField key="space.padPx" path="space.padPx" value={t.space.padPx} error={fieldErr["space.padPx"]} onValid={(v) => set("tokens.space.padPx", v)} onError={(m) => err("space.padPx", m)} inForce={inForce("pad", t)} />
+            <ChoiceField key="space.density" label="Density" name="space.density" value={t.space.density} options={["comfortable", "compact"] as const} labels={{ comfortable: "Comfortable", compact: "Compact" }} onChange={(v) => setDensity(v)} />
+            <p className="type-caption text-fg-2 sm:col-span-2" data-density-hint>Compact tightens card padding, gaps, title bars, nav items and service tiles to two thirds and makes buttons 32 px tall. Touch screens keep 44 px controls. Boxes sized at Comfortable keep their height until you use Fit in the builder.</p>
           </>)}
           {group("motion", "Motion", <>
             {choice("motion.enter", "Entrance", ["none", "fade", "rise", "sweep"] as const)}
@@ -255,13 +348,24 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             ) : (
               <p className="type-caption text-fg-2 sm:col-span-2" data-chrome-following>Active fill <span className="font-mono text-fg">{t.chrome.activeFill}</span> and text <span className="font-mono text-fg">{t.chrome.activeText}</span>, following the accent.</p>
             )}
-            {choice("chrome.style", "Item style", ["bar", "boxed-tabs", "pills", "underline"] as const)}
+            <ChoiceField key="chrome.style" label="Item style" name="chrome.style" value={t.chrome.style} options={["bar", "boxed-tabs", "pills", "underline"] as const} labels={{ bar: "Bar", "boxed-tabs": "Boxed tabs", pills: "Pills", underline: "Underline" }} onChange={(v) => set("tokens.chrome.style", v)} />
           </>)}
-          {group("dark", "Auto dark set", <>
-            <p className="type-caption text-fg-2 sm:col-span-2">Used when the mode is Auto and the viewer prefers dark.</p>
-            {(["surface", "surfaceText", "surfaceMuted", "canvasText", "accent", "accentText"] as const).map((k) => (
-              <ColourField key={k} path={`dark.color.${k}`} label={`Dark ${k}`} value={String(theme.dark?.color?.[k] ?? "")} error={fieldErr[`dark.color.${k}`]} onValid={(v) => set("dark", { ...(theme.dark ?? {}), color: { ...((theme.dark?.color ?? t.color) as ThemeTokens["color"]), [k]: v } })} onError={(m) => err(`dark.color.${k}`, m)} />
-            ))}
+          {group("dark", "Dark set", <>
+            {hasDark ? (
+              <>
+                <p className="type-body text-fg sm:col-span-2" data-dark-state="set">Dark viewers get this theme's dark set. Pick Editing: Dark set at the top to change any of its fields.</p>
+                <div className="flex flex-wrap gap-2 sm:col-span-2">
+                  <Button variant="secondary" onClick={() => { setEditing("dark"); setPreviewMode("dark"); groupRefs.current.dark?.closest("[data-theme-editor]")?.scrollIntoView({ block: "start" }); }} data-edit-dark>Edit the dark set</Button>
+                  <Button variant="quiet" onClick={makeDark} data-remake-dark>Make it again from the light set</Button>
+                  <Button variant="quiet" onClick={removeDark} data-remove-dark>Remove the dark set</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="type-body text-fg sm:col-span-2" data-dark-state="none">{theme.mode === "dark" ? "Mode is Dark, so every viewer sees this dark theme." : "Dark viewers see the light theme. Make a dark set to give them their own colours, then adjust it."}</p>
+                {theme.mode !== "dark" && <div className="sm:col-span-2"><Button variant="secondary" onClick={makeDark}>Make a dark set</Button></div>}
+              </>
+            )}
           </>)}
           <h2 className={`mt-3 ${LABEL_CLASS}`}>Advanced</h2>
           {group("advanced", "Custom CSS and fonts", <>
@@ -280,15 +384,52 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
           bar is a child of the whole editor grid and sticks to the bottom of the page above the tab bar
           at any scroll position (in round 2 it could only stick inside the short preview column). */}
       <div className="min-w-0 max-lg:contents lg:sticky lg:top-20 lg:flex lg:flex-col lg:gap-4 lg:self-start" data-editor-side>
-        <Window title="preview" status={<span>live</span>} data-preview>
-          <ThemeSample theme={theme} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} height={300} />
+        {/* r2 item 3: the sample grows to its content (nothing is cut off). Side by side stacks the two
+            samples unless the column is wide enough for both at a width where the nav stays on one line.
+            On a phone "Show preview" docks this window above the Save bar, so a tap on any field shows
+            its effect without scrolling; it scrolls inside itself if the sample is taller than half
+            the screen. */}
+        <Window
+          title="preview"
+          status={<span>live</span>}
+          data-preview
+          data-docked={docked ? "true" : "false"}
+          className={docked ? "max-lg:sticky max-lg:bottom-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px)+var(--editor-actions-h,64px))] max-lg:z-20 max-lg:-mx-4 max-lg:max-h-[62dvh] max-lg:overflow-y-auto max-lg:shadow-[var(--shadow-overlay)]" : undefined}
+        >
+          <ChoiceField<PreviewMode> label="Preview" name="preview.scheme" value={previewMode} options={["light", "dark", "both"] as const} labels={{ light: "Light", dark: "Dark", both: "Side by side" }} onChange={setPreviewMode} />
+          {previewMode === "both" ? (
+            <div className="@container mt-3">
+              <div className="grid grid-cols-1 gap-3 @min-[760px]:grid-cols-2" data-preview-both>
+                {(["light", "dark"] as const).map((sc) => (
+                  <figure key={sc} className="m-0 flex min-w-0 flex-col gap-1.5">
+                    <figcaption className={LABEL_CLASS}>{sc === "light" ? "Light viewers" : "Dark viewers"}</figcaption>
+                    <ThemeSample theme={theme} scheme={sc} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} />
+                  </figure>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <ThemeSample theme={theme} scheme={previewMode} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} />
+            </div>
+          )}
+          {!hasDark && theme.mode !== "dark" && (
+            <div className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border border-line-strong bg-bg-hi p-3 ${docked ? "max-lg:hidden" : ""}`} data-no-dark-set>
+              <p className="type-body text-fg">Dark viewers see the light theme.</p>
+              <Button variant="secondary" onClick={makeDark} data-make-dark>Make a dark set</Button>
+            </div>
+          )}
+          {theme.mode === "dark" && <p className="mt-3 type-caption text-fg-2" data-mode-dark-note>Mode is Dark, so light and dark viewers both see this.</p>}
+        </Window>
+        {!isNew && <Window title="themes / apps" data-theme-apps>
           <UsedBy usedBy={usedBy} />
           <UseOnApp themeId={id} themeName={theme.name} className="mt-3" note="It uses the saved theme, so save first to include your changes." onUsed={(d) => setUsedBy((u) => (u.some((x) => x.appId === d.appId) ? u : [...u, { appId: d.appId, slug: d.slug, name: d.name, draft: true, published: false }]))} />
-        </Window>
-        <div className="z-20 flex flex-col gap-2 max-lg:sticky max-lg:bottom-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px))] max-lg:-mx-4 max-lg:border-y max-lg:border-line-strong max-lg:bg-bg max-lg:px-4 max-lg:py-2" data-editor-actions>
+        </Window>}
+        <div ref={actionsRef} className="z-20 flex flex-col gap-2 max-lg:sticky max-lg:bottom-[calc(var(--tabbar-height)+env(safe-area-inset-bottom,0px))] max-lg:-mx-4 max-lg:border-y max-lg:border-line-strong max-lg:bg-bg max-lg:px-4 max-lg:py-2" data-editor-actions>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="primary" disabled={busy} onClick={save} data-save-theme>{busy ? "Saving" : "Save theme"}</Button>
-            <Button variant="quiet" href="/settings/themes">Back to themes</Button>
+            <Button variant="secondary" className="lg:hidden" aria-pressed={docked} onClick={() => setDocked((d) => !d)} data-preview-open>{docked ? "Hide preview" : "Show preview"}</Button>
+            <Button variant="quiet" href="/settings/themes" className={docked ? "max-lg:hidden" : undefined}>Back to themes</Button>
           </div>
           {saveError && (
             <div role="alert" className="border border-line-strong bg-bg-hi p-3 type-body text-fg" data-save-error>
@@ -297,16 +438,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             </div>
           )}
         </div>
-        {offerUpdate && (
-          <Window title="themes / update apps" data-update-apps>
-            <p className="type-body text-fg">Published apps keep the copy of this theme they were published with. Update their drafts so the next publish carries your changes?</p>
-            <ul className="mt-2 list-disc pl-5 type-body text-fg">{offerUpdate.map((u) => <li key={u.appId}>{u.name}</li>)}</ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="ink" disabled={busy} onClick={updateApps} data-confirm-update-apps>Update apps using this theme</Button>
-              <Button variant="quiet" onClick={() => setOfferUpdate(null)}>Not now</Button>
-            </div>
-          </Window>
-        )}
+        {offerUpdate && <PublishedApps apps={offerUpdate} busy={busy} onUpdateDrafts={updateApps} onClose={() => setOfferUpdate(null)} />}
       </div>
     </div>
   );
@@ -351,7 +483,22 @@ function ColourField({ path, label, value, error, onValid, onError }: { path: st
   );
 }
 
-function NumberField({ path, value, error, onValid, onError }: { path: string; value: number; error?: string; onValid(v: number): void; onError(m: string | null): void }) {
+/** r2 low: a glass surface over an image wallpaper is measured over black and white (the image is unknown). */
+function assumesWorstCase(theme: Theme, w: { field: string; scheme: string }): boolean {
+  if (w.field !== "color.surfaceText" && w.field !== "color.surfaceMuted") return false;
+  const set = w.scheme === "dark" && theme.mode === "auto" ? resolveTokens(theme, "dark") : theme.tokens;
+  return set.surface.material === "glass" && set.wallpaper.kind === "image";
+}
+
+/** r2 item 4: the value in force at Compact, for the Gap and Padding fields (the same rounding as the CSS). */
+function inForce(which: "gap" | "pad", t: ThemeTokens): string | undefined {
+  if (t.space.density !== "compact") return undefined;
+  const k = DENSITY_K.compact;
+  const v = which === "gap" ? Math.max(4, Math.floor(Math.min(40, Math.max(4, Math.round(t.space.gapPx))) * k)) : Math.floor(Math.min(40, Math.max(8, Math.round(t.space.padPx))) * k);
+  return `${v} px at Compact`;
+}
+
+function NumberField({ path, value, error, onValid, onError, inForce: note }: { path: string; value: number; error?: string; onValid(v: number): void; onError(m: string | null): void; inForce?: string }) {
   const f = NUMBER_FIELDS[path]!;
   const [text, setText] = useState(String(value));
   const type = (raw: string) => {
@@ -373,7 +520,52 @@ function NumberField({ path, value, error, onValid, onError }: { path: string; v
       error={error}
       onType={type}
       onSlide={(v) => type(String(+v.toFixed(4)))}
+      {...(note ? { note } : {})}
     />
+  );
+}
+
+/**
+ * B3 with design Note 3 (r2 item 5): the control radius slider offers only stops a control can show,
+ * 0 to half the density's pointer control height (Comfortable 0 to 20, Compact 0 to 16) in steps of 2,
+ * then a last stop named Pill (stored as 999). The text box takes a number in that range or the word
+ * Pill. A stored value above the last stop shows as Pill, as it draws.
+ */
+function ControlRadiusField({ value, density, error, onValid, onError }: { value: number; density: Density; error?: string; onValid(v: number): void; onError(m: string | null): void }) {
+  const max: number = CONTROL_RADIUS_MAX_BY_DENSITY[density === "compact" ? "compact" : "comfortable"];
+  const pillStop = max + 2;
+  const shown = controlRadiusOf(value, density);
+  const [text, setText] = useState(shown === PILL_RADIUS ? "Pill" : String(shown));
+  const type = (raw: string) => {
+    setText(raw);
+    const v = raw.trim();
+    if (/^pill$/i.test(v)) {
+      onError(null);
+      return onValid(PILL_RADIUS);
+    }
+    const n = Number(v);
+    if (v === "" || !Number.isFinite(n) || n < 0 || n > max) return onError(`Control radius must be between 0 and ${max} px, or Pill.`);
+    onError(null);
+    onValid(n);
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <RangeField
+        label="Control radius (px)"
+        rangeText={`0 to ${max}, then Pill`}
+        name="shape.controlRadiusPx"
+        min={0}
+        max={pillStop}
+        step={2}
+        value={shown === PILL_RADIUS ? pillStop : shown}
+        valueText={shown === PILL_RADIUS ? "Pill" : `${shown} px`}
+        text={text}
+        error={error}
+        onType={type}
+        onSlide={(v) => type(v >= pillStop ? "Pill" : String(Math.round(v)))}
+      />
+      <span className="type-caption text-fg-2">Buttons, toggles, selects and nav items. {density === "compact" ? "Compact" : "Comfortable"} buttons are {max * 2} px tall, so {max} px is the roundest corner before Pill rounds them fully.</span>
+    </div>
   );
 }
 
@@ -507,6 +699,34 @@ function FontsField({ fonts, onChange }: { fonts: NonNullable<Theme["fonts"]>; o
       />
       {error && <span role="alert" className="type-caption text-bad">{error}</span>}
     </div>
+  );
+}
+
+/**
+ * r2 item 8 (design Note 3): after a save, the published apps on this theme still show their snapshot.
+ * "Used by N published apps: publish them to show this", with a button per app that opens its review.
+ */
+function PublishedApps({ apps, busy, onUpdateDrafts, onClose }: { apps: Use[]; busy: boolean; onUpdateDrafts(): void; onClose(): void }) {
+  const n = apps.length;
+  const copies = apps.filter((u) => !u.draft);
+  return (
+    <Window title="themes / published apps" data-published-apps={n} data-update-apps>
+      <p className="type-body text-fg" data-published-note>
+        Used by {n} published {n === 1 ? "app" : "apps"}: publish {n === 1 ? "it" : "them"} to show this. Viewers keep the theme as it was at the last publish until then.
+      </p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {apps.map((u) => (
+          <li key={u.appId} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Button variant="secondary" href={`/build/${encodeURIComponent(u.slug)}?review=1`} data-review-app={u.slug}>Review and publish {u.name}</Button>
+            {!u.draft && <span className="type-caption text-fg-2">Its draft holds its own copy of the theme.</span>}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {copies.length > 0 && <Button variant="ink" disabled={busy} onClick={onUpdateDrafts} data-confirm-update-apps>Point {copies.length === 1 ? "its draft" : "their drafts"} at this theme</Button>}
+        <Button variant="quiet" onClick={onClose}>Not now</Button>
+      </div>
+    </Window>
   );
 }
 

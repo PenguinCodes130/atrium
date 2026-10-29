@@ -34,12 +34,53 @@ export function closestName(name: string, names: readonly string[]): string | nu
   return bestD <= limit || best.toLowerCase().startsWith(name.toLowerCase()) || name.toLowerCase().startsWith(best.toLowerCase()) ? best : null;
 }
 
-/** "There is no data source called lightz. Did you mean lights?" */
-export function unknownSourceSentence(name: string, sources: readonly string[]): string {
-  const near = closestName(name, sources);
-  if (near) return `There is no data source called ${name}. Did you mean ${near}?`;
-  if (sources.length) return `There is no data source called ${name}. This app's sources are ${listWords(sources)}.`;
-  return `There is no data source called ${name}. This app has no data sources yet: add one with Pick data.`;
+/**
+ * What a sentence needs to name sources for people (round 2 items 11 and 16): each source's words (its
+ * label), and whether the template sits inside a repeat, where the row is `$item`.
+ */
+export type SourceWords = {
+  /** A source's name in words, by its name. A source without words is never listed by a generated id. */
+  labels?: Readonly<Record<string, string>>;
+  /** True when the template is inside a repeat (Card for each): `row`, `item` and `this` mean `$item`. */
+  inRepeat?: boolean;
+};
+
+/** A generated (managed) source name such as d_l7sio4ax: never shown to people. */
+export const isGeneratedSourceName = (name: string): boolean => /^d_[a-z0-9]{4,}$/i.test(name);
+
+/** Words people use for "the current row" when they guess, inside a repeat. */
+const ROW_GUESSES = new Set(["row", "item", "this", "record", "entry"]);
+
+/** The sources in words, without generated ids and without repeats. */
+function sourceWordsList(sources: readonly string[], words?: SourceWords): string[] {
+  const out: string[] = [];
+  for (const s of sources) {
+    const w = words?.labels?.[s]?.trim() || (isGeneratedSourceName(s) ? "" : s);
+    if (w && !out.includes(w)) out.push(w);
+  }
+  return out;
+}
+
+/**
+ * "There is no data source called lightz. Did you mean lights?" Inside a repeat a guess like row.name
+ * says to use {{ $item.name }}. Sources are listed by their label, never by a generated id.
+ */
+export function unknownSourceSentence(name: string, sources: readonly string[], words?: SourceWords, field?: string): string {
+  const head = `There is no data source called ${name}.`;
+  if (words?.inRepeat && ROW_GUESSES.has(name.toLowerCase())) return `${head} Inside a repeat, each row is $item: write {{ $item.${field || "name"} }}.`;
+  const near = closestName(name, sources.filter((s) => !isGeneratedSourceName(s)));
+  if (near) return `${head} Did you mean ${near}?`;
+  const listed = sourceWordsList(sources, words);
+  const row = words?.inRepeat ? ` Inside a repeat, this row is $item, for example {{ $item.${field || "name"} }}.` : "";
+  if (listed.length) return `${head} This app's sources are ${listWords(listed)}.${row}`;
+  if (sources.length) return `${head} Pick a source with Pick data.${row}`;
+  return `${head} This app has no data sources yet: add one with Pick data.${row}`;
+}
+
+/** The field a template reads after a root ("name" in {{ row.name }}), or undefined. */
+export function fieldAfterRoot(template: string, root: string): string | undefined {
+  const esc = root.replace(/[$.*+?^{}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\w$.])${esc}\\.([A-Za-z_][\\w]*)`).exec(template)?.[1];
 }
 
 const ROOT_WORDS: Record<string, string> = {

@@ -499,7 +499,8 @@ test("item 8: two-word labels keep a readable word space; display tracking -0.04
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await page.locator("[data-editor-actions]").scrollIntoViewIfNeeded();
     // The gap between the end of the first word and the start of the second, from text ranges.
-    const gaps = await page.locator("[data-editor-actions] a, [data-editor-actions] button").evaluateAll((els) => els.map((el) => {
+    // Wave 2.10a r2: buttons hidden at this width (the phone-only "Show preview") have no text box to measure.
+    const gaps = await page.locator("[data-editor-actions] a, [data-editor-actions] button").evaluateAll((els) => els.filter((el) => el.getClientRects().length > 0).map((el) => {
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       let node: Text | null = null;
       for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\S\s+\S/.test(n.textContent ?? "")) { node = n as Text; break; }

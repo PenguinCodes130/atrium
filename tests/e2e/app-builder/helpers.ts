@@ -65,6 +65,14 @@ const states = new Map<string, string>();
 export async function stateFor(who: { email: string; password: string }): Promise<string> {
   const file = path.resolve(`test-results/app-builder-${PORT === 3115 ? "" : `${PORT}-`}${who.email}.json`);
   if (states.has(who.email) && existsSync(file)) return file;
+  // A test that fails restarts the worker, which forgets `states`: reuse a saved state that this server
+  // still accepts, so repeated failures do not trip the sign-in rate limiter.
+  if (existsSync(file)) {
+    const probe = await request.newContext({ baseURL: ORIGIN, storageState: file, extraHTTPHeaders: H });
+    const ok = await probe.get("/api/auth/get-session").then(async (r) => r.ok() && !!(await r.json().catch(() => null))?.user).catch(() => false);
+    await probe.dispose();
+    if (ok) { states.set(who.email, file); return file; }
+  }
   const ctx = await request.newContext({ baseURL: ORIGIN, extraHTTPHeaders: { ...H, "x-forwarded-for": `198.51.100.${ipN++}` } });
   const res = await ctx.post("/api/auth/sign-in/email", { data: { email: who.email, password: who.password } });
   if (!res.ok()) throw new Error(`sign-in failed for ${who.email}: ${res.status()} ${await res.text()}`);

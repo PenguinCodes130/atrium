@@ -46,6 +46,31 @@ async function untilDraft(id: string, ok: (d: Draft) => boolean, ms = 6000): Pro
     await new Promise((r) => setTimeout(r, 120));
   }
 }
+/** Waits until the draft has not changed for a while (the open growth, round 2 item 1, has landed). */
+async function settled(id: string, quietMs = 1500, maxMs = 12_000): Promise<Draft> {
+  const t0 = Date.now();
+  let d = await draft(id);
+  let since = Date.now();
+  while (Date.now() - t0 < maxMs && Date.now() - since < quietMs) {
+    await new Promise((r) => setTimeout(r, 150));
+    const now = await draft(id);
+    if (now.rev !== d.rev) since = Date.now();
+    d = now;
+  }
+  return d;
+}
+/**
+ * Round 2 item 1: opening a page grows boxes drawn too small for their content, as one undo step. Tests about
+ * arranging open the page, let that growth land, and open it again, so their own steps start from boxes
+ * that fit and nothing else is watched while they run.
+ */
+async function openSettled(page: Page, app: { id: string; slug: string }): Promise<Draft> {
+  await open(page, app.slug);
+  await settled(app.id);
+  await page.reload();
+  await expect(page.locator("[data-canvas-bar]")).toBeVisible({ timeout: 15_000 });
+  return settled(app.id);
+}
 const kids = (d: Draft) => d.doc.pages[0]!.root.children ?? [];
 const find = (d: Draft, id: string): Node | undefined => {
   const walk = (x: Node): Node | undefined => (x.id === id ? x : (x.children ?? []).map(walk).find(Boolean));
@@ -161,7 +186,7 @@ test("criteria 15 and 16: Shift-click three widgets, Align top, Distribute acros
   const app = await newApp(`ml-multi-${RUN}`, [a, b, c]);
   const ctx = await contextFor(browser, OWNER, { variant: LIGHT, viewport: { width: 1440, height: 900 }, recordVideo: ev("media-layout", "video-multi-select") });
   const page = await ctx.newPage();
-  await open(page, app.slug);
+  const settledDraft = await openSettled(page, app);
   await node(page, a.id).click();
   await node(page, b.id).click({ modifiers: ["Shift"] });
   await node(page, c.id).click({ modifiers: ["Shift"] });
@@ -171,15 +196,18 @@ test("criteria 15 and 16: Shift-click three widgets, Align top, Distribute acros
   await expect(page.locator("[data-multi-panel]")).toBeVisible();
   await page.screenshot({ path: shot("multi-select-toolbar") });
   const slots = (d: Draft) => [a, b, c].map((x) => find(d, x.id)!.slot!);
+  // The rows each box starts on once the open growth has landed (drawn: 2, 8 and 0).
+  const drawnY = slots(settledDraft).map((q) => q.y);
 
   // Align top: one top, then one undo puts every one back.
   await bar.locator('[data-arrange="top"]').click();
   let d = await untilDraft(app.id, (x) => new Set(slots(x).map((s) => s.y)).size === 1);
-  expect(slots(d).map((s) => s.y)).toEqual([0, 0, 0]);
+  const top = Math.min(...drawnY);
+  expect(slots(d).map((s) => s.y)).toEqual([top, top, top]);
   await page.screenshot({ path: shot("multi-align-top") });
   await undo(page);
-  d = await untilDraft(app.id, (x) => slots(x)[0]!.y === 2);
-  expect(slots(d).map((s) => s.y)).toEqual([2, 8, 0]);
+  d = await untilDraft(app.id, (x) => slots(x)[0]!.y === drawnY[0]);
+  expect(slots(d).map((s) => s.y)).toEqual(drawnY);
   // Distribute across: equal gaps between neighbours.
   await bar.locator('[data-arrange="across"]').click();
   d = await untilDraft(app.id, (x) => slots(x)[1]!.x !== 3);
@@ -287,7 +315,17 @@ test("covered: a widget fully under another is tagged on its Layers row", async 
   const app = await newApp(`ml-cover-${RUN}`, [under, over, free]);
   const ctx = await contextFor(browser, OWNER, { variant: LIGHT, viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
+  // Round 2 item 1: opening the page grows the small stat to its content, which can lift part of it out
+  // from under the big one. Once that growth has landed, the big one is set to cover it whole again.
   await open(page, app.slug);
+  const grown = find(await settled(app.id), under.id)!.slot!;
+  const big = find(await draft(app.id), over.id)!.slot!;
+  if (grown.y + grown.h > big.y + big.h || grown.x + grown.w > big.x + big.w) {
+    await ops(app.id, [{ op: "node.update", nodeId: over.id, patch: { slot: { ...big, h: Math.max(big.h, grown.y + grown.h + 2), w: Math.max(big.w, grown.x + grown.w) } } }]);
+  }
+  await page.reload();
+  await expect(page.locator("[data-canvas-bar]")).toBeVisible({ timeout: 15_000 });
+  await settled(app.id);
   await page.locator('[data-left-tab="layers"]').click();
   await expect(page.locator(`[data-layer="${under.id}"] [data-covered-tag]`)).toHaveText("covered");
   await expect(page.locator(`[data-layer="${over.id}"] [data-covered-tag]`)).toHaveCount(0);

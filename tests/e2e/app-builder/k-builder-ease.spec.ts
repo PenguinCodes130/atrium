@@ -242,16 +242,21 @@ test("criteria 15 to 19: the layer row's eye, arrows and menu (rename, duplicate
   d = await untilDraft(app.id, (x) => !!find(x, mid.id));
   expect(find(d, mid.id)).toBeTruthy();
 
-  // 19: a container with children asks first, naming the count; dismissing keeps it.
-  const msgs: string[] = [];
+  // 19 (round 2 item 12): a container with children is deleted at once, with no browser question; the
+  // toast names the count and its Undo brings it back. Ctrl+Z works the same way.
   page.removeAllListeners("dialog");
-  page.on("dialog", (dlg) => { msgs.push(dlg.message()); void (msgs.length === 1 ? dlg.dismiss() : dlg.accept()); });
+  page.on("dialog", (dlg) => { asked++; void dlg.dismiss(); });
   await row(card.id).hover();
   await row(card.id).locator("[data-layer-menu]").click();
   await page.locator("[data-layer-delete]").click();
-  expect(msgs[0]).toContain("2 components");
-  await page.waitForTimeout(500);
-  expect(find(await draft(app.id), card.id)).toBeTruthy();
+  d = await untilDraft(app.id, (x) => !find(x, card.id));
+  expect(find(d, card.id)).toBeUndefined();
+  const told = page.locator("[data-toast]").filter({ hasText: "2 components" });
+  await expect(told).toBeVisible();
+  const msgs = [await told.innerText()];
+  await told.getByRole("button", { name: "Undo" }).click();
+  d = await untilDraft(app.id, (x) => !!find(x, card.id));
+  expect(find(d, card.id)).toBeTruthy();
   await row(card.id).hover();
   await row(card.id).locator("[data-layer-menu]").click();
   await page.locator("[data-layer-delete]").click();
@@ -259,6 +264,7 @@ test("criteria 15 to 19: the layer row's eye, arrows and menu (rename, duplicate
   expect(find(d, card.id)).toBeUndefined();
   await page.keyboard.press("Control+z");
   await untilDraft(app.id, (x) => !!find(x, card.id));
+  expect(asked).toBe(0);
   log("layers", { msgs });
 
   // V4: the row actions in the three app themes (the canvas carries the app's theme).

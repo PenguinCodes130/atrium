@@ -11,9 +11,11 @@ import { controlsOfNode, findNode, newId, nodeLabel, unmappedPackage } from "@/f
 import { SOURCE_NAME } from "@/features/apps/ops";
 import { autoParams, fixedValue, INPUT_BINDING, missingParams, paramRows, sourceOf, targetNames, VIEWER_BINDING, type ParamRow, type ParamSource } from "@/features/apps/control-params";
 import { Checkbox, SelectMenu } from "@/features/settings/ui/controls";
-import { InspectorHeader, InspectorPanels } from "./components-client";
+import { InspectorHeader, InspectorPanels, measureTableOverflow } from "./components-client";
+import { fitWords, overflowRowsOf, overflowXOf, type FitResult } from "./fit-measure";
+export type { FitResult };
 import { columnsChangeOps, columnsOn, fitOps, neighbourWidth, slotOn, slotOp, toEighth, widthPresets, type Device } from "./geometry";
-import { describeTemplate, failedReadReason, otherUsers, repeatAround, showsLine, usersOf } from "./data-pick";
+import { describeTemplate, failedReadReason, otherUsers, repeatAround, rowFields, showsLine, usersOf } from "./data-pick";
 import { liveWords } from "./data-picker";
 import { ChartLinesEditor, DataLine, ListDataEditor } from "./data-line";
 import { evaluateTemplate } from "@/features/components/bindings";
@@ -252,6 +254,30 @@ function valueNow(template: string, src: string, live: Live | undefined, def: Da
   return typeof r.value === "number" && f && f !== "number" ? formatValue(r.value, f) : String(r.value).slice(0, 40);
 }
 
+/** A component's bindings, and the one its Data line describes (data, then items, then value). */
+function boundOf(node: ComponentNode, doc: AppDocument) {
+  const bound = Object.entries(node.props as Record<string, PropValue>).flatMap(([k, v]) => (isBinding(v) ? sourcesInTemplate(v.$bind).map((src) => ({ prop: k, src, template: v.$bind })) : []));
+  const order = ["data", "items", "value"];
+  const first = [...bound].sort((a, b) => (order.indexOf(a.prop) + 1 || 9) - (order.indexOf(b.prop) + 1 || 9)).find((b) => doc.dataSources.some((d) => d.name === b.src));
+  return { bound, first };
+}
+
+/**
+ * Wave 2.10b F3: a bound component's Data line is the inspector's first row, above the folds, so what it
+ * shows, Change and Refresh are never hidden. Charts, tiles and bars keep their own editors in the Data group.
+ */
+function DataTop({ node, doc, bindable, live, onPick, apply }: { node: ComponentNode; doc: AppDocument; bindable: Bindable[]; live?: Live; onPick(t: PickTarget): void; apply(ops: DraftOp[]): void }) {
+  if (node.type === "chart" || node.type === "service-tile" || node.type === "resource-bar") return null;
+  const { first } = boundOf(node, doc);
+  if (!first) return null;
+  const def = doc.dataSources.find((d) => d.name === first.src)!;
+  return (
+    <div className="border-b border-line px-3 py-2" data-data-top>
+      <DataLine node={node} def={def} template={first.template} prop={first.prop} bindable={bindable} {...(live ? { live } : {})} apply={apply} onChange={(p) => onPick({ nodeId: node.id, prop: p, source: def.name })} />
+    </div>
+  );
+}
+
 /**
  * The Data group's one line (Wave 2.7 spec 3.1): "Shows: CPU in use · ACE · 7.8 % · Prometheus, every 30 s"
  * with Change and Disconnect, and "Shares its data with N other widgets" when the source is shared.
@@ -262,9 +288,7 @@ function DataSummary({ node, doc, bindable, live, onPick, apply }: { node: Compo
   if (node.type === "service-tile") return <div className="flex flex-col gap-2 border border-line p-2" data-data-shows><ListDataEditor node={node} list="stats" max={4} noun="Stat" doc={doc} bindable={bindable} {...(live ? { live } : {})} apply={apply} onPick={(prop) => onPick({ nodeId: node.id, prop })} /></div>;
   if (node.type === "resource-bar") return <div className="flex flex-col gap-2 border border-line p-2" data-data-shows><ListDataEditor node={node} list="items" max={8} noun="Reading" doc={doc} bindable={bindable} {...(live ? { live } : {})} apply={apply} onPick={(prop) => onPick({ nodeId: node.id, prop })} /></div>;
   const props = node.props as Record<string, PropValue>;
-  const bound = Object.entries(props).flatMap(([k, v]) => (isBinding(v) ? sourcesInTemplate(v.$bind).map((src) => ({ prop: k, src, template: v.$bind })) : []));
-  const order = ["data", "items", "value"];
-  const first = [...bound].sort((a, b) => (order.indexOf(a.prop) + 1 || 9) - (order.indexOf(b.prop) + 1 || 9)).find((b) => doc.dataSources.some((d) => d.name === b.src));
+  const { bound, first } = boundOf(node, doc);
   // Inside a Repeat: "this row" bindings name the Repeat's source.
   const rowBound = !first ? Object.entries(props).find(([, v]) => isBinding(v) && /\$item\b/.test(v.$bind)) : undefined;
   if (!first) {
@@ -294,8 +318,7 @@ function DataSummary({ node, doc, bindable, live, onPick, apply }: { node: Compo
   const words = ["Shows:", [line.what, line.detail, line.value, line.from].filter(Boolean).join(" · ")].join(" ");
   return (
     <div className="flex flex-col gap-1 border border-line p-2" data-data-summary={def.name} data-data-shows>
-      {/* Wave 2.9 (spec 3.3): one line with the component's own refresh. */}
-      <DataLine node={node} def={def} template={first.template} prop={first.prop} bindable={bindable} {...(live ? { live } : {})} apply={apply} onChange={(p) => onPick({ nodeId: node.id, prop: p, source: def.name })} />
+      {/* The Data line itself is the inspector's first row (DataTop, F3); this keeps its state and actions. */}
       <span hidden data-data-summary-words title={sourceWords(def, bindable)}>{words}</span>
       <span className="font-mono text-[11px] text-fg-2">{STATE_WORDS[st?.state ?? "empty"]}{st?.fetchedAt ? ` · updated ${new Date(st.fetchedAt).toLocaleTimeString()}` : ""}</span>
       {failed && <span role="note" className="type-caption text-warn" data-data-read-failed>This read stopped working on {integ?.integrationName ?? "its server"}: {failed} Change it, or check the integration.</span>}
@@ -307,6 +330,32 @@ function DataSummary({ node, doc, bindable, live, onPick, apply }: { node: Compo
         }} data-data-disconnect>Disconnect</button>
       </span>
     </div>
+  );
+}
+
+/** Round 2 item 16: a source in words for people: its label, else its read's label and service; never its generated name. */
+export function readableSource(def: DataSourceDef, bindable: readonly Bindable[]): string {
+  if (def.label?.trim()) return def.label.trim();
+  const integ = bindable.find((b) => b.integrationId === def.integrationId);
+  const ep = integ?.endpoints.find((e) => e.id === def.endpointId);
+  if (ep) return integ ? `${ep.label}, ${integ.integrationName}` : ep.label;
+  return def.managed ? "a read from one of your services" : def.name;
+}
+
+/**
+ * Round 2 item 11: inside a repeat (Card for each), each copy reads its own row as `$item`. Said once at the
+ * top of the inspector with a real field, so a guess like {{ row.name }} has the right form beside it.
+ */
+function RowHint({ node, doc, live }: { node: ComponentNode; doc: AppDocument; live?: Live }) {
+  const around = repeatAround(doc, node.id);
+  if (!around) return null;
+  const repeat = findNode(doc, around.repeatId)?.node;
+  const fields = around.source ? rowFields(live?.data[around.source]) : [];
+  const key = fields.find((f) => /^(name|label|host|title)$/i.test(f.key))?.key ?? fields[0]?.key ?? "name";
+  return (
+    <p className="m-0 border-b border-line px-3 py-2 type-caption text-fg-2" data-row-hint={around.repeatId}>
+      Inside {repeat ? nodeLabel(repeat) : "a repeat"}: each copy shows its own row. Use <code className="font-mono text-fg">{`{{ $item.${key} }}`}</code> for this row&apos;s {fields.find((f) => f.key === key)?.label.toLowerCase() ?? key}, or Pick data, This row.
+    </p>
   );
 }
 
@@ -334,27 +383,21 @@ function TitleFields({ node, apply }: { node: ComponentNode; apply(ops: DraftOp[
 const ROW = 8;
 const chip = "inline-flex min-h-9 items-center justify-center border px-2 type-caption touch:min-h-11";
 
-/** Rows of 8px a component needs to show all its content on the canvas (0 when it fits). */
+/** Rows of 8px a component needs to show all its content on the canvas (0 when it fits; Wave 2.10 B2). */
 function overflowRows(nodeId: string): number {
   if (typeof document === "undefined") return 0;
-  const el = document.querySelector(`[data-canvas-root] [data-node="${CSS.escape(nodeId)}"]`);
-  const root = el?.querySelector(':scope > [data-slot="root"]') ?? el;
-  if (!root) return 0;
-  let over = Math.max(0, root.scrollHeight - root.clientHeight);
-  for (const e of root.querySelectorAll("*")) {
-    const y = getComputedStyle(e).overflowY;
-    if ((y === "auto" || y === "scroll") && e.scrollHeight - e.clientHeight > 1) over = Math.max(over, e.scrollHeight - e.clientHeight);
-  }
-  return over > 1 ? Math.ceil(over / ROW) : 0;
+  return overflowRowsOf(document.querySelector(`[data-canvas-root] [data-node="${CSS.escape(nodeId)}"]`));
 }
 
 /**
  * Layout (spec 3.2): the simple set is "Fit to content" and width presets relative to the parent grid's
  * columns; Left, Top, Width and Height with their units sit under More settings.
  */
-function LayoutFields({ node, doc, device, slot, setSlot, apply }: { node: ComponentNode; doc: AppDocument; device: Device; slot: ReturnType<typeof slotOn>; setSlot(p: Partial<NonNullable<ReturnType<typeof slotOn>>>): void; apply(ops: DraftOp[]): void }) {
+function LayoutFields({ node, doc, device, slot, setSlot, apply, onFit }: { node: ComponentNode; doc: AppDocument; device: Device; slot: ReturnType<typeof slotOn>; setSlot(p: Partial<NonNullable<ReturnType<typeof slotOn>>>): void; apply(ops: DraftOp[]): void; onFit?(nodeId: string): FitResult }) {
   const [fitNote, setFitNote] = useState<string | null>(null);
   useEffect(() => setFitNote(null), [node.id]);
+  const fitTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(fitTimer.current), []);
   if (!slot) return <p className="type-caption text-fg-2">This component sits in a {doc ? "stack or card" : "container"}; reorder it in Layers or with Alt and the arrow keys.</p>;
   const parent = findNode(doc, node.id)?.parent ?? null;
   const cols = columnsOn(parent, device);
@@ -363,6 +406,16 @@ function LayoutFields({ node, doc, device, slot, setSlot, apply }: { node: Compo
   const presets = [...widthPresets(cols), ...(neighbour ? [{ label: "Same as neighbour", w: neighbour }] : [])];
   const setWidth = (w: number) => setSlot({ w, x: Math.max(0, Math.min(slot.x, toEighth(cols - w))) });
   const fit = () => {
+    // Wave 2.10 B2: the builder's Fit measures again after the redraw until the box holds its content.
+    if (onFit) {
+      const r = onFit(node.id);
+      const sideNow = () => { const el = typeof document === "undefined" ? null : document.querySelector(`[data-canvas-root] [data-node="${CSS.escape(node.id)}"]`); const t = measureTableOverflow(el); return t ? (t.hiddenColumns > 0 ? Math.max(1, t.hiddenPx) : t.hiddenPx) : overflowXOf(el); };
+      setFitNote(fitWords(r, r.widened ? 0 : sideNow()));
+      // After the redraw, say plainly if columns still hide at the side.
+      window.clearTimeout(fitTimer.current);
+      fitTimer.current = window.setTimeout(() => setFitNote(fitWords(r, sideNow())), 700);
+      return;
+    }
     const rows = overflowRows(node.id);
     if (!rows || !parent) { setFitNote("It already shows all its content."); return; }
     const ops = fitOps(doc, parent.id, { [node.id]: rows }, device);
@@ -414,7 +467,7 @@ function LayoutFields({ node, doc, device, slot, setSlot, apply }: { node: Compo
   );
 }
 
-export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[]): void; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
+export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect, onFit }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[]): void; /** Wave 2.10 B2: the builder's Fit (rows grown, 0 when it fits). */ onFit?(nodeId: string): FitResult; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
   const commands = useJson<{ commands: CommandListing[] }>("/api/integrations/commands")?.commands ?? [];
   const bindable = useJson<{ integrations: Bindable[] }>("/api/integrations/bindable")?.integrations ?? [];
   const [editingControl, setEditingControl] = useState<ControlDef | "new" | null>(null);
@@ -426,8 +479,17 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
     // A10.1: a managed source is never named to a person; its words stand in for its generated name.
     words: (t) => {
       const w = describeTemplate(t);
-      if (!w) return w;
-      return doc.dataSources.reduce((acc, d) => (d.managed && d.label ? acc.split(d.name).join(d.label) : acc), w);
+      // Round 2 item 16: a template with no words of its own still never shows a managed source's
+      // generated name (d_...): it reads as the read's words ("Everything about a machine, Every machine").
+      if (!w) {
+        let srcs: string[] = [];
+        try { srcs = sourcesInTemplate(t); } catch { srcs = []; }
+        const managed = srcs.map((n) => doc.dataSources.find((d) => d.name === n)).filter((d): d is DataSourceDef => !!d?.managed);
+        if (!managed.length) return w;
+        const named = managed.map((d) => readableSource(d, bindable)).join(" and ");
+        return /^\{\{\s*[a-z][a-z0-9_]*(\.(rows|items))?\s*\}\}$/.test(t.trim()) ? `All of ${named}` : `Custom value from ${named}`;
+      }
+      return doc.dataSources.reduce((acc, d) => (d.managed ? acc.split(d.name).join(readableSource(d, bindable)) : acc), w);
     },
     source: (name) => {
       const def = doc.dataSources.find((d) => d.name === name);
@@ -474,6 +536,8 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
     <div className="flex flex-col" data-inspector={node.id} aria-label={`Inspector for ${nodeLabel(node)}`}>
       {/* components' header (SFR-1 from components round 2): the name, a mono type tag, the library name for instances. */}
       <InspectorHeader node={node} library={(ctx.values as { $library?: Record<string, LibraryComponent> }).$library} />
+      <RowHint node={node} doc={doc} live={live} />
+      {onPick && !readOnly && <DataTop node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} />}
       <fieldset ref={groupsRef} disabled={readOnly} className={`flex min-w-0 flex-col touch:[&_[data-inspector-group]>h3>button]:min-h-11 ${compact ? "[&_[data-inspector-group=style]]:hidden [&_[data-inspector-group=advanced]]:hidden [&_[data-inspector-group=control]]:hidden" : ""} [&_[data-inspector]]:contents [&_[data-inspector-group=content]]:order-1 [&_[data-inspector-group=data]]:order-2 [&_[data-inspector-group=control]]:order-3 [&_[data-inspector-group=style]]:order-5 [&_[data-inspector-group=advanced]]:order-6`} data-inspector-groups>
         <InspectorPanels node={node} doc={doc} ctx={ctx} describe={describe} onChange={(patch: Partial<Omit<ComponentNode, "id" | "children">>) => {
           // A grid's column count rescales its children in the same batch, so nothing moves (A7.4).
@@ -491,7 +555,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
         }} onOps={(ops: DraftOp[]) => apply(ops)}
           {...(onPick && !readOnly ? { onConnectData: (prop?: string) => onPick({ nodeId: node.id, ...(prop ? { prop } : {}) }), dataSummary: <DataSummary node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} /> } : {})} />
         {!compact && layoutSlot && createPortal(<Group id="layout" title="Layout" order={4}>
-          <LayoutFields node={node} doc={doc} device={device} slot={slot} setSlot={setSlot} apply={apply} />
+          <LayoutFields node={node} doc={doc} device={device} slot={slot} setSlot={setSlot} apply={apply} {...(onFit ? { onFit } : {})} />
           {device === "mobile" && (
             <Checkbox checked={!!node.responsive?.mobile?.hidden} onCheckedChange={(on) => apply([{ op: "node.update", nodeId: node.id, patch: { responsive: { mobile: { hidden: on } } } }])} label="Hide on phones" data-mobile-hidden />
           )}

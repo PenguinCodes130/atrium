@@ -25,6 +25,18 @@ async function waitRev(rev: number, ms = 3000): Promise<number> {
   throw new Error(`rev ${rev} not reached`);
 }
 
+/** Waits until the draft has not changed for a while (the open growth, round 2 item 1, has landed). */
+async function settled(quietMs = 1500, maxMs = 12_000) {
+  const t0 = Date.now();
+  let rev = (await draft()).rev;
+  let since = Date.now();
+  while (Date.now() - t0 < maxMs && Date.now() - since < quietMs) {
+    await new Promise((r) => setTimeout(r, 150));
+    const now = (await draft()).rev;
+    if (now !== rev) { rev = now; since = Date.now(); }
+  }
+}
+
 async function open(page: Page) {
   await page.goto(`/build/${SLUG}`);
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
@@ -130,11 +142,14 @@ test("keyboard: arrows move, Shift resizes, undo and redo, and the live region a
   await page.mouse.click(5, 300).catch(() => {});
   await page.locator('[data-layer="c_textnodeaa"]').click();
   await page.locator("body").focus();
+  // Round 2 item 1: opening the page may grow a too-small box (one undo step of its own), so the slots are
+  // read once the draft has settled, and the announcement is checked against them.
+  await settled();
   const before = (await draft()).doc.pages[0]!.root.children!.find((n) => n.id === "c_textnodeaa")!.slot!;
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("[data-builder-announce]")).toHaveText(/column 2, row 9, 6 wide, 6 tall/);
+  await expect(page.locator("[data-builder-announce]")).toHaveText(new RegExp(`column ${before.x + 2}, row ${before.y + 1}, ${before.w} wide, ${before.h} tall`));
   await page.keyboard.press("Shift+ArrowDown");
-  await expect(page.locator("[data-builder-announce]")).toHaveText(/6 wide, 7 tall/);
+  await expect(page.locator("[data-builder-announce]")).toHaveText(new RegExp(`${before.w} wide, ${before.h + 1} tall`));
   const d0 = await draft();
   await page.waitForTimeout(700);
   const d1 = await draft();

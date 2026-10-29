@@ -10,7 +10,7 @@ import { pageBySlug } from "./doc";
 import { renderPage } from "./load";
 import { registerAppBuilder } from "./register";
 import * as repo from "./repo";
-import { agentNodeIds, describeChanges } from "@/features/versions/service";
+import { agentNodeIds, describeChanges, themeChangesSincePublish } from "@/features/versions/service";
 
 export async function editorFor(slug: string): Promise<{ app: App; principal: Extract<Principal, { kind: "user" }>; userName: string }> {
   registerAppBuilder();
@@ -37,7 +37,7 @@ export async function loadBuilder(slug: string, pageSlug?: string) {
   return {
     app: { id: app.id, slug: app.slug, name: app.name, publishedVersion: app.publishedVersion ?? null },
     principal,
-    initial: { rev: draft.rev, doc: draft.doc, agentNodes: agentNodeIds(app.id), pending: authors.reduce((n, a) => n + a.count, 0), authors },
+    initial: { rev: draft.rev, doc: draft.doc, agentNodes: agentNodeIds(app.id), pending: authors.reduce((n, a) => n + a.count, 0), authors, themeChanged: (await themeChangesSincePublish(app, draft.doc)).map((c) => c.name) },
     pageId: page.id,
     render: { theme: r.theme, canvasCss: r.canvasCss, chromeCss: r.chromeCss, chromeRemoved: r.chromeRemoved, nodeCss: r.nodeCss, sources: r.sources, unmapped: r.unmapped, library: r.library, signedUrls: r.signedUrls },
     catalogue,

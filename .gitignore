@@ -16,3 +16,8 @@ tests/**/evidence/
 *.pem
 *.key
 /evidence/
+
+# Generated: code map (pnpm codemap), Next dev agent notes, dev slot tsconfig
+CODEMAP.md
+AGENTS.md
+tsconfig.slot-dev.json

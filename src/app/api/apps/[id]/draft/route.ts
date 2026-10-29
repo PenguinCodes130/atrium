@@ -4,7 +4,7 @@ import { requireUser } from "@/features/auth";
 import { handle } from "@/features/apps/http";
 import { getDraftFor } from "@/features/apps/service";
 import * as repo from "@/features/apps/repo";
-import { agentNodeIds, describeChanges } from "@/features/versions/service";
+import { agentNodeIds, describeChanges, themeChangesSincePublish } from "@/features/versions/service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const { principal } = await requireUser(req);
     const { app, draft } = getDraftFor(principal, id);
     const { authors } = describeChanges(repo.pendingChanges(app.id));
-    return Response.json({ rev: draft.rev, doc: draft.doc, agentNodes: agentNodeIds(app.id), publishedVersion: app.publishedVersion ?? null, authors, pending: authors.reduce((n, a) => n + a.count, 0) });
+    // Round 2 item 8: saved themes changed since the live version count as a change (Note 3).
+    const themeChanged = (await themeChangesSincePublish(app, draft.doc)).map((c) => c.name);
+    return Response.json({ rev: draft.rev, doc: draft.doc, agentNodes: agentNodeIds(app.id), publishedVersion: app.publishedVersion ?? null, authors, pending: authors.reduce((n, a) => n + a.count, 0), themeChanged });
   });
 }

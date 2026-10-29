@@ -205,6 +205,7 @@ export const propsSchemas = {
     title: b(z.string().max(80), "The group's heading, like Media or Monitoring. Empty shows no heading."),
     columns: lit(z.number().int().min(1).max(6), "How many equal columns the children flow into, in order (1 to 6, default 4). Always one column on phones."),
     collapsible: lit(z.boolean(), "Let viewers fold the group away with a button by its heading."),
+    fixedHeight: lit(z.boolean(), "Keep the height the group was drawn at (A11.2 reflow): children move into more columns first, then a +N more line, never a scrollbar. Off (default): the group grows to fit its children."),
   }),
   "resource-bar": z.strictObject({
     items: lit(z.array(barItemSchema).max(MAX_BAR_ITEMS), "Up to 8 items, each an icon, a value, a label and an optional small bar from percent."),
@@ -249,7 +250,8 @@ export const propsSchemas = {
   }),
   icon: z.strictObject({
     name: b(z.enum(ICON_NAMES), `A built-in icon: ${ICON_NAMES.join(", ")}.`),
-    size: lit(z.number().int().min(12).max(128), "Icon size in px."),
+    size: lit(z.number().int().min(12).max(128), "Icon size in px, used when fill is off."),
+    fill: lit(z.boolean(), "Fill the box (A11.2 scale): the icon grows and shrinks with its box, keeping its shape. New icons fill; off uses size in px."),
     label: b(z.string().max(120), "What the icon means, read aloud by screen readers. Empty marks it decorative."),
   }),
   link: z.strictObject({

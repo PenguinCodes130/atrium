@@ -16,7 +16,7 @@ export const RANGE_TEXT: Record<string, string> = {
   headingTracking: "between -0.06 and 0.02 em",
   headingWeight: "400, 500, 600, 700 or 800",
   radiusPx: "between 0 and 32 px",
-  controlRadiusPx: "between 0 and 999 px",
+  controlRadiusPx: "between 0 and 24 px, or Pill",
   gapPx: "between 4 and 40 px",
   padPx: "between 8 and 40 px",
 };
@@ -30,7 +30,7 @@ export const NUMBER_FIELDS: Record<string, { min: number; max: number; step: num
   "type.scale": { min: 0.85, max: 1.3, step: 0.01, label: "Type scale" },
   "type.headingTracking": { min: -0.06, max: 0.02, step: 0.005, label: "Heading tracking (em)" },
   "shape.radiusPx": { min: 0, max: 32, step: 1, label: "Radius (px)" },
-  "shape.controlRadiusPx": { min: 0, max: 999, step: 1, label: "Control radius (px)" },
+  "shape.controlRadiusPx": { min: 0, max: 24, step: 2, label: "Control radius (px)" },
   "space.gapPx": { min: 4, max: 40, step: 1, label: "Gap (px)" },
   "space.padPx": { min: 8, max: 40, step: 1, label: "Padding (px)" },
 };

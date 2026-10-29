@@ -125,11 +125,12 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     },
   },
   group: {
-    simple: ["title", "columns", "collapsible"],
+    simple: ["title", "columns", "collapsible", "fixedHeight"],
     fields: {
       title: { label: "Title", hint: "The heading over the group, like Media" },
       columns: { label: "Columns", hint: "1 to 6 equal columns. Phones always use one" },
       collapsible: { label: "Can fold away", hint: "Shows a button by the title that folds the group" },
+      fixedHeight: { label: "Keep its height", hint: "Off: the group grows to fit its tiles. On: tiles move into more columns, then a +N more line" },
     },
   },
   "resource-bar": {
@@ -153,7 +154,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     simple: ["data", "columns", "maxRows"],
     fields: {
       data: { label: "Rows from", hint: "The table of data to show" },
-      columns: { label: "Columns", hint: "Which columns to show, in order, separated by commas. Empty shows all" },
+      columns: { label: "Columns", hint: "Which columns to show, in order: type their headers as the table shows them, with commas between. Empty shows all" },
       maxRows: { label: "Rows per page", hint: "Show at most this many rows" },
       showUpdated: updated,
     },
@@ -247,10 +248,11 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     },
   },
   icon: {
-    simple: ["name", "size"],
+    simple: ["name", "fill", "size"],
     fields: {
       name: { label: "Icon", hint: "Pick a built-in icon" },
-      size: { label: "Size", hint: "In px" },
+      size: { label: "Size", hint: "In px, used when Fill its box is off" },
+      fill: { label: "Fill its box", hint: "The icon grows and shrinks with its box. Off uses Size" },
       label: { label: "Meaning", hint: "Read aloud by screen readers. Empty marks it as decoration" },
     },
   },

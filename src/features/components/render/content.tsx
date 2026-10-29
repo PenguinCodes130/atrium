@@ -369,8 +369,11 @@ export function IconView({ resolved }: P) {
   const size = typeof resolved.size === "number" ? resolved.size : 24;
   const label = str(resolved.label);
   const d = ICON_PATHS[name] ?? ICON_PATHS.info!;
+  // B8 (A11.2 scale): a filling icon draws at half its box's shorter side (components.css), so it grows
+  // and shrinks with the box; the px size still applies outside a grid cell and when fill is off.
+  const fill = resolved.fill === true;
   return (
-    <span data-slot="root" className="atr-icon" role={label ? "img" : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
+    <span data-slot="root" className="atr-icon" data-fill={fill ? "" : undefined} role={label ? "img" : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
       <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         {d.map((p, i) => (
           <path key={i} d={p} />

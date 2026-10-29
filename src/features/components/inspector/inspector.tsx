@@ -20,9 +20,9 @@ import { blockLogs, clearBlockLogs, codeFieldProblem, subscribeBlockLogs } from 
 import { SaveToLibrary } from "./save-to-library";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "../render/render-node";
 import { createPortal } from "react-dom";
-import type { PageScope } from "../render/resolve";
+import { repeatItems, type PageScope } from "../render/resolve";
 import { Chevron, MoreFold } from "./more";
-import { chipFrom, chipLine, chipValue, chipWords, dataSentence, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber } from "./binding-words";
+import { chipFrom, chipLine, chipValue, chipWords, dataSentence, fieldAfterRoot, isGeneratedSourceName, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber, type SourceWords } from "./binding-words";
 import { MediaField } from "@/features/uploads/client";
 import { PicturePanel } from "./picture-panel";
 import { BarItemsEditor, BookmarksEditor, IconField, LinesEditor, StatsEditor, type ListEnv } from "./lists";
@@ -136,7 +136,7 @@ function preview(v: unknown): string {
  * exists. Anything else is held in the field (and kept across reselection) with the reason shown, and
  * saved by itself once it becomes valid, for example when the source it names is added.
  */
-export function bindingHoldReason(template: string, sources: readonly string[] | undefined): string | null {
+export function bindingHoldReason(template: string, sources: readonly string[] | undefined, words?: SourceWords): string | null {
   if (!template.trim()) return null;
   // A half-typed binding ("{", "{{ cpu.va") is held like any unfinished template, never saved as text.
   if (/[{}]/.test(template.replace(/\{\{[\s\S]*?\}\}/g, ""))) return "The binding is not finished: write it as {{ source.value }}.";
@@ -151,13 +151,13 @@ export function bindingHoldReason(template: string, sources: readonly string[] |
       if (!ALLOWED_ROOTS.has(r)) return unknownRootSentence(r);
       continue;
     }
-    if (!sources.includes(r)) return unknownSourceSentence(r, sources);
+    if (!sources.includes(r)) return unknownSourceSentence(r, sources, words, fieldAfterRoot(template, r));
   }
   return null;
 }
 
 /** An evaluation error in words: an unknown source or root names the closest real one (spec 3.2). */
-export function bindingErrorWords(template: string, error: { code: string; message: string }, sources: readonly string[] | undefined): string {
+export function bindingErrorWords(template: string, error: { code: string; message: string }, sources: readonly string[] | undefined, words?: SourceWords): string {
   if (error.code !== "binding.unknown_source" && error.code !== "binding.unknown_root") return error.message;
   let roots: string[] = [];
   try {
@@ -170,7 +170,7 @@ export function bindingErrorWords(template: string, error: { code: string; messa
     return r ? unknownRootSentence(r) : error.message;
   }
   const r = roots.find((x) => !x.startsWith("$") && !(sources ?? []).includes(x));
-  return r ? unknownSourceSentence(r, sources ?? []) : error.message;
+  return r ? unknownSourceSentence(r, sources ?? [], words, fieldAfterRoot(template, r)) : error.message;
 }
 
 /** Where a syntax error sits, as a short quote of the text there ("near ..."). */
@@ -178,6 +178,45 @@ function near(template: string, position?: number): string {
   if (position === undefined || position < 0 || position > template.length) return "";
   const bit = template.slice(position, position + 12).trim();
   return bit ? ` Near "${bit}".` : " At the end.";
+}
+
+/** Source labels and whether the selected node sits in a repeat, for the binding sentences (round 2). */
+const SourceWordsCtx = createContext<SourceWords | undefined>(undefined);
+
+/** A source's name in words for people: its label, else its service's name; never a generated id. */
+export function sourceLabel(d: { name: string; label?: string }, describe?: BindingDescriber): string {
+  if (d.label?.trim()) return d.label.trim();
+  if (!isGeneratedSourceName(d.name)) return d.name;
+  const integ = describe?.source?.(d.name)?.integration;
+  return integ ? `A read from ${integ}` : "A read from one of your services";
+}
+
+/** The nearest repeat around node `id` under `n` (null when there is none, undefined when `id` is not there). */
+function repeatAround(n: ComponentNode, id: string, around: ComponentNode | null = null): ComponentNode | null | undefined {
+  if (n.id === id) return around;
+  for (const k of n.children ?? []) {
+    const r = repeatAround(k, id, n.type === "repeat" ? n : around);
+    if (r !== undefined) return r;
+  }
+  return undefined;
+}
+
+/**
+ * Recheck M1 (Wave 2.10a round 3): inside a repeat, the inspector previews bindings against the repeat's
+ * first row, as its first copy draws: `{{ $item.name }}` on a ready card shows "= ACE", not "$item works only
+ * inside a repeat". Outside any repeat the scope is unchanged, so that error still shows there.
+ */
+export function rowScope(doc: Pick<AppDocument, "pages">, nodeId: string, scope: PageScope): PageScope {
+  let rep: ComponentNode | null | undefined;
+  for (const p of doc.pages) if ((rep = repeatAround(p.root, nodeId)) !== undefined) break;
+  if (!rep) return scope;
+  const items = rep.props.items;
+  let list: unknown = items;
+  if (isBinding(items)) {
+    const r = evaluateTemplate(items.$bind, scope);
+    list = r.ok ? r.value : [];
+  }
+  return { ...scope, $item: repeatItems(list, 1)[0] ?? {}, $index: 0 } as PageScope;
 }
 
 const held = new Map<string, string>();
@@ -241,9 +280,10 @@ export function BindingField({ label, value, onChange, scope, description, name,
     if (holdKey) held.delete(holdKey);
     setDraft(value);
   }, [value]);
-  const holdReason = bindingHoldReason(draft, sources);
+  const words = useContext(SourceWordsCtx);
+  const holdReason = bindingHoldReason(draft, sources, words);
   const commit = (t: string) => {
-    if (bindingHoldReason(t, sources)) {
+    if (bindingHoldReason(t, sources, words)) {
       if (holdKey) held.set(holdKey, t);
       return;
     }
@@ -262,7 +302,7 @@ export function BindingField({ label, value, onChange, scope, description, name,
     const h = setTimeout(() => {
       if (!draft.trim()) return setShown({ ok: true, text: "" });
       const r = evaluateTemplate(draft, scope);
-      setShown(r.ok ? { ok: true, text: preview(r.value) } : { ok: false, text: `${bindingErrorWords(draft, r.error, sources)}${r.error.code === "binding.syntax" ? near(draft, r.error.position) : ""}` });
+      setShown(r.ok ? { ok: true, text: preview(r.value) } : { ok: false, text: `${bindingErrorWords(draft, r.error, sources, words)}${r.error.code === "binding.syntax" ? near(draft, r.error.position) : ""}` });
     }, PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(h);
   }, [draft, scope]);
@@ -322,6 +362,34 @@ export function SwitchRow({ label, description, checked, onCheckedChange, id: gi
 
 // ---------- literal fields ----------
 
+/** A list of words typed with commas between (round 2 item 15): the field keeps what is typed, commas and
+ * spaces included, and saves the trimmed words; a change from elsewhere (undo) shows when the words differ. */
+function StringsInput({ id, className, value, onChange }: { id: string; className: string; value: PropValue | undefined; onChange(v: PropValue | null): void }) {
+  const words = Array.isArray(value) ? value.map((v) => String(v)) : [];
+  const key = words.join("\u0000");
+  const [text, setText] = useState(words.join(", "));
+  const sent = useRef(key);
+  const parse = (t: string) => t.split(",").map((x) => x.trim()).filter(Boolean);
+  // Words that changed elsewhere (undo, another field) replace the text; the person's own edits never do.
+  if (key !== sent.current && key !== parse(text).join("\u0000")) {
+    sent.current = key;
+    setText(words.join(", "));
+  }
+  return (
+    <input
+      id={id}
+      className={className}
+      value={text}
+      onChange={(e) => {
+        const next = parse(e.target.value);
+        sent.current = next.join("\u0000");
+        setText(e.target.value);
+        onChange(next);
+      }}
+    />
+  );
+}
+
 function LiteralField({ spec, value, onChange }: { spec: FieldSpec; value: PropValue | undefined; onChange(v: PropValue | null): void }) {
   const id = useId();
   const f = spec.field;
@@ -365,7 +433,7 @@ function LiteralField({ spec, value, onChange }: { spec: FieldSpec; value: PropV
       return (
         <div className="flex flex-col gap-1">
           {label}
-          <input id={id} className={inputCls} value={Array.isArray(value) ? value.join(", ") : ""} onChange={(e) => onChange(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))} />
+          <StringsInput id={id} className={inputCls} value={value} onChange={onChange} />
           {help}
         </div>
       );
@@ -434,7 +502,9 @@ export function DataChip({ prop, template, scope, describe, onOpen }: { prop: st
   const r = evaluateTemplate(template, scope);
   const value = r.ok ? chipValue(r.value) : "no value yet";
   const failing = facts?.state === "failed" || facts?.state === "stale";
-  const line = chipLine(chipWords(template, src, describe), value, chipFrom(src, facts));
+  // Round 3 (recheck item 16): the source in words (its label), never its key such as everything_about_a.
+  const named = useContext(SourceWordsCtx)?.labels?.[src] ?? src;
+  const line = chipLine(chipWords(template, named, describe), value, chipFrom(named, facts));
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-1.5">
@@ -1219,7 +1289,9 @@ function InstancePanel({ node, doc, onChange, onOps }: { node: ComponentNode; do
             <select className={inputCls} value={typeof node.props[p.name] === "string" ? (node.props[p.name] as string) : ""} onChange={(e) => set(p.name, e.target.value)}>
               <option value="">Choose a data source</option>
               {doc.dataSources.map((d) => (
-                <option key={d.name}>{d.name}</option>
+                <option key={d.name} value={d.name}>
+                  {sourceLabel(d)}
+                </option>
               ))}
             </select>
           ) : p.kind === "control" ? (
@@ -1317,7 +1389,7 @@ type OpenState = { content: boolean; data: boolean; control: boolean; style: boo
 
 export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData, dataSummary, describe }: InspectorProps) {
   const meta = metaFor(node.type);
-  const scope = ctx.values as PageScope;
+  const scope = useMemo(() => rowScope(doc, node.id, ctx.values as PageScope), [doc, node.id, ctx.values]);
   const initial = (): OpenState => ({ content: true, data: true, control: true, style: false, advanced: false });
   const [open, setOpen] = useState<OpenState>(initial);
   const lastId = useRef(node.id);
@@ -1330,6 +1402,10 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
   const toggle = (k: keyof OpenState) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const fields = useMemo(() => (meta ? fieldsFor(meta.type) : []), [meta]);
   const sourceNames = useMemo(() => doc.dataSources.map((d) => d.name), [doc.dataSources]);
+  const sourceWords = useMemo<SourceWords>(() => ({
+    labels: Object.fromEntries(doc.dataSources.map((d) => [d.name, sourceLabel(d, describe)])),
+    inRepeat: doc.pages.some((p) => !!repeatAround(p.root, node.id)),
+  }), [doc.dataSources, doc.pages, node.id, describe]);
   // "Choose a data source" on a sample in the canvas: open Data and focus the source picker.
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1449,7 +1525,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
   const sentence = primary
     ? (() => {
         const src = sourcesInTemplate(primary.template)[0]!;
-        const s = dataSentence(primary.template, src, describe, describe?.source?.(src) ?? null);
+        const s = dataSentence(primary.template, sourceWords.labels?.[src] ?? src, describe, describe?.source?.(src) ?? null);
         return (
           <div className="flex flex-col gap-1" data-data-sentence={primary.key}>
             <p className="type-body m-0 text-fg" data-data-sentence-text>
@@ -1472,6 +1548,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
     </ul>
   ) : null;
   return (
+    <SourceWordsCtx.Provider value={sourceWords}>
     <div data-inspector data-node-id={node.id} ref={rootRef}>
       <div className="flex flex-col gap-2 border-b border-line px-3 py-2" data-inspector-actions>
         <SaveToLibrary node={node} doc={doc} />
@@ -1520,7 +1597,9 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
               }}>
                 <option value="">Pick a data source</option>
                 {doc.dataSources.map((d) => (
-                  <option key={d.name}>{d.name}</option>
+                  <option key={d.name} value={d.name}>
+                    {sourceLabel(d, describe)}
+                  </option>
                 ))}
               </select>
             </label>
@@ -1590,6 +1669,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
         />
       </Group>
     </div>
+    </SourceWordsCtx.Provider>
   );
 }
 

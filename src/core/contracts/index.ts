@@ -418,7 +418,7 @@ export type ComponentNode = {
   hidden?: boolean; // A7.3: desktop only; phones use responsive.mobile.hidden
   title?: string; // A8.5: shown in the title bar
   showTitle?: boolean; // A8.5
-  refreshSec?: number; // A10.1: this component's own refresh; managed sources run at the fastest
+  refreshSec?: number; // A10.1: this component's own refresh; managed sources run at the fastest. A11.8: 0 means Off (read once per page open)
   responsive?: { mobile?: { slot?: GridSlot; hidden?: boolean; props?: Record<string, PropValue>; style?: StyleOverride } };
   visibleWhen?: Binding;
   children?: ComponentNode[];
@@ -435,10 +435,12 @@ export type ComponentType =
   | "button" | "toggle" | "slider" | "select"
   | "html"
   | "service-tile" | "group" | "resource-bar" | "bookmarks" // A10.7
+  | "roulette" // A11.4
   | `pkg:${string}/${string}` | `lib:${string}`;
 export type ComponentState = "hover" | "active" | "focus" | "on" | "off" | "disabled";
 
 export type ComponentCategory = "layout" | "data" | "content" | "control" | "code";
+export type ComponentSizing = "fit" | "scale" | "reflow" | "scroll";
 export type ComponentDef = {
   type: ComponentType;
   title: string;
@@ -447,6 +449,8 @@ export type ComponentDef = {
   props: ZodType; // with .describe() on every field; agents read these
   defaults: Record<string, PropValue>;
   accepts?: DataShapeKind[];
+  /** A11.2: how the component meets its box. Absent: "fit". Only "scroll" may scroll its own content. */
+  sizing?: ComponentSizing;
   styleSlots: string[];
   states?: ComponentState[];
   docs: { summary: string; whenToUse: string; examples: ComponentNode[] };
@@ -642,9 +646,10 @@ export type ThemeTokens = {
     line: string;
   };
   surface: {
-    material: "solid" | "glass";
+    material: "solid" | "glass" | "gradient"; // A11.5 adds gradient
     opacity: number;
     blurPx: number;
+    gradient?: [string, string]; // A11.5: used when material is gradient
     border: { widthPx: 0 | 1 | 2; color: string };
     shadow: "none" | "soft" | "hard";
     shadowOffsetPx: number;
@@ -657,10 +662,15 @@ export type ThemeTokens = {
     headingTracking: number;
     headingWeight: 400 | 500 | 600 | 700 | 800;
   };
-  shape: { radiusPx: number; controlRadiusPx: number };
+  shape: { radiusPx: number; controlRadiusPx: number }; // A11.5: controlRadiusPx 0 to 24, or 999 for Pill (25 to 998 read as 999)
   space: { gapPx: number; padPx: number; density: "comfortable" | "compact" };
   motion: { enter: "none" | "fade" | "rise" | "sweep"; lightDrift: boolean };
-  chrome: { background: string; text: string; activeFill: string; activeText: string; style: "bar" | "boxed-tabs" | "pills" | "underline" };
+  chrome: {
+    background: string; text: string; activeFill: string; activeText: string; style: "bar" | "boxed-tabs" | "pills" | "underline";
+    // A11.5: nav chrome shares the surface material control; absent material reads as solid
+    material?: "solid" | "gradient" | "glass"; opacity?: number; blurPx?: number; gradient?: [string, string];
+  };
+  scrollbar?: { thumb: string; widthPx: 4 | 6 | 8 }; // A11.3, A11.5: scroll kinds only
 };
 
 // Section 2 skeleton: hooks that let an earlier wave call a later one (src/core/hooks.ts)

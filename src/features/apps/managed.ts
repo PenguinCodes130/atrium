@@ -139,20 +139,18 @@ export function nodeRefresh(n: Pick<ComponentNode, "refreshSec">, s: DataSourceD
   return s.refreshSec;
 }
 
-/** The refresh choices a component offers (spec 3.3), only at or above the read's minimum. */
-export const REFRESH_CHOICES: { sec: number | "min"; label: string }[] = [
-  { sec: "min", label: "As fast as allowed" },
-  { sec: 10, label: "Every 10 s" },
-  { sec: 30, label: "Every 30 s" },
-  { sec: 60, label: "Every 1 min" },
-  { sec: 300, label: "Every 5 min" },
-  { sec: 3600, label: "Every 1 hour" },
-];
-export function refreshChoices(minRefreshSec: number): { sec: number; label: string }[] {
+/** The refresh presets (Wave 2.10b F5); 10 s is every source's floor (architecture v2). */
+export const REFRESH_PRESETS = [10, 30, 60, 300, 3600];
+
+/**
+ * Every preset, those faster than the read allows shown disabled (F5); a read whose minimum falls between
+ * presets also offers that minimum, so its fastest rate stays one click away.
+ */
+export function refreshChoices(minRefreshSec: number): { sec: number; label: string; disabled: boolean }[] {
   const min = Math.max(REFRESH_FLOOR, minRefreshSec);
-  const out: { sec: number; label: string }[] = [{ sec: min, label: `As fast as allowed (every ${secWords(min)})` }];
-  for (const c of REFRESH_CHOICES) if (typeof c.sec === "number" && c.sec >= min && c.sec !== min) out.push({ sec: c.sec, label: c.label });
-  return out;
+  const between = min > REFRESH_PRESETS[0]! && !REFRESH_PRESETS.includes(min);
+  const secs = between ? [...REFRESH_PRESETS, min].sort((a, b) => a - b) : REFRESH_PRESETS;
+  return secs.map((sec) => ({ sec, label: `Every ${secWords(sec)}${between && sec === min ? " (fastest allowed)" : ""}`, disabled: sec < min }));
 }
 
 /** "30 s", "1 min", "5 min", "1 hour". */

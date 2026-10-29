@@ -139,6 +139,22 @@
     --theme-pad: 20px;
     --theme-pad-phone: 16px;
     --theme-density: comfortable;
+    /* Density sizes (densitySizes() in shell/theme.ts; Wave 2.10a r2 item 4): Comfortable values here,
+       the canvas's own rule writes the theme's. Component CSS (title bars, service tiles, group headings)
+       and the nav below read them. */
+    --theme-density-k: 1;
+    --theme-control-h: 40px;
+    --theme-titlebar-h: 28px;
+    --theme-nav-item-h: 36px;
+    --theme-nav-bar-h: 44px;
+    --theme-nav-pad-y: 12px;
+    --theme-nav-pad-x: 16px;
+    --theme-nav-gap: 8px;
+    --theme-tile-pad-y: 12px;
+    --theme-tile-pad-x: 14px;
+    --theme-tile-gap: 10px;
+    --theme-tile-icon: 36px;
+    --theme-group-head-h: 28px;
     --theme-motion-enter: sweep;
     --theme-chrome-bg: #f3efe4;
     --theme-chrome-text: #15130f;
@@ -399,26 +415,139 @@
     }
   }
 
-  /* The app chrome's nav (app-builder renders it with data-canvas-nav): colours from theme.chrome,
-     the item look from chrome.style on the canvas root. */
+  /* The app chrome's nav (app-builder renders it with data-canvas-nav; the theme editor's preview draws
+     the same markup): colours from theme.chrome, the item look from chrome.style on the canvas root.
+     Wave 2.10 B5, design Note 2: each of the four styles has its own look. Items are the nav's links. */
   [data-atrium-canvas] [data-canvas-nav] {
     background: var(--theme-chrome-bg);
     color: var(--theme-chrome-text);
+  }
+  /* Wave 2.10a r2 item 4: the top bar's padding and gaps follow density (Comfortable 12 and 16 px). */
+  [data-atrium-canvas] [data-canvas-nav]:not([data-app-chrome="sidebar"]) {
+    padding: var(--theme-nav-pad-y) var(--theme-nav-pad-x);
+    column-gap: var(--theme-nav-gap);
+  }
+  [data-atrium-canvas] [data-canvas-nav][data-app-chrome="tabs"] {
+    padding-block: calc(var(--theme-nav-pad-y) * 2 / 3);
+  }
+  @media (max-width: 639.98px) {
+    /* AppChrome's phone spacing (12 px sides, 4 px gaps), tightened further by Compact. */
+    [data-atrium-canvas] [data-canvas-nav]:not([data-app-chrome="sidebar"]) {
+      padding-inline: min(var(--theme-nav-pad-x), 12px);
+      column-gap: min(var(--theme-nav-gap), 4px);
+    }
+  }
+  [data-atrium-canvas] [data-canvas-nav] a {
+    color: var(--theme-chrome-text);
+    text-decoration: none;
   }
   [data-atrium-canvas] [data-canvas-nav] :is([aria-current="page"], [data-active]) {
     background: var(--theme-chrome-active-fill);
     color: var(--theme-chrome-active-text);
   }
-  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav] :is(a, button) {
-    border: 1px solid var(--theme-border-color);
-    border-radius: var(--theme-control-radius);
+
+  /* Bar: flat items with 12 px side padding; the active item is a full-height fill. */
+  [data-atrium-canvas][data-canvas-chrome="bar"] [data-canvas-nav]:not([data-app-chrome="sidebar"]) {
+    align-items: stretch;
+    padding-block: 0;
   }
-  [data-atrium-canvas][data-canvas-chrome="pills"] [data-canvas-nav] :is(a, button) {
+  [data-atrium-canvas][data-canvas-chrome="bar"] [data-canvas-nav] a {
+    padding-inline: 12px;
+    border: 0;
+    border-radius: 0;
+    min-height: 44px;
+  }
+  /* Pointer screens: nav items take the density's heights (touch keeps 44 px from AppChrome). */
+  @media not (pointer: coarse) {
+    [data-atrium-canvas] [data-canvas-nav] a {
+      min-height: var(--theme-nav-item-h);
+    }
+    [data-atrium-canvas][data-canvas-chrome="bar"] [data-canvas-nav] a {
+      min-height: var(--theme-nav-bar-h);
+    }
+  }
+  [data-atrium-canvas][data-canvas-chrome="bar"] [data-canvas-nav]:not([data-app-chrome="sidebar"]) [data-app-title] {
+    align-self: center;
+  }
+
+  /* Boxed tabs: every item has a 1 px line border and at least a 6 px top radius; the active tab is
+     filled and joined to the content edge (the nav's bottom line). */
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav] a {
+    border: 1px solid var(--theme-border-color);
+    border-radius: max(6px, min(var(--theme-control-radius), 12px)) max(6px, min(var(--theme-control-radius), 12px)) 0 0;
+  }
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav]:not([data-app-chrome="sidebar"]) {
+    align-items: flex-end;
+    padding-bottom: 0;
+    box-shadow: inset 0 -1px 0 var(--theme-border-color);
+  }
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav]:not([data-app-chrome="sidebar"]) [data-app-title] {
+    align-self: center;
+  }
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav]:not([data-app-chrome="sidebar"]) a[aria-current="page"] {
+    border-bottom-color: var(--theme-chrome-active-fill);
+  }
+  [data-atrium-canvas][data-canvas-chrome="boxed-tabs"] [data-canvas-nav][data-app-chrome="sidebar"] a {
+    border-radius: max(6px, min(var(--theme-control-radius), 12px));
+  }
+
+  /* Pills: every item fully rounded, the active one filled, the rest unfilled with an 8% hover fill. */
+  [data-atrium-canvas][data-canvas-chrome="pills"] [data-canvas-nav] a {
+    border: 0;
     border-radius: 999px;
+  }
+  [data-atrium-canvas][data-canvas-chrome="pills"] [data-canvas-nav] a:not([aria-current="page"]):hover {
+    background: color-mix(in oklab, var(--theme-chrome-text) 8%, transparent);
+  }
+
+  /* Underline: no fills; the active item has a 2 px accent underline, the rest are muted text. */
+  [data-atrium-canvas][data-canvas-chrome="underline"] [data-canvas-nav] a {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: color-mix(in oklab, var(--theme-chrome-text) 72%, var(--theme-chrome-bg));
   }
   [data-atrium-canvas][data-canvas-chrome="underline"] [data-canvas-nav] :is([aria-current="page"], [data-active]) {
     background: transparent;
     color: var(--theme-chrome-text);
-    box-shadow: inset 0 -2px 0 var(--theme-chrome-active-fill);
+    box-shadow: inset 0 -2px 0 var(--theme-accent);
+  }
+
+  /* Wave 2.10 B4 (A11.5, design Note 2): density. --theme-pad, --theme-gap and --theme-pad-phone already
+     carry the factor; pointer controls take --theme-control-h (40 px, or 32 px compact) and title bars
+     --theme-titlebar-h. Touch screens keep every control at least 44 px (components.css). */
+  @media not (pointer: coarse) {
+    [data-atrium-canvas] :is(.atr-button, .atr-select select, .atr-toggle) {
+      min-height: var(--theme-control-h, 40px);
+    }
+  }
+  /* r2 item 4: one more attribute than components.css's fixed 28 px rule, so density always wins. */
+  [data-atrium-canvas][data-canvas-titlebars="on"] .atr-titlebar {
+    height: var(--theme-titlebar-h, 28px);
+  }
+
+  /* Wave 2.10a r2 item 10 (with app-builder's AppChrome, which keeps the top bar on one line: the title,
+     then the items in their own row, [data-app-nav-items], that never wraps and scrolls sideways when the
+     pages do not fit). While that row can still scroll further, its right edge fades out, so a phone
+     shows there are more pages. Driven by the row's own scroll position; a row that fits has no fade,
+     and a browser without scroll timelines draws no fade. Boxed tabs stay joined to the nav's rule. */
+  @supports (animation-timeline: scroll()) {
+    [data-atrium-canvas] [data-canvas-nav] [data-app-nav-items] {
+      animation: atr-nav-more linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+}
+
+/* The nav row's "more to the right" fade (see item 10 above): on until the row is scrolled to its end. */
+@keyframes atr-nav-more {
+  0%,
+  96% {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  100% {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }

@@ -123,9 +123,20 @@ export function readableDiff(a: AppDocument | null, b: AppDocument, diff: Versio
   if (diff.app.includes("icon")) app.lines.push({ kind: "changed", text: "Changed the app icon" });
   if (diff.theme && a) app.lines.push({ kind: "changed", text: "Changed the theme" });
   if (diff.chrome.length) app.lines.push({ kind: "changed", text: diff.chrome.some((k) => k === "css" || k === "style") ? "Changed the style of the app's navigation" : "Changed the app's navigation" });
-  for (const n of diff.sources.added) app.lines.push({ kind: "added", text: `Added data source ${n}` });
-  for (const n of diff.sources.removed) app.lines.push({ kind: "removed", text: `Removed data source ${n}` });
-  for (const n of diff.sources.changed) app.lines.push({ kind: "changed", text: `Changed data source ${n}` });
+  // Round 2 item 16: sources read in words. A managed source (A10.1) is named by its read, never by its
+  // generated d_... name: "Added data: CPU in use, pve1".
+  const src = (doc: AppDocument | null, n: string) => {
+    const d = doc?.dataSources.find((s) => s.name === n);
+    // Round 3 (recheck item 16): a named source reads by its label too ("Everything about a machine, every
+    // machine"), never by a key the picker made for it, such as everything_about_a.
+    const label = d?.label?.trim();
+    return d?.managed ? `data: ${label || "a read from one of your services"}` : `data source ${label || (/^d_[a-z0-9]{4,}$/i.test(n) ? "a read from one of your services" : n)}`;
+  };
+  // A managed source comes and goes with its component, whose own line says so (A10.1): no line of its own.
+  const managedIn = (doc: AppDocument | null, n: string) => !!doc?.dataSources.find((s) => s.name === n)?.managed;
+  for (const n of diff.sources.added) if (!managedIn(b, n)) app.lines.push({ kind: "added", text: `Added ${src(b, n)}` });
+  for (const n of diff.sources.removed) if (!managedIn(a, n)) app.lines.push({ kind: "removed", text: `Removed ${src(a, n)}` });
+  for (const n of diff.sources.changed) app.lines.push({ kind: "changed", text: `Changed ${src(b, n)}` });
   const ctl = (doc: AppDocument | null, id: string) => doc?.controls.find((c) => c.id === id)?.label ?? id;
   for (const id of diff.controls.added) app.lines.push({ kind: "added", text: `Added control ${ctl(b, id)}` });
   for (const id of diff.controls.removed) app.lines.push({ kind: "removed", text: `Removed control ${ctl(a, id)}` });

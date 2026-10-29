@@ -80,7 +80,7 @@ test("item 5: setting #22c55e on a Dusk copy recolours the nav pill in the previ
   await page.goto(`/settings/themes/${id}`);
   await expect(page.locator("[data-chrome-follows]")).toBeVisible();
   await page.locator('[data-field="color.accent"]').fill("#22c55e");
-  await expect.poll(() => bg(page, "[data-preview] [data-canvas-nav] [data-active]")).toBe("rgb(34, 197, 94)");
+  await expect.poll(() => bg(page, "[data-preview] [data-canvas-nav] [aria-current=\"page\"]")).toBe("rgb(34, 197, 94)");
   await page.locator('[data-group-toggle="chrome"]').click();
   await expect(page.locator("[data-follows-accent]")).toHaveAttribute("aria-checked", "true");
   await shot(page, "r2-accent-follows-preview");
@@ -92,7 +92,7 @@ test("item 5: setting #22c55e on a Dusk copy recolours the nav pill in the previ
   // Set apart: the active fill keeps its own colour when the accent changes.
   await page.locator("[data-follows-accent]").click();
   await page.locator('[data-field="color.accent"]').fill("#2f6fb0");
-  await expect.poll(() => bg(page, "[data-preview] [data-canvas-nav] [data-active]")).toBe("rgb(34, 197, 94)");
+  await expect.poll(() => bg(page, "[data-preview] [data-canvas-nav] [aria-current=\"page\"]")).toBe("rgb(34, 197, 94)");
   // The published app (a theme picked before publish) shows the new pill colour.
   if ((await a.get("/api/apps")).status() !== 404) {
     const slug = `r2-accent-${randomBytes(3).toString("hex")}`;

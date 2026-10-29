@@ -9,6 +9,7 @@ import { nodeSources, repeatItems, valueKey } from "./resolve";
 import { columnFormats, ITEM_FORMATS } from "./format";
 import { NodeTitleBar } from "./titlebar";
 import { rollupStatus } from "./rollup";
+import { sizingOf } from "../catalogue/meta";
 
 type P = { node: ComponentNode; resolved: Record<string, unknown>; ctx: RenderContext };
 const str = (v: unknown) => textOf(v);
@@ -118,6 +119,11 @@ export function GridView({ node, resolved }: P) {
   // An HTML block set to fill the window (A7.6) sets its own height, so its grid keeps rows that grow.
   const fills = (c: ComponentNode) => c.type === "html" && (mobile ? c.responsive?.mobile?.props?.height ?? c.props.height : c.props.height) === "fill";
   const fixed = slots.length > 0 && slots.every((s) => s.slot) && !children.some(fills);
+  // A11.2 (Wave 2.10a B1, B2): outside the builder a component that fits its content is never clipped. Rows
+  // stay 8px where content fits the drawn box; a fit box whose content is taller grows its rows (pushing
+  // what is below down), as the builder's Fit would. Scrolling kinds and a group that keeps its height
+  // (reflow) hold their drawn box (components.css: they add no height of their own).
+  const grow = fixed && !edit;
   return (
     <div
       data-slot="root"
@@ -125,14 +131,22 @@ export function GridView({ node, resolved }: P) {
       data-columns={cols}
       data-empty={empty ? "" : undefined}
       data-fixed-rows={fixed ? "" : undefined}
-      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: fixed ? `${GRID.rowPx}px` : `minmax(${GRID.rowPx}px, auto)`, columnGap: gap, minHeight: empty ? 0 : minRows * GRID.rowPx, ...(gap ? { ["--atr-colgap" as string]: gap } : {}) }}
+      data-grow-rows={grow ? "" : undefined}
+      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: fixed && !grow ? `${GRID.rowPx}px` : `minmax(${GRID.rowPx}px, auto)`, columnGap: gap, minHeight: empty ? 0 : minRows * GRID.rowPx, ...(gap ? { ["--atr-colgap" as string]: gap } : {}) }}
     >
       {children.map((c) => {
-        const slot = drawn[c.id];
+        const sizing = sizingOf(c);
+        // Round 2 item 2: a scale kind (icon, image, chart, ...) keeps the box it was drawn at in the viewer,
+        // as in the builder: it takes neither a row band's stretch nor rows a neighbour grew (components.css
+        // pins its height to its own rows), so what it draws never depends on what sits beside it.
+        const own = grow && sizing === "scale" ? slots.find((s) => s.id === c.id)?.slot : undefined;
+        const slot = own ?? drawn[c.id];
         // An empty layout container takes no room for viewers (Fix 16); the builder keeps it to drop into.
         if (!edit && EMPTY_COLLAPSES.has(c.type) && !(c.children ?? []).length) return null;
+        const style = cellStyle(slot, mobile, mobile && !slot ? c.slot?.h : undefined, cols);
+        if (own) (style as Record<string, unknown>)["--atr-rows"] = Math.max(1, Math.round(own.h));
         return (
-          <div key={c.id} className="atr-cell" data-cell={c.id} data-fill-cell={fills(c) ? "" : undefined} style={cellStyle(slot, mobile, mobile && !slot ? c.slot?.h : undefined, cols)}>
+          <div key={c.id} className="atr-cell" data-cell={c.id} data-fill-cell={fills(c) ? "" : undefined} style={style} data-sizing={sizing}>
             {env.renderChild(c)}
           </div>
         );

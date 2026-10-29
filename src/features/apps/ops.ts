@@ -396,8 +396,9 @@ export function summarize(before: AppDocument, ops: DraftOp[]): string {
       case "page.remove": lines.push(`Removed page ${findPage(before, op.pageId)?.title ?? ""}`.trim()); break;
       case "page.move": lines.push(`Moved page ${findPage(before, op.pageId)?.title ?? ""}`.trim()); break;
       // A10.1: managed sources follow components; their changes are not news of their own.
-      case "source.set": if (op.source.managed) break; lines.push(`${before.dataSources.some((d) => d.name === op.source.name) ? "Changed" : "Added"} data source ${op.source.name}`); break;
-      case "source.remove": if (before.dataSources.find((d) => d.name === op.name)?.managed) break; lines.push(`Removed data source ${op.name}`); break;
+      // Round 3 (recheck item 16): a source reads by its label when it has one, not by its key.
+      case "source.set": if (op.source.managed) break; lines.push(`${before.dataSources.some((d) => d.name === op.source.name) ? "Changed" : "Added"} data source ${op.source.label?.trim() || op.source.name}`); break;
+      case "source.remove": { const d = before.dataSources.find((x) => x.name === op.name); if (d?.managed) break; lines.push(`Removed data source ${d?.label?.trim() || op.name}`); break; }
       case "control.set": lines.push(`${before.controls.some((c) => c.id === op.control.id) ? "Changed" : "Added"} control ${op.control.label}`); break;
       case "control.remove": lines.push(`Removed control ${before.controls.find((c) => c.id === op.controlId)?.label ?? op.controlId}`); break;
       case "app.update": lines.push("Changed app settings"); break;

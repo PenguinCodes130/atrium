@@ -113,7 +113,7 @@ export function ThemesScreen() {
     <div className="flex flex-col gap-10" data-themes-screen>
       {data.canEdit ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" disabled={busy !== null} onClick={() => duplicate("control-room")} data-new-theme>New theme</Button>
+          <Button variant="primary" disabled={busy !== null} href="/settings/themes/new" data-new-theme>New theme</Button>
           <input ref={fileRef} type="file" accept=".atrium-theme,.json,application/zip,application/json" className="sr-only" onChange={importFile} aria-label="Import a theme file" data-import-input />
           <Button variant="secondary" disabled={busy !== null} onClick={() => fileRef.current?.click()} data-import-theme>{busy === "import" ? "Importing" : "Import theme"}</Button>
         </div>

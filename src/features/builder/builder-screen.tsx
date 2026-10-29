@@ -1,22 +1,26 @@
 "use client";
 // The builder /build/<slug>/<page?> (design v4 "The Builder"; spec "Builder", "Editing and saving",
 // criteria 7 to 14, 49): a 48px builder bar, Insert and Layers at 264px, the canvas in its own theme
-// on a sunk surround with an 80px hairline grid, and the 320px inspector.
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+// on a plain sunk surround, and the 320px inspector. Wave 2.10 B7: no grid is painted behind or around the
+// canvas; the only grid is the column overlay (A11.7), drawn over the page at 25% only while dragging.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { DropdownMenu } from "radix-ui";
 import type { AppDocument, ComponentNode, DraftOp, GridSlot, LibraryComponent, PageDoc, Principal, Problem, PropValue, RenderContext, ShapedData, Theme } from "@/core/contracts";
-import { Button, glowKeyframes, durations, REDUCED_GLOW_RING_MS, springs, toast, transitionFor, useReducedMotion, timed } from "@/features/shell";
+import { Button, glowKeyframes, durations, REDUCED_GLOW_RING_MS, Sheet, springs, toast, transitionFor, useReducedMotion } from "@/features/shell";
 import { findNode, findPage, newId, nodeLabel, orderedPages, slugify } from "@/features/apps/doc";
 import { AppFrame } from "./app-frame";
 import { DraftClient, type SendResult } from "./draft-client";
 import { tagFor } from "./tags";
+import { overflowRowsOf, overflowXOf } from "./fit-measure";
+import { growTriggers, MAX_GROW_ROWS, sizingOf, WATCH_MS } from "./auto-grow";
+import { getComponentDef, iconSlotIn, measureTableOverflow } from "./components-client";
 import { alignGuides, alignOps, cellAt, columnsOn, coveredOnPage, distributeOps, FINE, fitOps, freeSpot, freshCopy, gridColumns, groupDuplicateOps, groupMoveOps, keyAction, overlaps, resizeSlot, sameSizeOps, slotOn, slotOp, slotRect, snapDrop, withGapsClosed, type AlignHow, type Device, type Edges, type GridBox, type Guide } from "./geometry";
 import { boxForShape, shapeRatio } from "@/features/components/inspector/media";
 import { uploadFile, guessKind } from "@/features/uploads/client";
 import { FoldButton, isBool, isPreviewW, PageSettings, PreviewWidth, SnapSwitch, usePref, type PreviewW } from "./canvas-controls";
-import { Inspector } from "./inspector";
+import { Inspector, type FitResult } from "./inspector";
 import { ArrangeBar, InsertGlyph, InsertPanel, LayersPanel, MultiPanel, type ArrangeAction, type InsertGroup, type InsertItem } from "./panels";
 import { unmappedStates, usePageData, type UnmappedSource } from "./use-page-data";
 import { ReviewSheet } from "@/features/versions/ui/review-sheet";
@@ -33,7 +37,7 @@ import { timingOf } from "./data-line";
 export type BuilderProps = {
   app: { id: string; slug: string; name: string; publishedVersion: number | null };
   principal: Principal;
-  initial: { rev: number; doc: AppDocument; agentNodes: string[]; pending: number; authors: { kind: string; name: string; count: number }[] };
+  initial: { rev: number; doc: AppDocument; agentNodes: string[]; pending: number; authors: { kind: string; name: string; count: number }[]; /** Round 2 item 8: saved themes changed since the live version. */ themeChanged?: string[] };
   pageId: string;
   render: { theme: Theme; canvasCss: string; chromeCss: string; chromeRemoved?: string[]; nodeCss: Record<string, string>; sources: { key: string; refreshSec: number }[]; unmapped?: UnmappedSource[]; library: Record<string, LibraryComponent>; signedUrls?: Record<string, string> };
   catalogue: InsertGroup[];
@@ -105,10 +109,14 @@ const START_PAGE_INSERT: InsertItem = { type: "start-page", title: "Start page",
 
 /** The data widgets whose insert opens the data picker at once (spec 3.3). */
 const DATA_TYPES = new Set(["stat", "chart", "table", "list", "status", "gauge", "progress"]);
+/** Round 2 item 14: components that insert as wide as their grid (a table's columns need the room). */
+const WIDE_TYPES = new Set(["table"]);
 /** Pull distance of the alignment guides, in screen px (spec 3.5). */
 const GUIDE_PULL_PX = 6;
 
 const NARROW = "(max-width: 899.98px)";
+/** Round 2 item 1: how long after a page opens its fit components are watched (live data arrives later). */
+const OPEN_WATCH_MS = 10000;
 
 /** The eight resize handles on the selected outline, centred on its 2px border (operator bug 2). */
 const RESIZE_HANDLES: { id: string; edges: Edges; cls: string }[] = [
@@ -121,6 +129,9 @@ const RESIZE_HANDLES: { id: string; edges: Edges; cls: string }[] = [
   { id: "sw", edges: { s: true, w: true }, cls: "-bottom-[5px] -left-[5px] cursor-nesw-resize" },
   { id: "w", edges: { w: true }, cls: "-left-[5px] top-1/2 -translate-y-1/2 cursor-ew-resize" },
 ];
+
+type Rect = { left: number; top: number; width: number; height: number };
+const sameRect = (a: Rect | null, b: Rect | null) => (!a || !b ? a === b : Math.abs(a.left - b.left) < 0.5 && Math.abs(a.top - b.top) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5);
 
 /** Whether `id` sits somewhere inside the subtree of `ancestorId`. */
 function inside(doc: AppDocument, ancestorId: string, id: string): boolean {
@@ -141,24 +152,6 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-/**
- * Content height a component hides: what its root scrolls, plus what scroll areas inside it hide (a table
- * scrolls its rows in its own body, which shrinks first, so the root alone looks as if it fits). Only the
- * outermost inner scroll areas count, so nested ones are not added twice.
- */
-function hiddenHeight(root: Element): number {
-  let over = Math.max(0, root.scrollHeight - root.clientHeight);
-  const counted: Element[] = [];
-  for (const e of root.querySelectorAll("*")) {
-    if (counted.some((c) => c.contains(e))) continue;
-    const y = getComputedStyle(e).overflowY;
-    if ((y === "auto" || y === "scroll") && e.scrollHeight - e.clientHeight > 1) {
-      over += e.scrollHeight - e.clientHeight;
-      counted.push(e);
-    }
-  }
-  return over;
-}
 
 /** A grid's box on screen. `zoom` is the canvas scale (Preview width): computed lengths are page px. */
 function gridBoxOf(host: HTMLElement, cols: number, zoom = 1): GridBox {
@@ -183,7 +176,7 @@ export function BuilderScreen(props: BuilderProps) {
   const narrow = useNarrow();
   const [doc, setDoc] = useState(props.initial.doc);
   const [rev, setRev] = useState(props.initial.rev);
-  const [meta, setMeta] = useState({ pending: props.initial.pending, authors: props.initial.authors, agentNodes: new Set(props.initial.agentNodes), publishedVersion: props.app.publishedVersion });
+  const [meta, setMeta] = useState({ pending: props.initial.pending, authors: props.initial.authors, agentNodes: new Set(props.initial.agentNodes), publishedVersion: props.app.publishedVersion, themeChanged: props.initial.themeChanged ?? [] });
   const [pageId, setPageId] = useState(props.pageId);
   const [render, setRender] = useState(props.render);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -215,6 +208,7 @@ export function BuilderScreen(props: BuilderProps) {
   const [announce, setAnnounce] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
   const [lookOpen, setLookOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [glow, setGlow] = useState(0);
   // While the publish glow plays, the bar's text sits on gold in --accent-fg (design v4 Note 1).
   const [glowing, setGlowing] = useState(false);
@@ -252,12 +246,21 @@ export function BuilderScreen(props: BuilderProps) {
     openShow({ nodeId: n.id, prop: t.prop ?? (n.type === "chart" ? "lines" : wholeProp(n.type) ?? "value"), ...(t.source ? { source: t.source } : {}) });
   };
   const [ghost, setGhost] = useState<Ghost | null>(null);
-  const [, force] = useState(0);
+  const [forced, force] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   // Gauntlet w2-r2 item 17: the "Published vN" toast belongs to the builder; leaving it (to Versions,
   // Settings or the app) dismisses the toast, which fades out, so it never covers the next screen.
   const publishToast = useRef<string | null>(null);
+  /** The version whose "Published vN" toast waits for the glow's first frame (Note 1: the glow is seen first). */
+  const pendingPublish = useRef<number | null>(null);
+  const showPublishToast = useCallback(() => {
+    const version = pendingPublish.current;
+    if (version === null) return;
+    pendingPublish.current = null;
+    // Round 2 (gauntlet r1, low): the toast opens the published page.
+    publishToast.current = toast({ kind: "success", title: `Published v${version}`, action: { label: "Open the published page", onClick: () => { window.open(`/a/${app.slug}`, "_blank", "noopener"); } } });
+  }, [app.slug]);
   useEffect(() => () => { if (publishToast.current) toast.dismiss(publishToast.current); }, []);
   // Gauntlet w2-r2 item 8: when the code window docks under the canvas, the selected block scrolls into
   // the canvas area left above it, so the frame and its code are both in view.
@@ -267,8 +270,8 @@ export function BuilderScreen(props: BuilderProps) {
   const refreshMeta = useCallback(async () => {
     const res = await fetch(`/api/apps/${app.id}/draft`, { credentials: "same-origin" }).catch(() => null);
     if (!res?.ok) return;
-    const j = (await res.json()) as { agentNodes: string[]; pending: number; authors: { kind: string; name: string; count: number }[]; publishedVersion: number | null };
-    setMeta({ pending: j.pending, authors: j.authors, agentNodes: new Set(j.agentNodes), publishedVersion: j.publishedVersion });
+    const j = (await res.json()) as { agentNodes: string[]; pending: number; authors: { kind: string; name: string; count: number }[]; publishedVersion: number | null; themeChanged?: string[] };
+    setMeta({ pending: j.pending, authors: j.authors, agentNodes: new Set(j.agentNodes), publishedVersion: j.publishedVersion, themeChanged: j.themeChanged ?? [] });
   }, [app.id]);
 
   const refreshRender = useCallback(async (pid: string) => {
@@ -317,12 +320,28 @@ export function BuilderScreen(props: BuilderProps) {
   const pageIdRef = useRef(pageId);
   pageIdRef.current = pageId;
 
-  const apply = useCallback((ops: DraftOp[], opts: { announce?: string; select?: string } = {}) => {
+  // Wave 2.10 B1 (A11.2): components an edit changed, watched for a while so a fit one grows to its content.
+  const growWatch = useRef(new Map<string, { until: number; entry: number; grown: number; force?: boolean; last?: Record<string, number>; /** Passes in a row that did not shrink the overflow. */ strikes?: number; /** Round 2 item 1: watched because the page opened. */ open?: boolean }>());
+  const [growTick, setGrowTick] = useState(0);
+  /** The undo entry of the insert that opened the service or machine chooser (its choice joins it). */
+  const chooserEntry = useRef(0);
+  const watchGrowth = useCallback((before: AppDocument, ops: DraftOp[]) => {
+    const ids = growTriggers(before, ops);
+    if (!ids.length) return;
+    const entry = client.current!.lastEntryId;
+    const until = Date.now() + WATCH_MS;
+    for (const id of ids) growWatch.current.set(id, { until, entry, grown: 0 });
+    // Re-check after the page draws and as live data and pictures arrive.
+    for (const ms of [60, 300, 900, 2000, WATCH_MS - 200]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
+  }, []);
+
+  const apply = useCallback((ops: DraftOp[], opts: { announce?: string; select?: string; /** Join this undo entry (B1). */ into?: number } = {}) => {
     setProblems([]);
+    const docBefore = client.current!.doc;
     if (ops.some((o) => o.op === "theme.set" || o.op === "chrome.update" || (o.op === "page.update" && "theme" in o.patch) || (o.op === "node.update" && ("style" in o.patch || "css" in o.patch || "overrideTheme" in o.patch || ("props" in o.patch && /https?:\/\//i.test(JSON.stringify(o.patch.props))))) || o.op === "node.add" || o.op === "source.set" || o.op === "source.remove" || (o.op === "node.update" && JSON.stringify(o.patch).includes("{{")))) needsRender.current = true;
     // Gauntlet w2-r2 item 16: removing a component also closes the band it leaves in its grid.
     const sourcesBefore = JSON.stringify(client.current!.doc.dataSources);
-    const p = client.current!.edit(withGapsClosed(client.current!.doc, ops));
+    const p = client.current!.edit(withGapsClosed(client.current!.doc, ops), opts.into ? { history: "merge", into: opts.into } : {});
     // A10.1: an edit that moved a managed source (added, removed, a new interval) restarts the live data.
     if (!p && JSON.stringify(client.current!.doc.dataSources) !== sourcesBefore) needsRender.current = true;
     if (p) {
@@ -330,9 +349,10 @@ export function BuilderScreen(props: BuilderProps) {
       toast({ kind: "error", title: "That change cannot be made", description: p[0]?.message });
       return;
     }
+    watchGrowth(docBefore, ops);
     if (opts.announce) setAnnounce(opts.announce);
     if (opts.select !== undefined) setSelectedId(opts.select);
-  }, []);
+  }, [watchGrowth]);
 
   /**
    * Applies an edit and waits until the server accepted or refused it (gauntlet w2-r1 item 15): the
@@ -341,10 +361,12 @@ export function BuilderScreen(props: BuilderProps) {
   const applyAndWait = useCallback(async (ops: DraftOp[]): Promise<Problem[] | null> => {
     setProblems([]);
     if (ops.some((o) => o.op === "source.set" || o.op === "source.remove")) needsRender.current = true;
+    const docBefore = client.current!.doc;
     const local = client.current!.edit(ops);
     if (local) return local;
+    watchGrowth(docBefore, ops);
     return client.current!.whenSaved();
-  }, []);
+  }, [watchGrowth]);
 
   /** Scrolls a node into view on the canvas and plays its settle outline (items 2 and 17). */
   const reveal = useCallback((nodeId: string) => {
@@ -518,8 +540,9 @@ export function BuilderScreen(props: BuilderProps) {
       const act = keyAction(client.current!.doc, selectedId, { key: e.key, shift: e.shiftKey, alt: e.altKey, mod: e.ctrlKey || e.metaKey }, device, { step: snapRef.current ? 1 : FINE });
       if (!act) return;
       e.preventDefault();
-      if (act.kind === "undo") { client.current!.undo(); setAnnounce("Undone"); }
-      else if (act.kind === "redo") { client.current!.redo(); setAnnounce("Redone"); }
+      // An undone or redone step is put back exactly as it was: nothing grows on top of it (B1).
+      if (act.kind === "undo") { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); }
+      else if (act.kind === "redo") { growWatch.current.clear(); client.current!.redo(); setAnnounce("Redone"); }
       else if (act.kind === "select") { setSelectedId(act.nodeId); setAnnounce(act.announce); }
       else {
         apply(act.ops, { announce: act.announce, ...(act.select ? { select: act.select } : {}) });
@@ -871,16 +894,16 @@ export function BuilderScreen(props: BuilderProps) {
   /** Rows a component directly in a fixed-row grid needs to show all its content (0 when it fits). */
   const overflowRows = (el: Element): number => {
     if (!el.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]")) return 0;
-    const root = el.querySelector(':scope > [data-slot="root"]');
-    const over = root ? hiddenHeight(root) : 0;
-    return over > 1 ? Math.ceil(over / 8) : 0;
+    // Wave 2.10 B2: measured the way the CSS draws it (fractional boxes; sub-pixel overflow rounds up).
+    return overflowRowsOf(el);
   };
+
   const overflowOf = (id: string | null): number => {
     const el = id ? canvasRef.current?.querySelector(`[data-node="${CSS.escape(id)}"]`) : null;
     return el ? overflowRows(el) : 0;
   };
   /** Grows the given components (every one that overflows on this page when none are named), as one undo. */
-  const fitToContent = (onlyId?: string) => {
+  const fitToContent = (onlyId?: string, opts: { quiet?: boolean } = {}): number => {
     const cur = client.current!.doc;
     const byGrid = new Map<string, Record<string, number>>();
     for (const el of canvasRef.current?.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]") ?? []) {
@@ -893,10 +916,153 @@ export function BuilderScreen(props: BuilderProps) {
     }
     const ops = [...byGrid].flatMap(([gridId, grow]) => fitOps(cur, gridId, grow, device));
     const count = [...byGrid.values()].reduce((n, g) => n + Object.keys(g).length, 0);
-    if (!ops.length) { toast({ kind: "success", title: "Everything already fits" }); return; }
+    if (!ops.length) { if (!opts.quiet) toast({ kind: "success", title: "Everything already fits" }); return 0; }
     apply(ops, { announce: `Fitted ${count} ${count === 1 ? "component" : "components"} to their content. Undo with Ctrl+Z.` });
+    // Wave 2.10 B2: content that reflows as its box grows is measured again after the page redraws, until it
+    // fits (rounded up to the next row); those passes join this Fit's undo step.
+    const entry = client.current!.lastEntryId;
+    const until = Date.now() + WATCH_MS;
+    for (const grow of byGrid.values()) for (const id of Object.keys(grow)) growWatch.current.set(id, { until, entry, grown: grow[id]!, force: true });
+    for (const ms of [60, 300, 900]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
     if (!onlyId) toast({ kind: "success", title: `Fitted ${count} ${count === 1 ? "component" : "components"}`, description: "Components below moved down to make room. Undo with Ctrl+Z." });
+    return [...byGrid.values()].reduce((n, g) => n + Object.values(g).reduce((a, b) => a + b, 0), 0);
   };
+  /**
+   * Round 2 item 14: the inspector's Fit for one component. Columns hidden at the side (a table wider than
+   * its box) widen it to the whole row when that row has room; then its height fits as before. The result
+   * says what happened, so the inspector never says "fits" while columns are hidden.
+   */
+  const fitOne = (id: string): FitResult => {
+    const el = canvasRef.current?.querySelector(`[data-node="${CSS.escape(id)}"]`);
+    // A table says what it hides (components' measureTableOverflow); anything else is measured here.
+    const table = measureTableOverflow(el);
+    const hiddenX = table ? (table.hiddenColumns > 0 ? Math.max(1, table.hiddenPx) : table.hiddenPx) : overflowXOf(el);
+    if (hiddenX > 0) {
+      const cur = client.current!.doc;
+      const at = findNode(cur, id);
+      const parent = at?.parent;
+      if (at && parent?.type === "grid") {
+        const s = slotOn(at.node, device, gridColumns(parent));
+        const cols = columnsOn(parent, device);
+        if (s && s.w < cols) {
+          const wide = { ...s, x: 0, w: cols };
+          const blocked = (parent.children ?? []).some((k) => { if (k.id === id) return false; const o = slotOn(k, device, gridColumns(parent)); return !!o && overlaps(wide, o); });
+          const op = blocked ? null : slotOp(cur, id, wide, device);
+          if (op) {
+            apply([op], { announce: `${nodeLabel(at.node)} widened to the whole row so its columns show. Undo with Ctrl+Z.` });
+            growWatch.current.set(id, { until: Date.now() + WATCH_MS, entry: client.current!.lastEntryId, grown: 0, force: true });
+            for (const ms of [60, 300, 900]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
+            return { rows: 0, widened: true, hiddenX };
+          }
+          return { rows: fitToContent(id, { quiet: true }), widened: false, hiddenX, blocked: true };
+        }
+      }
+    }
+    return { rows: fitToContent(id, { quiet: true }), widened: false, hiddenX };
+  };
+  /**
+   * Wave 2.10 B1 (A11.2): a watched fit component directly in a fixed-row grid whose content outgrew its box
+   * grows to hold it, pushing siblings down, in the same undo step as the edit that changed it (a later
+   * edit since then makes it its own step). Never during a drag or resize, in Preview, or on a phone layout
+   * where rows already follow content. Containers are measured after their children, pass by pass.
+   */
+  const growPass = useCallback(() => {
+    const watch = growWatch.current;
+    const now = Date.now();
+    for (const [id, w] of watch) if (w.until < now) watch.delete(id);
+    // Never grow while the publish review is open: it would change the draft under the review ("draft changed").
+    if (!watch.size || drag || resizing || reviewOpen || !editMode || !canvasRef.current) return;
+    const cur = client.current!.doc;
+    const byGrid = new Map<string, Record<string, number>>();
+    let entry = 0;
+    const seen = new Set<string>();
+    for (const [id, w] of watch) {
+      let el: Element | null = canvasRef.current.querySelector(`[data-node="${CSS.escape(id)}"]`);
+      for (; el && canvasRef.current.contains(el); el = el.parentElement?.closest("[data-node]") ?? null) {
+        const nid = el.getAttribute("data-node")!;
+        if (seen.has(nid)) continue;
+        seen.add(nid);
+        if (!el.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]")) continue;
+        const at = findNode(cur, nid);
+        // Auto-grow is for fit components on the full builder (a group whose height the person kept reflows
+        // instead, components' `fixedHeight`); a pressed Fit (force) grows the one it named.
+        const forced = !!w.force && nid === id;
+        if (!at?.parent || at.parent.type !== "grid" || (!forced && (narrow || sizingOf(at.node.type, getComponentDef, at.node) !== "fit" || at.node.props.fixedHeight === true))) continue;
+        const need = overflowRowsOf(el);
+        // Growing did not shrink what it hides (content that follows its box): stop, never run away. Round 2
+        // item 1: data that arrives after a growth (a reading that wraps) looks the same once, so a box is
+        // only given up after three passes in a row that did not shrink it.
+        const prev = w.last?.[nid];
+        if (prev !== undefined && need >= prev && need > 0) {
+          w.strikes = (w.strikes ?? 0) + 1;
+          if (w.strikes >= 3) { watch.delete(id); break; }
+        } else if (prev !== undefined) w.strikes = 0;
+        const rows = Math.min(need, MAX_GROW_ROWS - w.grown);
+        if (!(rows > 0)) continue;
+        w.last = { ...w.last, [nid]: need };
+        w.grown += rows;
+        byGrid.set(at.parent.id, { ...byGrid.get(at.parent.id), [nid]: rows });
+        entry = Math.max(entry, w.entry);
+      }
+    }
+    const ops = [...byGrid].flatMap(([gridId, grow]) => fitOps(cur, gridId, grow, device));
+    if (!ops.length) return;
+    client.current!.edit(ops, { history: "merge", into: entry });
+    // Round 2 item 1: growth on opening a page is one undo step of its own; later passes join it.
+    if (entry === 0) {
+      const id = client.current!.lastEntryId;
+      for (const w of watch.values()) if (w.open && w.entry === 0) w.entry = id;
+      const count = [...byGrid.values()].reduce((m, g) => m + Object.keys(g).length, 0);
+      if (!openNoticeShown.current) {
+        openNoticeShown.current = true;
+        setAnnounce(`Grew ${count} ${count === 1 ? "component" : "components"} to show all their content, as viewers see it. Undo with Ctrl+Z.`);
+      }
+    }
+  }, [drag, resizing, reviewOpen, editMode, narrow, device]);
+  useEffect(() => { growPass(); }, [growPass, doc, growTick, shownData]);
+
+  /**
+   * Round 2 item 1 (gauntlet r1: the canvas cropped what the viewer showed): when a page opens in the full
+   * builder, every fit component on it is watched like an edited one, so a box drawn too small for its
+   * content (an older app, or a template right after Create app) grows to hold it, as the viewer's rows do.
+   * The growth is one undo step; nothing is written when everything fits.
+   */
+  const openNoticeShown = useRef(false);
+  const openedPages = useRef(new Set<string>());
+  useEffect(() => {
+    if (narrow || !editMode || device !== "desktop" || openedPages.current.has(page.id)) return;
+    const t = window.setTimeout(() => {
+      openedPages.current.add(page.id);
+      const ids = [...(canvasRef.current?.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]") ?? [])].map((el) => el.getAttribute("data-node")!).filter(Boolean);
+      const until = Date.now() + OPEN_WATCH_MS;
+      for (const id of ids) if (!growWatch.current.has(id)) growWatch.current.set(id, { until, entry: 0, grown: 0, open: true });
+      for (const ms of [0, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [page.id, narrow, editMode, device]);
+
+  /**
+   * Round 2 (settings' note, item 4): a theme change in the builder (another theme, or the same theme saved
+   * with another density) changes how tall content is, so every fit component on the page is watched again
+   * and grows into the theme edit's undo step. Boxes never shrink here: the slack a Compact switch leaves
+   * stays until the person resizes (a known limit).
+   */
+  const themeKey = `${render.theme.id}|${JSON.stringify(render.theme.tokens?.space ?? null)}|${JSON.stringify(render.theme.tokens?.type ?? null)}`;
+  const lastThemeKey = useRef(themeKey);
+  useEffect(() => {
+    if (lastThemeKey.current === themeKey) return;
+    lastThemeKey.current = themeKey;
+    if (narrow || !editMode || device !== "desktop") return;
+    const t = window.setTimeout(() => {
+      const ids = [...(canvasRef.current?.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]") ?? [])].map((el) => el.getAttribute("data-node")!).filter(Boolean);
+      const until = Date.now() + WATCH_MS;
+      const entry = client.current!.lastEntryId;
+      for (const id of ids) growWatch.current.set(id, { until, entry, grown: 0 });
+      for (const ms of [0, 300, 900, 2000]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [themeKey, narrow, editMode, device]);
+
   /** The remove button on the selected outline (operator bug 1): selects the parent; undo puts it back. */
   const removeSelected = () => {
     const at = selected ? findNode(client.current!.doc, selected.id) : null;
@@ -941,6 +1107,15 @@ export function BuilderScreen(props: BuilderProps) {
       anchor = slotOn(sel.node, "desktop", gridColumns(sel.parent)) ?? null;
       if (anchor && sel.node.type === node.type) size = { w: anchor.w, h: anchor.h };
     }
+    // Round 2 (seam with components, item 2): an icon's box is square on this canvas, whatever its width.
+    if (target.type === "grid" && node.type === "icon") {
+      const host = canvasRef.current?.querySelector(`[data-node="${CSS.escape(target.id)}"]`) as HTMLElement | null;
+      const gridEl = host ? (host.matches(".atr-grid") ? host : host.querySelector(".atr-grid")) : null;
+      // components' measure reads the live column width, gap and cell padding (round 2 interface note).
+      if (gridEl) size = iconSlotIn(gridEl);
+    }
+    // Round 2 item 14: a table takes the whole row, so its columns show instead of hiding behind a scroll.
+    if (target.type === "grid" && WIDE_TYPES.has(node.type) && !(anchor && sel?.node.type === node.type)) size = { ...size, w: gridColumns(target) };
     if (target.type === "grid") node.slot = freeSpot(target, "desktop", size, anchor);
     apply([{ op: "node.add", parentId: target.id, node }], { announce: `Added ${nodeLabel(node)}${node.slot ? ` at column ${node.slot.x + 1}, row ${node.slot.y + 1}` : ""}`, select: node.id });
     reveal(node.id);
@@ -949,10 +1124,11 @@ export function BuilderScreen(props: BuilderProps) {
   /** A new data widget opens the data picker at once, with "Skip for now" to keep sample values (spec 3.3). */
   const openPickerForNew = (node: ComponentNode) => {
     if (node.type === "repeat" && node.name === "Card for each") { setPicker({ nodeId: node.id, prop: "items", fromInsert: true, cards: true }); return; }
-    // Wave 2.9 (spec 3.5): a service tile asks which service, then fills itself.
-    if (node.type === "service-tile") { setTileFor(node.id); return; }
+    // Wave 2.9 (spec 3.5): a service tile asks which service, then fills itself. Wave 2.10 B1: the choice joins
+    // the insert's undo step, so one undo takes the new tile (and the room its group grew for it) away.
+    if (node.type === "service-tile") { chooserEntry.current = client.current!.lastEntryId; setTileFor(node.id); return; }
     // Spec 3.6: a resource bar asks which machine, then fills its readings.
-    if (node.type === "resource-bar" && !(Array.isArray(node.props.items) && node.props.items.length)) { setBarFor(node.id); return; }
+    if (node.type === "resource-bar" && !(Array.isArray(node.props.items) && node.props.items.length)) { chooserEntry.current = client.current!.lastEntryId; setBarFor(node.id); return; }
     if (!DATA_TYPES.has(node.type)) return;
     // Wave 2.9 (spec 3.1): every data component starts with "What should this show?", no data source step.
     openShow({ nodeId: node.id, prop: node.type === "chart" ? "lines" : wholeProp(node.type) ?? "value", fromInsert: true });
@@ -1167,8 +1343,11 @@ export function BuilderScreen(props: BuilderProps) {
     if (!at?.parent) return;
     const count = (n: ComponentNode): number => (n.children ?? []).reduce((m, k) => m + 1 + count(k), 0);
     const kids = count(at.node);
-    if (kids > 0 && !window.confirm(`Delete ${nodeLabel(at.node)} and the ${kids} ${kids === 1 ? "component" : "components"} inside it?`)) return;
-    apply([{ op: "node.remove", nodeId: id }], { announce: `Removed ${nodeLabel(at.node)}. Undo with Ctrl+Z.`, select: at.parent.id });
+    // Round 2 item 12: no browser confirm (it never showed in some browsers, so Delete looked dead). The
+    // delete happens at once and says what went with it, with Undo one click away.
+    const what = kids > 0 ? `${nodeLabel(at.node)} and the ${kids} ${kids === 1 ? "component" : "components"} inside it` : nodeLabel(at.node);
+    apply([{ op: "node.remove", nodeId: id }], { announce: `Removed ${what}. Undo with Ctrl+Z.`, select: at.parent.id });
+    toast({ kind: "info", title: `Deleted ${what}`, description: "Undo with Ctrl+Z.", action: { label: "Undo", onClick: () => { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); } } });
   };
 
   // Settings' "Use on an app" links to ?review=1 and "Used by" to ?look=1: open that sheet once, then
@@ -1208,22 +1387,77 @@ export function BuilderScreen(props: BuilderProps) {
   });
 
   // ---- Pages ----
+  // Round 2 item 13: Add a page adds and opens the page at once (no browser prompt, which some browsers
+  // never showed), then asks for its name in a small sheet with the field focused.
+  const [naming, setNaming] = useState<{ pageId: string; fresh: boolean } | null>(null);
+  const freeSlug = (title: string, except?: string) => {
+    const base = slugify(title).slice(0, 36) || "page";
+    let slug = base;
+    for (let k = 2; client.current!.doc.pages.some((p) => p.slug === slug && p.id !== except); k++) slug = `${base}-${k}`;
+    return slug;
+  };
   const addPage = () => {
-    const title = window.prompt("Page title", "New page")?.trim();
-    if (!title) return;
-    let slug = slugify(title) || "page";
-    for (let n = 2; doc.pages.some((p) => p.slug === slug); n++) slug = `${slugify(title).slice(0, 36) || "page"}-${n}`;
-    const p: PageDoc = { id: newId("p"), slug, title, inNav: true, root: { id: newId("c"), type: "grid", props: {}, children: [] } };
-    apply([{ op: "page.add", page: p }]);
-    window.setTimeout(() => goPage(p), 0);
+    const cur = client.current!.doc;
+    let title = "New page";
+    for (let k = 2; cur.pages.some((p) => p.title === title); k++) title = `New page ${k}`;
+    const p: PageDoc = { id: newId("p"), slug: freeSlug(title), title, inNav: true, root: { id: newId("c"), type: "grid", props: {}, children: [] } };
+    apply([{ op: "page.add", page: p }], { announce: `Added the page ${title}` });
+    goPage(p);
+    setNaming({ pageId: p.id, fresh: true });
+  };
+  const renamePage = (pageId: string, title: string, fresh: boolean) => {
+    const cur = client.current!.doc;
+    const p = findPage(cur, pageId);
+    const t = title.trim().slice(0, 80);
+    if (!p || !t || t === p.title) return;
+    // A page named just now takes a URL name from its title; an older page keeps its address.
+    const slug = fresh ? freeSlug(t, p.id) : p.slug;
+    apply([{ op: "page.update", pageId, patch: fresh && slug !== p.slug ? { title: t, slug } : { title: t } }], { announce: `Renamed the page to ${t}` });
+    if (slug !== p.slug && pageIdRef.current === pageId) window.history.replaceState(null, "", `/build/${app.slug}/${slug}`);
+  };
+  const removePage = (pageId: string) => {
+    const cur = client.current!.doc;
+    const p = findPage(cur, pageId);
+    if (!p || cur.pages.length <= 1) return;
+    const next = orderedPages(cur).find((x) => x.id !== pageId)!;
+    apply([{ op: "page.remove", pageId }], { announce: `Removed the page ${p.title}. Undo with Ctrl+Z.` });
+    goPage(next);
+    toast({ kind: "info", title: `Removed the page ${p.title}`, description: "Undo with Ctrl+Z.", action: { label: "Undo", onClick: () => { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); } } });
   };
 
-  const status = `draft · rev ${rev} · ${meta.pending} ${meta.pending === 1 ? "change" : "changes"} since ${meta.publishedVersion ? `v${meta.publishedVersion}` : "creation"}`;
+  // Round 2 item 8 (Note 3): a saved theme edited since the last publish is a change viewers do not see yet.
+  const since = meta.publishedVersion ? `v${meta.publishedVersion}` : "creation";
+  const themeWords = meta.themeChanged.length && meta.publishedVersion ? `Theme changed since v${meta.publishedVersion}` : "";
+  const status = `draft · rev ${rev} · ${meta.pending || !themeWords ? `${meta.pending} ${meta.pending === 1 ? "change" : "changes"} since ${since}${themeWords ? " · " : ""}` : ""}${themeWords}`;
   const who = meta.authors.map((a) => `${a.name}${a.kind === "agent" ? " (agent)" : ""}`).join(", ");
-  const dirty = meta.pending > 0;
-  const selRect = editMode ? rectOf(selectedId) : null;
-  const hovRect = editMode && !narrow && hoverId !== selectedId ? rectOf(hoverId) : null;
-  const gridOn = editMode && !narrow;
+  const dirty = meta.pending > 0 || meta.themeChanged.length > 0;
+  // Round 2 item 9: the outlines are measured after the DOM has the new layout (a layout effect, before the
+  // browser paints), so after a resize or a drop the frame and its handles move with the box on the same
+  // frame instead of waiting for the next render. A resize observer on the selected box catches content
+  // that changes size by itself (data, pictures).
+  const [rects, setRects] = useState<{ sel: Rect | null; hov: Rect | null; multi: { id: string; r: Rect }[] }>({ sel: null, hov: null, multi: [] });
+  // A cap on measure-and-set rounds within one task: layout that keeps moving (an animating box) never
+  // loops renders (React's update-depth limit); the next frame measures again.
+  const measureRounds = useRef(0);
+  useLayoutEffect(() => {
+    if (measureRounds.current++ > 3) return;
+    if (measureRounds.current === 1) window.requestAnimationFrame(() => { measureRounds.current = 0; });
+    const next = {
+      sel: editMode ? rectOf(selectedId) : null,
+      hov: editMode && !narrow && hoverId !== selectedId ? rectOf(hoverId) : null,
+      multi: multiOn && editMode ? multi.flatMap((id) => { const r = rectOf(id); return r ? [{ id, r }] : []; }) : [],
+    };
+    setRects((prev) => (sameRect(prev.sel, next.sel) && sameRect(prev.hov, next.hov) && prev.multi.length === next.multi.length && prev.multi.every((m, i) => m.id === next.multi[i]!.id && sameRect(m.r, next.multi[i]!.r)) ? prev : next));
+  }, [selectedId, hoverId, multi, multiOn, editMode, narrow, doc, forced, canvasW, innerH, zoom, device, page.id, ghost, drag, resizing, growTick, narrowTab, foldLeft, foldRight]);
+  useEffect(() => {
+    const el = selectedId ? canvasRef.current?.querySelector(`[data-node="${CSS.escape(selectedId)}"]`) : null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => force((x) => x + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [selectedId, doc]);
+  const selRect = rects.sel;
+  const hovRect = rects.hov;
   const showCanvas = !narrow || narrowTab === "canvas";
   const settling = settleKey && selected && settleKey.id === selected.id ? settleKey.n : 0;
   // Widgets fully under another get a "covered" tag in Layers (spec 3.2).
@@ -1250,7 +1484,7 @@ export function BuilderScreen(props: BuilderProps) {
         </div>
       )}
       {!narrow && tab === "insert" ? (
-        <InsertPanel groups={insertGroups} onAdd={addToSelected} onPickUp={(item, e) => { if (item.insertId === START_PAGE_ITEM) return; startDrag({ kind: "insert", item, w: item.node.slot?.w ?? (device === "mobile" ? 4 : 3), h: item.node.slot?.h ?? 16 }, e); }} />
+        <InsertPanel groups={insertGroups} onAdd={addToSelected} onPickUp={(item, e) => { if (item.insertId === START_PAGE_ITEM) return; startDrag({ kind: "insert", item, w: WIDE_TYPES.has(item.type) && device !== "mobile" ? gridColumns(page.root) : item.node.slot?.w ?? (device === "mobile" ? 4 : 3), h: item.node.slot?.h ?? 16 }, e); }} />
       ) : (
         <LayersPanel page={page} selectedId={selectedId} agentNodes={meta.agentNodes} stepButtons={narrow} device={narrow ? "mobile" : device} covered={covered} selectedIds={multiOn ? new Set(multi) : undefined} onSelect={(id, o) => (o?.shift && !narrow ? toggleMulti(id) : setSelectedId(id))} onMove={(nodeId, parentId, index) => apply([{ op: "node.move", nodeId, parentId, ...(index === Number.MAX_SAFE_INTEGER ? {} : { index }) }], { announce: "Moved in the layer tree" })}
           onHide={layerHide} onRename={layerRename} onDuplicate={layerDuplicate} onDelete={layerDelete} />
@@ -1270,6 +1504,7 @@ export function BuilderScreen(props: BuilderProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: glowKeyframes.opacity }}
             transition={{ duration: durations.glow.ms / 1000, ease: glowKeyframes.ease.map((e) => (typeof e === "string" ? e : [...e])) as never, times: glowKeyframes.times }}
+            onAnimationStart={showPublishToast}
             data-publish-glow
           />
         )}
@@ -1278,7 +1513,7 @@ export function BuilderScreen(props: BuilderProps) {
         <svg viewBox="0 0 12 14" width={10} height={12} aria-hidden className="flex-none" data-door={dirty ? "outlined" : "lit"}>
           <path d="M1 13V6a5 5 0 0 1 10 0v7Z" fill={dirty ? "none" : "var(--accent)"} stroke="var(--accent-ink)" strokeWidth={dirty ? 1.4 : 0} />
         </svg>
-        <span className={`relative min-w-0 truncate type-label font-medium max-sm:min-w-[2.75rem] max-sm:shrink ${glowing ? "text-accent-fg" : ""}`} data-builder-title>
+        <span className={`relative min-w-0 max-w-[18rem] truncate type-label font-medium max-sm:min-w-[2.75rem] max-sm:shrink ${glowing ? "text-accent-fg" : ""}`} title={doc.app.name} data-builder-title>
           {doc.app.name}
           {glow > 0 && reduced && <StaticRing key={glow} />}
         </span>
@@ -1286,9 +1521,13 @@ export function BuilderScreen(props: BuilderProps) {
         <div className="w-40 min-w-0 flex-none max-sm:w-auto max-sm:min-w-[4.5rem] max-sm:flex-[1_1_0%] [&_[data-select]>span:first-child]:min-w-0 [&_[data-select]>span:first-child]:truncate" data-page-switcher>
           <SelectMenu label="Page" hideLabel name="page" value={page.id} onChange={(id) => { const p = findPage(doc, id); if (p) goPage(p); }} options={orderedPages(doc).map((p) => ({ value: p.id, label: `${p.title}${p.inNav ? "" : " (hidden)"}` }))} />
         </div>
-        {!narrow && <PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} />}
+        {!narrow && <PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} />}
+        {/* Wave 2.10b F8: Navigation sits beside Pages, not inside Look. */}
+        {!narrow && <button type="button" onClick={() => setNavOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-navigation><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 3h9M1.5 6h9M1.5 9h9" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>Navigation</button>}
         {!narrow && <button type="button" onClick={() => setLookOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-look><span aria-hidden className="h-3 w-3 border border-line-strong bg-accent" />Look</button>}
-        <span className={`ml-2 hidden min-w-0 truncate font-mono text-[12px] lg:inline ${glowing ? "text-accent-fg" : "text-fg-2"}`} title={who} data-draft-status>{status}{who ? ` · ${who}` : ""}</span>
+        {/* Round 2 (gauntlet r1, low): the status fills the space that is left (basis 0), so its text changing
+            never moves the page switcher, Pages or Look, and it gives way first when the bar is short. */}
+        <span className={`ml-2 hidden min-w-0 flex-1 basis-0 truncate font-mono text-[12px] lg:block ${glowing ? "text-accent-fg" : "text-fg-2"}`} title={`${status}${who ? ` · ${who}` : ""}`} data-draft-status>{status}{who ? ` · ${who}` : ""}</span>
         <span className="ml-auto" />
         {!narrow && (
           <>
@@ -1339,7 +1578,7 @@ export function BuilderScreen(props: BuilderProps) {
                 </button>
               ))}
             </div>
-            <span className="flex-none border-l border-line-strong"><PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} compact /></span>
+            <span className="flex-none border-l border-line-strong"><PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} compact /></span>
           </div>
         </>
       )}
@@ -1358,9 +1597,7 @@ export function BuilderScreen(props: BuilderProps) {
           onDragOver={onFileDragOver}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false); }}
           onDrop={onFileDrop}
-          style={{ backgroundImage: "linear-gradient(to right, var(--line) 1px, transparent 1px), linear-gradient(to bottom, var(--line) 1px, transparent 1px)", backgroundSize: "80px 80px" }}
         >
-          <motion.div aria-hidden className="pointer-events-none absolute inset-0 bg-bg-sunk" initial={false} animate={{ opacity: gridOn ? 0 : 1 }} transition={reduced ? { duration: 0 } : timed("fade")} data-grid-cover />
           <motion.div className="relative mx-auto" initial={false} animate={{ padding: editMode && !narrow ? 24 : 0 }} transition={transitionFor("lift", reduced)} style={{ maxWidth: device === "mobile" ? 390 + 48 : undefined, ...(scaled ? { width: (previewW as number) * zoom + inset * 2 } : {}) }} data-canvas-inset={editMode && !narrow ? "24" : "0"}>
             <div
               ref={canvasRef}
@@ -1424,11 +1661,11 @@ export function BuilderScreen(props: BuilderProps) {
                   data-selected-outline={selected.id}
                   data-settled={settling ? "" : undefined}
                 >
-                  <div className="absolute -top-5 left-[-2px] flex" data-canvas-control>
+                  <div className="absolute -top-5 left-[-2px] flex whitespace-nowrap" data-canvas-control>
                     <span
                       aria-hidden
                       title={narrow ? undefined : "Drag to move"}
-                      className={`pointer-events-auto flex select-none items-center gap-1 bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg ${narrow ? "" : "cursor-grab touch-none"}`}
+                      className={`pointer-events-auto flex flex-none select-none items-center gap-1 whitespace-nowrap bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg ${narrow ? "" : "cursor-grab touch-none"}`}
                       onPointerDown={(e) => { if (narrow) return; const s = slotOn(selected, device) ?? (selectedParent?.type === "group" ? { w: 3, h: 12 } : undefined); if (s) startDrag({ kind: "move", nodeId: selected.id, label: nodeLabel(selected), w: s.w, h: s.h }, e); }}
                       data-drag-handle
                     >
@@ -1494,13 +1731,13 @@ export function BuilderScreen(props: BuilderProps) {
               )}
               {/* Several selected (spec 3.2): an outline on each with a grip that moves them all, and the toolbar. */}
               {multiOn && editMode && (() => {
-                const rects = multi.flatMap((id) => { const r = rectOf(id); return r ? [{ id, r }] : []; });
-                if (!rects.length) return null;
-                const left = Math.min(...rects.map((x) => x.r.left));
-                const top = Math.min(...rects.map((x) => x.r.top));
+                const multiRects = rects.multi;
+                if (!multiRects.length) return null;
+                const left = Math.min(...multiRects.map((x) => x.r.left));
+                const top = Math.min(...multiRects.map((x) => x.r.top));
                 return (
                   <>
-                    {rects.map(({ id, r }) => (
+                    {multiRects.map(({ id, r }) => (
                       <div key={id} className="pointer-events-none absolute border-2 border-accent-ink" style={r} data-multi-outline={id}>
                         <span
                           className="pointer-events-auto absolute -left-[2px] -top-[18px] flex h-4 w-5 cursor-grab touch-none items-center justify-center bg-accent-ink text-bg"
@@ -1531,9 +1768,10 @@ export function BuilderScreen(props: BuilderProps) {
               ))}
               {(drag || resizing) && ghost && (
                 <>
-                  {/* Only the target cell is lit; the columns show as quiet hairlines (gauntlet w2-r1 item 17).
+                  {/* Only the target cell is lit; the columns show as quiet hairlines (gauntlet w2-r1 item 17),
+                      at the line colour's 25% (A11.7, Wave 2.10 B7), over the page and only during the drag.
                       With snap off the cells are not drawn; alignment guides show instead (spec 3.5). */}
-                  {ghost.snap !== false && <div aria-hidden className="pointer-events-none absolute" style={{ left: ghost.origin.left, top: ghost.origin.top, width: ghost.box.width, height: Math.max(ghost.rect.top + ghost.rect.height + 80, 200) }} data-grid-cells>
+                  {ghost.snap !== false && <div aria-hidden className="pointer-events-none absolute opacity-25" style={{ left: ghost.origin.left, top: ghost.origin.top, width: ghost.box.width, height: Math.max(ghost.rect.top + ghost.rect.height + 80, 200) }} data-grid-cells>
                     <div className="h-full w-full" style={{ backgroundImage: `repeating-linear-gradient(to right, transparent 0 ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols}px, var(--line) ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols}px ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols + ghost.box.colGap}px)` }} />
                   </div>}
                   {ghost.snap === false && ghost.guides?.map((g, i) => <GuideLine key={`${g.axis}${g.at}${i}`} g={g} ghost={ghost} />)}
@@ -1558,7 +1796,7 @@ export function BuilderScreen(props: BuilderProps) {
             {multiOn ? (
               <MultiPanel names={multi.map((id) => { const n = findNode(doc, id)?.node; return n ? nodeLabel(n) : id; })} onAction={arrange} onClear={() => setMulti([])} />
             ) : (
-            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} applyAndWait={applyAndWait} compact={narrow}
+            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow}
               live={{ data: shownData, states: live.states }} onPick={onInspectorPick} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
             )}
           </aside>
@@ -1584,27 +1822,33 @@ export function BuilderScreen(props: BuilderProps) {
         <ReviewSheet appId={app.id} open applyOps={applyAndWait} onClose={() => setReviewOpen(false)} onSelectProblem={selectFromReview} onDone={async ({ version }) => {
           setReviewOpen(false);
           setGlow((g) => g + 1);
-          publishToast.current = toast({ kind: "success", title: `Published v${version}` });
+          // The toast's own delay counts from the glow's first frame, not from the server's answer; with
+          // reduced motion there is no glow, so it is shown at once.
+          pendingPublish.current = version;
+          if (reduced) showPublishToast();
           const latest = await fetch(`/api/apps/${app.id}/draft`, { credentials: "same-origin" }).then((r) => r.json() as Promise<{ rev: number; doc: AppDocument }>);
+          growWatch.current.clear();
           client.current!.reset(latest.doc, latest.rev);
           void refreshMeta();
         }} />
       )}
-      {picker && <DataPicker appId={app.id} target={picker} doc={doc} bindable={bindable} data={live.data as Record<string, ShapedData | undefined>} states={live.states} apply={(ops) => apply(ops)} onClose={() => setPicker(null)} />}
+      {picker && <DataPicker appId={app.id} target={picker} doc={doc} bindable={bindable} data={shownData} states={live.states} apply={(ops) => apply(ops)} onClose={() => setPicker(null)} />}
       {show && (
         <ShowPicker target={show} doc={doc} bindable={bindable ?? bindableRef.current} data={shownData} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setShow(null)}
           onByHand={() => { const t = show; setShow(null); setPicker({ nodeId: t.nodeId, ...(/^[A-Za-z]+$/.test(t.prop) && t.prop !== "lines" ? { prop: t.prop } : {}), ...(t.fromInsert ? { fromInsert: true } : {}), ...(t.source && !client.current!.doc.dataSources.find((x) => x.name === t.source)?.managed ? { source: t.source } : {}) }); }}
           onPeeked={(name, d) => setInstant((m) => ({ ...m, [name]: d }))} onSelect={(id) => { setSelectedId(id); reveal(id); }} newNodeId={() => newId("c")} />
       )}
-      {barFor && <MachineChooser nodeId={barFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setBarFor(null)} />}
-      {tileFor && <ServiceChooser nodeId={tileFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setTileFor(null)} />}
+      {barFor && <MachineChooser nodeId={barFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setBarFor(null)} />}
+      {tileFor && <ServiceChooser nodeId={tileFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setTileFor(null)} />}
       {startOpen && <StartPageSheet appId={app.id} apply={(ops) => { apply(ops, { announce: "Made a start page" }); void client.current!.flush(); }} onClose={() => setStartOpen(false)} onMade={(pageId) => {
         setStartOpen(false);
         const p = findPage(client.current!.doc, pageId);
         if (p && p.id !== page.id) goPage(p);
         toast({ kind: "success", title: "Start page made", description: "Values fill in as your services answer. Undo takes it all back." });
       }} />}
+      {naming && (() => { const np = findPage(doc, naming.pageId); return np ? <PageNameSheet key={naming.pageId} title={np.title} fresh={naming.fresh} onSave={(t) => { renamePage(naming.pageId, t, naming.fresh); setNaming(null); }} onClose={() => setNaming(null)} /> : null; })()}
       {lookOpen && <AppLookSheet appId={app.id} doc={doc} page={page} theme={render.theme} chromeRemoved={render.chromeRemoved} onClose={() => setLookOpen(false)} apply={(ops) => apply(ops)} />}
+      {navOpen && <AppLookSheet only="navigation" appId={app.id} doc={doc} page={page} theme={render.theme} chromeRemoved={render.chromeRemoved} onClose={() => setNavOpen(false)} apply={(ops) => apply(ops)} />}
     </div>
   );
 }
@@ -1645,13 +1889,30 @@ function StaticRing() {
   return on ? <span aria-hidden className="pointer-events-none absolute inset-[-4px_-6px] outline-2 outline-accent" data-publish-ring /> : null;
 }
 
+/** Round 2 item 13: the page's name, asked in a small sheet with the field focused and selected. */
+function PageNameSheet({ title, fresh, onSave, onClose }: { title: string; fresh: boolean; onSave(t: string): void; onClose(): void }) {
+  const [v, setV] = useState(title);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { const t = window.setTimeout(() => { ref.current?.focus(); ref.current?.select(); }, 30); return () => window.clearTimeout(t); }, []);
+  return (
+    <Sheet open onOpenChange={(o) => { if (!o) onClose(); }} title={fresh ? "Name the new page" : "Rename the page"} path="builder / pages" name="page-name" width={400}
+      footer={<div className="flex gap-2"><Button variant="primary" onClick={() => onSave(v)} disabled={!v.trim()} data-page-name-save>Save</Button><Button variant="quiet" onClick={onClose} data-page-name-cancel>{fresh ? "Keep this name" : "Cancel"}</Button></div>}>
+      <label className="flex flex-col gap-1 type-caption text-fg-2">
+        <span className="type-label text-fg">Page name</span>
+        <input ref={ref} className="h-11 w-full border border-line-strong bg-bg-hi px-3 type-body text-fg outline-none focus-visible:outline-2 focus-visible:outline-accent-ink" value={v} maxLength={80} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && v.trim()) { e.preventDefault(); onSave(v); } }} data-page-name-input />
+        <span>{fresh ? "It is added and open already; this is the name in the navigation." : "The name in the navigation. The page keeps its address."}</span>
+      </label>
+    </Sheet>
+  );
+}
+
 const pageItem = "flex h-8 cursor-pointer select-none items-center px-2 text-left type-label outline-none data-[disabled]:cursor-default data-[disabled]:opacity-40 data-[highlighted]:bg-bg-sunk touch:h-11";
 
 /**
  * The Pages menu. Radix in a portal (operator bugs 3 and 4): the builder bar clips its overflow for the
  * publish glow, so an in-bar dropdown showed as a sliver and "Add a page" could not be reached.
  */
-function PageMenu({ doc, page, apply, onAdd, onLook, onFit, compact = false }: { doc: AppDocument; page: PageDoc; apply(ops: DraftOp[]): void; onAdd(): void; onLook(): void; onFit(): void; compact?: boolean }) {
+function PageMenu({ doc, page, apply, onAdd, onRename, onRemove, onLook, onFit, compact = false }: { doc: AppDocument; page: PageDoc; apply(ops: DraftOp[]): void; onAdd(): void; onRename(): void; onRemove(): void; onLook(): void; onFit(): void; compact?: boolean }) {
   const order = orderedPages(doc);
   const i = order.findIndex((p) => p.id === page.id);
   return (
@@ -1669,12 +1930,12 @@ function PageMenu({ doc, page, apply, onAdd, onLook, onFit, compact = false }: {
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="start" sideOffset={4} collisionPadding={8} className="z-50 flex w-56 flex-col border border-line-strong bg-bg-hi p-1 text-fg shadow-window-sm" data-page-menu-content>
           <DropdownMenu.Item className={pageItem} onSelect={onAdd} data-page-add>Add a page</DropdownMenu.Item>
-          <DropdownMenu.Item className={pageItem} onSelect={() => { const t = window.prompt("Rename page", page.title)?.trim(); if (t) apply([{ op: "page.update", pageId: page.id, patch: { title: t } }]); }} data-page-rename>Rename</DropdownMenu.Item>
+          <DropdownMenu.Item className={pageItem} onSelect={onRename} data-page-rename>Rename</DropdownMenu.Item>
           <DropdownMenu.Item className={pageItem} onSelect={() => apply([{ op: "page.update", pageId: page.id, patch: { inNav: !page.inNav } }])} data-page-nav>{page.inNav ? "Hide from navigation" : "Show in navigation"}</DropdownMenu.Item>
           <DropdownMenu.Item className={pageItem} disabled={i <= 0} onSelect={() => apply([{ op: "page.move", pageId: page.id, index: i - 1 }])} data-page-up>Move up</DropdownMenu.Item>
           <DropdownMenu.Item className={pageItem} disabled={i >= order.length - 1} onSelect={() => apply([{ op: "page.move", pageId: page.id, index: i + 1 }])} data-page-down>Move down</DropdownMenu.Item>
           <DropdownMenu.Item className={pageItem} disabled={doc.app.homePage === page.id} onSelect={() => apply([{ op: "app.update", patch: { homePage: page.id } }])} data-page-home>Make this the home page</DropdownMenu.Item>
-          <DropdownMenu.Item className={`${pageItem} text-bad`} disabled={doc.pages.length <= 1} onSelect={() => { if (window.confirm(`Remove the page ${page.title}?`)) apply([{ op: "page.remove", pageId: page.id }]); }} data-page-remove>Remove page</DropdownMenu.Item>
+          <DropdownMenu.Item className={`${pageItem} text-bad`} disabled={doc.pages.length <= 1} onSelect={onRemove} data-page-remove>Remove page</DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
           <DropdownMenu.Item className={pageItem} onSelect={onFit} data-page-fit>Fit every component to its content</DropdownMenu.Item>
           <DropdownMenu.Item className={pageItem} onSelect={onLook} data-app-look>App look: theme and navigation</DropdownMenu.Item>

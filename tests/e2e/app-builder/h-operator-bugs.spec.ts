@@ -85,18 +85,25 @@ test("bugs 3 and 4: the Pages menu opens whole and on top of the canvas, in ligh
   const page = await ctx.newPage();
   await open(page);
   const before = (await draft()).doc.pages.length;
-  page.once("dialog", (d) => d.accept("Second page"));
-  await page.locator("[data-page-menu]").click();
-  await page.locator("[data-page-add]").click();
-  await page.waitForURL(new RegExp(`/build/${SLUG}/second-page$`));
-  const after = await untilDraft((d) => d.doc.pages.length > before);
+  // Round 2 item 13: Add a page adds and opens the page at once, with its name field focused (no browser
+  // prompt); naming it there gives the fresh page its URL name.
+  const addNamed = async (title: string) => {
+    await page.locator("[data-page-menu]").click();
+    await page.locator("[data-page-add]").click();
+    await expect(page.locator("[data-page-name-input]")).toBeFocused();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type(title);
+    await page.keyboard.press("Enter");
+  };
+  await addNamed("Second page");
+  await expect(page).toHaveURL(new RegExp(`/build/${SLUG}/second-page$`));
+  const after = await untilDraft((d) => d.doc.pages.some((p) => p.slug === "second-page"));
+  expect(after.doc.pages.length).toBeGreaterThan(before);
   expect(after.doc.pages.map((p) => p.slug)).toContain("second-page");
   await expect(page.locator("[data-page-switcher]")).toContainText("Second page");
   // A second page with the same title gets its own slug.
-  page.once("dialog", (d) => d.accept("Second page"));
-  await page.locator("[data-page-menu]").click();
-  await page.locator("[data-page-add]").click();
-  await page.waitForURL(new RegExp(`/build/${SLUG}/second-page-2$`));
+  await addNamed("Second page");
+  await expect(page).toHaveURL(new RegExp(`/build/${SLUG}/second-page-2$`));
   expect((await untilDraft((d) => d.doc.pages.length > before + 1)).doc.pages).toHaveLength(before + 2);
   await ctx.close();
 });
@@ -225,9 +232,13 @@ test("bug 3 at 360 and 390px: the Pages menu is on the phone bar, opens on top, 
     expect(mb.x + mb.width).toBeLessThanOrEqual(width);
     await page.screenshot({ path: ev("operator-bugs", `page-menu-${width}.png`) });
     const before = (await draft()).doc.pages.length;
-    page.once("dialog", (d) => d.accept(`Phone ${width}`));
+    // Round 2 item 13: the page is added and opened at once, with its name field focused (no browser prompt).
     await page.locator("[data-page-add]").tap();
-    await page.waitForURL(new RegExp(`/build/${SLUG}/phone-${width}$`));
+    const name = page.locator("[data-page-name-input]");
+    await expect(name).toBeFocused();
+    await name.fill(`Phone ${width}`);
+    await name.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/build/${SLUG}/phone-${width}$`));
     expect((await untilDraft((d) => d.doc.pages.length > before)).doc.pages.map((p) => p.slug)).toContain(`phone-${width}`);
     await ctx.close();
   }

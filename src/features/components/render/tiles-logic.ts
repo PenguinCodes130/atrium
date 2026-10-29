@@ -7,7 +7,18 @@ import { formatNumber } from "./states";
 import { ICON_PATHS } from "./icons";
 
 export type BadgeTone = "ok" | "warn" | "bad" | "unknown";
-export type Badge = { word: string; tone: BadgeTone; state: "up" | "down" | "warn" | "unknown"; detail?: string; /** Read aloud: "Up, 12 ms". */ spoken: string };
+export type Badge = { word: string; tone: BadgeTone; state: "up" | "down" | "warn" | "unknown" | "unchecked"; detail?: string; /** Read aloud: "Up, 12 ms". */ spoken: string };
+
+/**
+ * Round 2 item 7: the reason a reachability check gives when Atrium refuses to check an address (its own
+ * server, loopback, link-local; integrations/host/reach.ts REACH_REFUSED, matched by its opening words
+ * because that module is server only). Such an item was never checked, so it is not an outage.
+ */
+export const NOT_CHECKED_DETAIL = /^\s*Atrium does not check addresses\b/i;
+/** True when a status detail says the address was not checked (not that it failed). */
+export function isNotChecked(detail: unknown): boolean {
+  return typeof detail === "string" && NOT_CHECKED_DETAIL.test(detail);
+}
 
 const WORDS: Record<string, { word: string; tone: BadgeTone }> = {
   running: { word: "Running", tone: "ok" },
@@ -28,7 +39,7 @@ const WORDS: Record<string, { word: string; tone: BadgeTone }> = {
   warn: { word: "Warning", tone: "warn" },
   warning: { word: "Warning", tone: "warn" },
 };
-const STATE_WORD: Record<Badge["state"], { word: string; tone: BadgeTone }> = { up: { word: "Up", tone: "ok" }, down: { word: "Down", tone: "bad" }, warn: { word: "Warning", tone: "warn" }, unknown: { word: "Unknown", tone: "unknown" } };
+const STATE_WORD: Record<Badge["state"], { word: string; tone: BadgeTone }> = { up: { word: "Up", tone: "ok" }, down: { word: "Down", tone: "bad" }, warn: { word: "Warning", tone: "warn" }, unknown: { word: "Unknown", tone: "unknown" }, unchecked: { word: "Not checked", tone: "unknown" } };
 const MS = /^\s*(\d+(?:\.\d+)?)\s*ms\s*$/i;
 
 /**
@@ -52,6 +63,7 @@ export function statusBadge(data: unknown): Badge | null {
   } else if (typeof data === "object" && (data as { kind?: unknown }).kind === "stat") {
     word = textOf((data as { value?: unknown }).value);
   } else return null;
+  if (isNotChecked(detail)) return { word: "Not checked", tone: "unknown", state: "unchecked", detail, spoken: `Not checked, ${detail}` };
   const known = WORDS[(word || detail).trim().toLowerCase()];
   if (word && !known) {
     // A free word: up when it reads like one, else as it is.

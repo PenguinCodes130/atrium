@@ -49,7 +49,7 @@ test("390x844: no horizontal scroll, 44px targets (V5, AC 46)", async ({ browser
   // The folded theme editor on a phone.
   await page.goto("/settings/themes");
   await page.locator("[data-new-theme]").click();
-  await page.waitForURL(/\/settings\/themes\/t-/);
+  await page.waitForURL(/\/settings\/themes\/(t-|new)/); // r2 low L8: New theme opens an unsaved editor at /new
   await expect(page.locator("[data-basics]")).toBeVisible();
   await shot(page, "theme-editor-mobile");
   report["theme-editor"] = { scrollW: await page.evaluate(() => document.documentElement.scrollWidth), small: [] };

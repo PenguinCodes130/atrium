@@ -1,7 +1,7 @@
 // The component catalogue (architecture v3 section 4.4, spec 3.1.1): one ComponentDef per type, the
 // single source for the Insert tab, the inspector, validate, the schema tool and the agent guides.
 import type { ComponentDef, ComponentType } from "@/core/contracts";
-import { META, type ComponentMeta } from "./meta";
+import { META, SIZING, type ComponentMeta } from "./meta";
 import { propsSchemas, type BuiltInType } from "./schemas";
 import { CardView, GridView, RepeatView, SectionView, StackView, TabsView } from "../render/layout";
 import { GaugeView, ListView, ProgressView, StatView, StatusView, TableView } from "../render/data";
@@ -30,6 +30,7 @@ function toDef(m: ComponentMeta): ComponentDef {
     props: propsSchemas[m.type],
     defaults: m.defaults,
     ...(m.accepts ? { accepts: m.accepts } : {}),
+    sizing: SIZING[m.type],
     styleSlots: m.styleSlots,
     ...(m.states ? { states: m.states } : {}),
     docs: m.docs,
@@ -43,7 +44,8 @@ const packages = new Map<string, ComponentDef>();
 /** Official packages (src/packages, amendment A4.2) register their page-rendered components here at build time. */
 export function registerPackageComponent(def: ComponentDef): void {
   if (!String(def.type).startsWith("pkg:")) throw new Error("Package components use a pkg: type");
-  packages.set(def.type, def);
+  // A11.2: package components default to fit.
+  packages.set(def.type, def.sizing ? def : { ...def, sizing: "fit" });
 }
 
 export function componentDefs(): ComponentDef[] {

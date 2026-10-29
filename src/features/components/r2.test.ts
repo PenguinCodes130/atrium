@@ -12,7 +12,7 @@ vi.mock("./actions", () => ({ compileNodeStylesAction: async () => ({}) }));
 
 const { RenderNode } = await import("./render/render-node");
 const { RenderDeviceProvider } = await import("./render/context");
-const { InspectorPanels, InspectorHeader, nodeDisplayName, bindingHoldReason } = await import("./inspector/inspector");
+const { InspectorPanels, InspectorHeader, nodeDisplayName, bindingHoldReason, sourceLabel } = await import("./inspector/inspector");
 const { stretchRows } = await import("./render/layout");
 const { notConnected, sampleProps, sampleFor } = await import("./catalogue/samples");
 const { compileStyle } = await import("./style/compile");
@@ -60,11 +60,12 @@ describe("Fix 4: title bars on every card, data surface and chart", () => {
     expect(titlePath({ id: "c_x", type: "stat", name: "CPU bar", props: {} }, ctx("view").values as never)).toBe("");
     expect(titlePath({ id: "c_x", type: "stat", title: "CPU bar", props: {} }, ctx("view").values as never)).toBe("CPU bar");
   });
-  it("the stylesheet shows the bar only under titlebars on, 28px, mono, and moves the marks below it", () => {
+  // Wave 2.10a round 2 item 4: the height is the density's title bar token (28px, or 19px at Compact).
+  it("the stylesheet shows the bar only under titlebars on, at the density's height (28px by default), mono, and moves the marks below it", () => {
     const css = readFileSync(path.join(__dirname, "components.css"), "utf8");
     expect(css).toMatch(/\.atr-titlebar \{ display: none; \}/);
-    expect(css).toMatch(/\[data-canvas-titlebars="on"\] \.atr-titlebar \{[^}]*height: 28px/);
-    expect(css).toMatch(/\[data-canvas-titlebars="on"\] \.atr-marks \{ top: 36px; \}/);
+    expect(css).toMatch(/\[data-canvas-titlebars="on"\] \.atr-titlebar \{[^}]*height: var\(--theme-titlebar-h, 28px\)/);
+    expect(css).toMatch(/\[data-canvas-titlebars="on"\] \.atr-marks \{ top: calc\(var\(--theme-titlebar-h, 28px\) \+ 8px\); \}/);
   });
 });
 
@@ -171,6 +172,23 @@ describe("Fix 3: binding fields hold what the author typed", () => {
     expect(bindingHoldReason("{{ cpu.value }}", ["cpu"])).toBeNull();
     expect(bindingHoldReason("{{ $item.name }}", [])).toBeNull();
     expect(bindingHoldReason("", [])).toBeNull();
+  });
+});
+
+describe("Wave 2.10a round 2: binding sentences inside a repeat and by label", () => {
+  it("{{ row.name }} and {{ item.name }} in a repeat suggest {{ $item.name }}; sources read by label", () => {
+    const words = { labels: { d_l7sio4ax: "Machines, Proxmox" }, inRepeat: true };
+    expect(bindingHoldReason("{{ row.name }}", ["d_l7sio4ax"], words)).toBe("There is no data source called row. Inside a repeat, each row is $item: write {{ $item.name }}.");
+    expect(bindingHoldReason("{{ item.cpu }}", ["d_l7sio4ax"], words)).toContain("{{ $item.cpu }}");
+    const outside = bindingHoldReason("{{ machines.rows }}", ["d_l7sio4ax"], { labels: words.labels })!;
+    expect(outside).toBe("There is no data source called machines. This app's sources are Machines, Proxmox.");
+    expect(outside).not.toMatch(/d_[a-z0-9]/);
+  });
+  it("the Source dropdown's words: a label, else the service, never a d_ id", () => {
+    expect(sourceLabel({ name: "d_l7sio4ax", label: "Machines, Proxmox" })).toBe("Machines, Proxmox");
+    expect(sourceLabel({ name: "d_l7sio4ax" }, { source: () => ({ integration: "Proxmox" }) })).toBe("A read from Proxmox");
+    expect(sourceLabel({ name: "d_l7sio4ax" })).not.toMatch(/d_[a-z0-9]/);
+    expect(sourceLabel({ name: "lights" })).toBe("lights");
   });
 });
 

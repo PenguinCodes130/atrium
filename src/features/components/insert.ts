@@ -36,7 +36,7 @@ export function newNode(type: keyof typeof META): ComponentNode {
  * Boxes are exact (operator, 2026-10-19), so each size is the type's measured content height at its
  * default width plus the cell's gap, rounded up with one row to spare. Types not listed fit 3 by 16.
  */
-export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h: number }; props?: Record<string, number | string> }>> = {
+export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h: number }; props?: Record<string, number | string | boolean> }>> = {
   chart: { slot: { w: 6, h: 35 }, props: { height: 150 } },
   stat: { slot: { w: 3, h: 24 } },
   status: { slot: { w: 3, h: 22 } },
@@ -52,6 +52,29 @@ export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h:
   group: { slot: { w: 12, h: 26 } },
   "resource-bar": { slot: { w: 12, h: 9 } },
   bookmarks: { slot: { w: 3, h: 20 } },
+  // Wave 2.10a B8 (A11.2 scale): an icon fills its box, and its box hugs it: the 24px icon plus its
+  // padding (ICON_HUG_PX square), at most 2 columns. Measured on the 1280px builder in the default
+  // theme (columns 28.7px, gap 24px, 6px hard shadow): 1.375 columns by 10 rows is 48 by 50px. Other
+  // canvas widths and gaps change a column's px; hugSlot gives the exact slot for a measured canvas.
+  icon: { slot: { w: 1.375, h: 10 }, props: { fill: true } },
+};
+
+/** The square an inserted icon's box hugs (B8): the 24px icon at half the box, so 12px around it. */
+export const ICON_HUG_PX = 48;
+/** The share of its box a filling icon draws at (components.css .atr-icon[data-fill]). */
+export const ICON_FILL_SHARE = 0.5;
+
+/**
+ * The slot that makes a box of `px` square on a measured grid (B8, A7.4 eighths of a column): the column
+ * width and gap in px, and the cell's bottom padding (the theme gap plus a hard shadow's offset). The
+ * width is at most `maxCols` columns. For the builder's insert, when it wants the exact hug on this canvas.
+ */
+export function hugSlot(px: number, grid: { colPx: number; gapPx: number; padBottomPx: number; rowPx?: number }, maxCols = 2): { w: number; h: number } {
+  const step = grid.colPx + grid.gapPx;
+  const w = Math.min(maxCols, Math.max(0.125, Math.round(((px + grid.gapPx) / step) * 8) / 8));
+  const widthPx = w * step - grid.gapPx;
+  const h = Math.max(1, Math.round((widthPx + grid.padBottomPx) / (grid.rowPx ?? 8)));
+  return { w, h };
 }
 
 /** Insert lists these first in their category (direct data spec 3.5 and 3.6: easy to find). */

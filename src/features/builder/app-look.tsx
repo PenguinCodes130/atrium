@@ -234,7 +234,9 @@ function ChromeStyle({ chrome, theme, apply }: { chrome: ChromeDef; theme: Theme
   );
 }
 
-export function AppLookSheet({ appId, doc, page, theme, chromeRemoved, onClose, apply }: { appId: string; doc: AppDocument; page: PageDoc; theme: Theme; chromeRemoved?: string[]; onClose(): void; apply(ops: DraftOp[]): void }) {
+/** `only="navigation"` (Wave 2.10b F8): the builder bar's Navigation entry, the same controls without the themes. */
+export function AppLookSheet({ appId, doc, page, theme, chromeRemoved, onClose, apply, only }: { appId: string; doc: AppDocument; page: PageDoc; theme: Theme; chromeRemoved?: string[]; onClose(): void; apply(ops: DraftOp[]): void; only?: "navigation" }) {
+  const themes = only !== "navigation";
   const [title, setTitle] = useState(doc.chrome.title ?? "");
   const [css, setCss] = useState(doc.chrome.css ?? "");
   const [customising, setCustomising] = useState(false);
@@ -256,8 +258,9 @@ export function AppLookSheet({ appId, doc, page, theme, chromeRemoved, onClose, 
   }
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()} title="App look" path="builder / app look" name="app-look" width={440}>
-      <div className="flex flex-col gap-5" data-app-look-sheet data-app-id={appId}>
+    <Sheet open onOpenChange={(o) => !o && onClose()} title={themes ? "App look" : "Navigation"} path={themes ? "builder / app look" : "builder / navigation"} name={themes ? "app-look" : "app-navigation"} width={440}>
+      <div className="flex flex-col gap-5" data-app-look-sheet={themes ? "" : "navigation"} data-app-id={appId}>
+        {themes && <>
         <section className="flex flex-col gap-2">
           <h3 className="type-title-3">App theme</h3>
           {inline ? (
@@ -281,8 +284,9 @@ export function AppLookSheet({ appId, doc, page, theme, chromeRemoved, onClose, 
           <p className="type-caption text-fg-2">Leave it empty to use the app theme on {page.title}.</p>
           <ThemePicker value={page.theme} onChange={(ref: ThemeRef | undefined) => apply([{ op: "page.update", pageId: page.id, patch: { theme: (ref ?? null) as never } }])} />
         </section>
+        </>}
         <section className="flex flex-col gap-2">
-          <h3 className="type-title-3">Navigation</h3>
+          <h3 className="type-title-3">{themes ? "Navigation" : "Layout"}</h3>
           <ChoiceGroup<ChromeDef["layout"]> label="Navigation" hideLabel name="chrome-layout" value={layout} onChange={(l) => apply([{ op: "chrome.update", patch: { layout: l } }])} options={(["topbar", "sidebar", "tabs", "none"] as ChromeDef["layout"][]).map((l) => ({ value: l, label: l === "topbar" ? "Top bar" : l === "sidebar" ? "Sidebar" : l === "tabs" ? "Tabs" : "None", data: { "chrome-layout": l } }))} />
           <label className="flex flex-col gap-1 type-caption">Title
             <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} onBlur={() => title !== (doc.chrome.title ?? "") && apply([{ op: "chrome.update", patch: { title } }])} data-chrome-title />

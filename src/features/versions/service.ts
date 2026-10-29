@@ -8,7 +8,7 @@ import { audit } from "@/features/audit/write";
 import { isSessionPerson, SESSION_ONLY_MESSAGE } from "@/features/apps/access";
 import { controlLines, cssWarnings, dataReviewWarnings, guestWarnings, validateDocument, type ControlLine } from "@/features/apps/checks";
 import { snapshotTheme } from "@/features/apps/deps";
-import { clone, findNode } from "@/features/apps/doc";
+import { clone, findNode, sameJson } from "@/features/apps/doc";
 import { DraftConflict, FieldError, Invalid } from "@/features/apps/errors";
 import { versionRetention } from "@/features/apps/hooks";
 import { readableDocument } from "@/features/apps/view";
@@ -35,6 +35,8 @@ export type Review = {
   canPublish: boolean;
   restoring?: number;
   discardsDraftChanges?: boolean;
+  /** Round 2 item 8: saved themes changed since the live version (only on the draft review). */
+  themeChanges?: ThemeChange[];
 };
 
 function principalName(p: Principal, names: Map<string, string>): { name: string; agent: boolean } {
@@ -91,6 +93,66 @@ function buildReview(p: Principal, app: App, next: AppDocument, rev: number, cha
     canPublish: isSessionPerson(p) && !problems.some((x) => x.severity === "error"),
     ...extra,
   };
+}
+
+/**
+ * Round 2 item 8 (design v4 Note 3, "Theme after publish"): published apps keep their theme snapshot (4.9),
+ * so a saved theme edited since the last publish is a change the app has not shown yet. One entry per
+ * theme the draft names by id whose saved copy now differs from the live version's snapshot of it.
+ */
+export type ThemeChange = { themeId: string; name: string; pageId: string | null; version: number };
+
+export async function themeChangesSincePublish(app: App, draftDoc?: AppDocument): Promise<ThemeChange[]> {
+  if (app.publishedVersion == null) return [];
+  const live = repo.getVersion(app.id, app.publishedVersion)?.doc;
+  const doc = draftDoc ?? repo.getDraft(app.id)?.doc;
+  if (!live || !doc) return [];
+  const version = app.publishedVersion;
+  const pairs: { ref: ThemeRef | undefined; old: ThemeRef | undefined; pageId: string | null }[] = [
+    { ref: doc.theme, old: live.theme, pageId: null },
+    ...doc.pages.map((pg) => ({ ref: pg.theme, old: live.pages.find((x) => x.id === pg.id)?.theme, pageId: pg.id })),
+  ];
+  const out: ThemeChange[] = [];
+  const seen = new Set<string>();
+  for (const { ref, old, pageId } of pairs) {
+    if (!ref || !old || "inline" in ref || !("inline" in old) || old.inline?.id !== ref.themeId) continue;
+    const key = `${ref.themeId}|${pageId ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const now = await snapshotTheme(ref);
+    if (now.id === ref.themeId && !sameJson(now, old.inline)) out.push({ themeId: ref.themeId, name: now.name, pageId, version });
+  }
+  return out;
+}
+
+/** The review's line for a theme changed since the live version (Note 3). */
+export function themeChangeLine(c: ThemeChange): string {
+  return `Theme ${c.name} changed since v${c.version}: publish to show it to viewers`;
+}
+
+/** The publish review with the theme changes since the live version added to the App group (Note 3). */
+export async function reviewDraftWithThemes(p: Principal, appId: string): Promise<Review> {
+  const review = reviewDraft(p, appId);
+  const app = appForEditor(p, appId);
+  const changes = await themeChangesSincePublish(app);
+  if (!changes.length) return { ...review, themeChanges: changes };
+  const lines = changes.map((c) => ({ kind: "changed" as const, text: themeChangeLine(c) }));
+  const groups = review.groups[0]?.pageId === null ? [{ ...review.groups[0], lines: [...review.groups[0].lines, ...lines] }, ...review.groups.slice(1)] : [{ pageId: null, title: "App", lines }, ...review.groups];
+  return { ...review, groups, themeChanges: changes };
+}
+
+/**
+ * For settings (Note 3, "Used by N published apps"): the published apps that show an older copy of this
+ * saved theme than the one saved now, each with the address of its publish review. Pass the apps the
+ * person may edit; nothing here checks access.
+ */
+export async function publishedAppsBehindTheme(themeId: string, apps: readonly App[]): Promise<{ appId: string; slug: string; name: string; version: number; reviewHref: string }[]> {
+  const out: { appId: string; slug: string; name: string; version: number; reviewHref: string }[] = [];
+  for (const app of apps) {
+    const changes = await themeChangesSincePublish(app);
+    if (changes.some((c) => c.themeId === themeId)) out.push({ appId: app.id, slug: app.slug, name: app.name, version: app.publishedVersion!, reviewHref: `/build/${app.slug}?review=1` });
+  }
+  return out;
 }
 
 /** The publish review sheet for the draft. Anyone who can edit may read it; only a person may publish. */

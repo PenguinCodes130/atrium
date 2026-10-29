@@ -1,6 +1,6 @@
 // Catalogue metadata (architecture v3 section 4.4, spec 3.1): everything in a ComponentDef except
 // the React component, so the server, validate and agent tools can read it without rendering.
-import type { ComponentCategory, ComponentNode, ComponentState, ComponentType, DataShapeKind, PropValue } from "@/core/contracts";
+import type { ComponentCategory, ComponentNode, ComponentSizing, ComponentState, ComponentType, DataShapeKind, PropValue } from "@/core/contracts";
 import { DEFAULT_SEARCH_URL, propsSchemas, type BuiltInType } from "./schemas";
 
 export type ComponentMeta = {
@@ -196,6 +196,34 @@ export const META: Record<BuiltInType, ComponentMeta> = {
     },
   },
 };
+
+/**
+ * How each built-in type meets its box (architecture A11.2). `fit`: the box grows to its content (the
+ * builder writes the grown height into the slot; the viewer never clips). `scale`: the content scales to
+ * the box. `scroll`: a scrolling kind, the only kind whose root may scroll its own content. A group whose
+ * height the user kept (`fixedHeight`) is `reflow` (sizingOf). Grid, tabs and the HTML block are not
+ * named in A11.2 and take the default, `fit`.
+ */
+export const SIZING: Record<BuiltInType, ComponentSizing> = {
+  grid: "fit", stack: "fit", card: "fit", tabs: "fit", section: "fit", repeat: "scroll",
+  stat: "fit", chart: "scale", table: "scroll", list: "scroll", status: "fit", gauge: "fit", progress: "fit",
+  heading: "fit", text: "fit", image: "scale", video: "scale", icon: "scale", link: "fit", divider: "scale", spacer: "scale", clock: "fit",
+  button: "fit", toggle: "fit", slider: "fit", select: "fit",
+  html: "fit",
+  "service-tile": "fit", group: "fit", "resource-bar": "fit", bookmarks: "fit",
+};
+
+/**
+ * A node's sizing kind (A11.2): its type's, with a kept-height group reflowing; other types are fit.
+ * Wave 2.10a round 3 (recheck H1): a repeat whose template is a card ("Card for each") is fit, not a
+ * scrolling list: its box is the cards it holds, so the builder grows it to them and the viewer grows its
+ * rows when the cards reflow taller at a wider window. A repeat of plain rows still scrolls.
+ */
+export function sizingOf(node: Pick<ComponentNode, "type" | "props"> & { children?: readonly Pick<ComponentNode, "type">[] }): ComponentSizing {
+  if (node.type === "group" && node.props?.fixedHeight === true) return "reflow";
+  if (node.type === "repeat" && node.children?.[0]?.type === "card") return "fit";
+  return Object.prototype.hasOwnProperty.call(SIZING, node.type) ? SIZING[node.type as BuiltInType] : "fit";
+}
 
 export function metaFor(type: ComponentType): ComponentMeta | undefined {
   return Object.prototype.hasOwnProperty.call(META, type) ? META[type as BuiltInType] : undefined;

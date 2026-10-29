@@ -37,6 +37,17 @@ async function create(body: Record<string, unknown>): Promise<{ id: string; slug
   if (!r.ok()) throw new Error(`create failed: ${await r.text()}`);
   return (await r.json()).app;
 }
+/** Waits until the draft has not changed for a while (the open growth, round 2 item 1, has landed). */
+async function settledDraft(id: string, quietMs = 1500, maxMs = 12_000) {
+  const t0 = Date.now();
+  let rev = (await draftOf(id)).rev;
+  let since = Date.now();
+  while (Date.now() - t0 < maxMs && Date.now() - since < quietMs) {
+    await new Promise((r) => setTimeout(r, 150));
+    const now = (await draftOf(id)).rev;
+    if (now !== rev) { rev = now; since = Date.now(); }
+  }
+}
 async function openBuilder(page: Page, slug: string) {
   await page.goto(`/build/${slug}`);
   await expect(page.locator("[data-builder-bar]")).toBeVisible();
@@ -332,12 +343,20 @@ test("item 7: Look in the builder bar; Customise makes an app-owned copy in 4 ac
 test("item 8: after a publish, one label edit gives exactly one review line and no phantom theme change", async ({ browser }) => {
   const app = await create({ name: "R2 blank", slug: "r2-blank" });
   const d = await draftOf(app.id);
-  await ops(app.id, [{ op: "node.add", parentId: d.doc.pages[0]!.root.id, node: { id: "c_r2diskstat", type: "stat", props: { label: "Disk free" }, slot: { x: 0, y: 0, w: 3, h: 12 } } }]);
-  await publish(app.id);
-  await ops(app.id, [{ op: "node.update", nodeId: "c_r2diskstat", patch: { props: { label: "Disk free (NAS)" } } }]);
+  await ops(app.id, [{ op: "node.add", parentId: d.doc.pages[0]!.root.id, node: { id: "c_r2diskstat", type: "stat", props: { label: "Disk free" }, slot: { x: 0, y: 0, w: 6, h: 12 } } }]);
   const ctx = await contextFor(browser, OWNER, { variant: LIGHT });
   const page = await ctx.newPage();
+  // Round 2 item 1: opening the builder grows a box drawn too small for its content (a "Moved" line of
+  // its own). The person opens the app once before the first publish, so that growth is in v1 and the
+  // review after the label edit holds only the edit. The box is wide enough that the longer label does not
+  // wrap (a wrap would grow the box on open, a real second line).
   await openBuilder(page, app.slug);
+  await settledDraft(app.id);
+  await publish(app.id);
+  await ops(app.id, [{ op: "node.update", nodeId: "c_r2diskstat", patch: { props: { label: "Disk free (NAS)" } } }]);
+  await page.reload();
+  await expect(page.locator("[data-canvas-root] [data-atrium-canvas]")).toBeVisible();
+  await settledDraft(app.id);
   await page.locator("[data-publish]").click();
   await expect(page.locator("[data-review]")).toBeVisible();
   await expect(page.locator("[data-review] [data-diff-line]")).toHaveCount(1);

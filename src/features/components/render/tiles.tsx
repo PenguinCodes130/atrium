@@ -3,7 +3,7 @@
 // the group, the resource bar and bookmarks. They read only --theme-* tokens (components.css), so each
 // app theme decides their look. Status is never colour alone: the badge says it in words. The tile's
 // integrationId is a builder reference and is never rendered.
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { ComponentNode, RenderContext, ValueFormat } from "@/core/contracts";
 import { transitionFor, useReducedMotion } from "@/features/shell";
@@ -55,6 +55,9 @@ export function ServiceTileView({ node, resolved, ctx }: P) {
   const stats = (Array.isArray(resolved.stats) ? resolved.stats : []).slice(0, 4) as { label?: unknown; value?: unknown; format?: unknown }[];
   const loading = status.kind === "loading";
   const icon = typeof resolved.icon === "string" && resolved.icon ? resolved.icon : "server";
+  // Round 2 item 7: a tap on a Not checked badge shows its reason over the tile (and does not open it).
+  const unchecked = badge?.state === "unchecked";
+  const [reasonOpen, setReasonOpen] = useState(false);
   const body = (
     <>
       <div className="atr-tile-head">
@@ -68,9 +71,25 @@ export function ServiceTileView({ node, resolved, ctx }: P) {
         <span className="atr-tile-side">
           <StateMarks status={status} />
           {badge ? (
-            <span data-slot="badge" className="atr-badge" data-tone={badge.tone} data-badge-state={badge.state} title={badge.detail ? `${badge.word}: ${badge.detail}` : badge.word}>
+            <span
+              data-slot="badge"
+              className="atr-badge"
+              data-tone={badge.tone}
+              data-badge-state={badge.state}
+              title={badge.detail ? `${badge.word}: ${badge.detail}` : badge.word}
+              onClick={
+                unchecked
+                  ? (e) => {
+                      // In the builder the click still selects the tile; for viewers it only shows the reason.
+                      e.preventDefault();
+                      if (!edit) e.stopPropagation();
+                      setReasonOpen((o) => !o);
+                    }
+                  : undefined
+              }
+            >
               <span aria-hidden className="atr-badge-dot" />
-              <span aria-hidden>{badge.word}</span>
+              <span aria-hidden className="atr-badge-word">{badge.word}</span>
               <span className="sr-only">{badge.spoken}</span>
             </span>
           ) : loading && node.props.status !== undefined ? (
@@ -92,7 +111,7 @@ export function ServiceTileView({ node, resolved, ctx }: P) {
                   {empty ? <span className={loading ? "atr-placeholder" : "atr-dash"} aria-label={loading ? "loading" : "no value"}>{loading ? "" : "–"}</span> : (
                     <>
                       {t.text}
-                      {t.unit ? <small>{t.unit === "%" ? "%" : ` ${t.unit}`}</small> : null}
+                      {t.unit ? <small>{t.unit === "%" ? "%" : `\u00a0${t.unit}`}</small> : null}
                     </>
                   )}
                 </dd>
@@ -102,10 +121,15 @@ export function ServiceTileView({ node, resolved, ctx }: P) {
           })}
         </dl>
       ) : null}
+      {unchecked && badge.detail ? (
+        <span className="atr-tile-reason" data-tile-reason aria-hidden>
+          {`${badge.word}: ${badge.detail}`}
+        </span>
+      ) : null}
     </>
   );
   const cls = "atr-tile canvas-surface";
-  const common = { "data-slot": "root", "data-down": down ? "" : undefined, "data-status": status.kind } as const;
+  const common = { "data-slot": "root", "data-down": down ? "" : undefined, "data-status": status.kind, "data-reason-open": unchecked && reasonOpen ? "" : undefined } as const;
   if (safe) {
     return (
       <a
@@ -132,19 +156,86 @@ export function ServiceTileView({ node, resolved, ctx }: P) {
 
 // ---------- group ----------
 
+/** The narrowest a child gets when a kept-height group adds columns to fit (B1 reflow). */
+export const GROUP_MIN_ITEM_PX = 120;
+
+/**
+ * B1 (A11.2 reflow): a group that keeps its height and whose children do not fit first adds columns (up
+ * to 6, while each stays at least GROUP_MIN_ITEM_PX wide), then shows fewer children and a "+N more" line
+ * in their place. It never scrolls. Measured after each render, before paint, so no step is ever seen;
+ * a change of the box's size starts over from the chosen columns.
+ */
+function useGroupReflow(on: boolean, cols: number, count: number, open: boolean) {
+  const rootRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<{ cols: number; shown: number; capped?: boolean } | null>(null);
+  const [box, setBox] = useState("");
+  const key = `${on}|${cols}|${count}|${open}|${box}`;
+  const [seen, setSeen] = useState(key);
+  if (seen !== key) {
+    setSeen(key);
+    setFit(null);
+  }
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!on || !el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setBox(`${Math.round(el.clientWidth)}x${Math.round(el.clientHeight)}`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [on]);
+  useLayoutEffect(() => {
+    const root = rootRef.current, body = bodyRef.current;
+    if (!on || !open || !root || !body || seen !== key) return;
+    const cur = fit ?? { cols, shown: count };
+    // Round 2 item 6: a column that cuts a tile's name is taken back, and no more are added.
+    if (cur.cols > cols && !cur.capped && namesCut(body)) {
+      setFit({ ...cur, cols: cur.cols - 1, capped: true });
+      return;
+    }
+    const items = body.children;
+    const last = items.length ? items[items.length - 1]!.getBoundingClientRect().bottom : body.getBoundingClientRect().top;
+    const over = last - root.getBoundingClientRect().bottom > 0.5;
+    if (!over) return;
+    const gap = parseFloat(getComputedStyle(body).columnGap) || 0;
+    const most = Math.max(cols, Math.min(6, Math.floor((body.clientWidth + gap) / (GROUP_MIN_ITEM_PX + gap))));
+    if (!cur.capped && cur.cols < most && cur.shown === count) setFit({ ...cur, cols: cur.cols + 1 });
+    else if (cur.shown > 0) setFit({ ...cur, shown: cur.shown - 1 });
+  });
+  return { rootRef, bodyRef, cols: fit?.cols ?? cols, shown: on ? (fit?.shown ?? count) : count };
+}
+
+/**
+ * True when a column is too narrow for a tile's name: the name is cut (ellipsis or its two-line clamp), or
+ * it had to wrap, which makes every tile in the row taller (so a kept-height group would show fewer).
+ */
+function namesCut(body: Element): boolean {
+  for (const n of Array.from(body.querySelectorAll<HTMLElement>(".atr-tile-name"))) {
+    const line = parseFloat(getComputedStyle(n).lineHeight) || 20;
+    if (n.scrollWidth > n.clientWidth + 1 || n.scrollHeight > n.clientHeight + 1 || n.clientHeight > line * 1.5) return true;
+  }
+  return false;
+}
+
 export function GroupView({ node, resolved, ctx }: P) {
   const env = useNodeEnv();
   const reduced = useReducedMotion();
   const title = str(resolved.title);
-  const cols = env.device === "mobile" ? 1 : Math.min(6, Math.max(1, typeof resolved.columns === "number" ? Math.round(resolved.columns) : 4));
+  const chosen = env.device === "mobile" ? 1 : Math.min(6, Math.max(1, typeof resolved.columns === "number" ? Math.round(resolved.columns) : 4));
   const collapsible = resolved.collapsible === true;
   const [open, setOpen] = useState(true);
   const bodyId = useId();
   const edit = ctx.mode === "edit";
-  const children = node.children ?? [];
+  const all = node.children ?? [];
   const shown = !collapsible || open;
+  // Phones stack the group at its content height, so only desktop boxes keep a height (A11.2 reflow).
+  const keep = resolved.fixedHeight === true && env.device !== "mobile";
+  const flow = useGroupReflow(keep, chosen, all.length, shown);
+  const cols = flow.cols;
+  const children = all.slice(0, flow.shown);
+  const more = all.length - children.length;
+  const moreNames = all.slice(children.length).map((c) => str(c.props.name ?? c.name ?? "")).filter(Boolean);
   return (
-    <section data-slot="root" className="atr-group" data-columns={cols} aria-label={title || undefined}>
+    <section ref={flow.rootRef} data-slot="root" className="atr-group" data-columns={cols} data-chosen-columns={keep && cols !== chosen ? chosen : undefined} data-reflow={keep ? "" : undefined} aria-label={title || undefined}>
       {title || collapsible ? (
         <header className="atr-group-head">
           {title ? <h2 data-slot="title" className="atr-group-title">{title}</h2> : <span />}
@@ -172,6 +263,7 @@ export function GroupView({ node, resolved, ctx }: P) {
         {shown ? (
           <motion.div
             key="body"
+            ref={flow.bodyRef}
             id={bodyId}
             data-slot="body"
             className="atr-group-body"
@@ -187,7 +279,12 @@ export function GroupView({ node, resolved, ctx }: P) {
                 {env.renderChild(c)}
               </div>
             ))}
-            {!children.length && edit ? <p className="atr-group-empty" data-group-empty>Drag tiles here</p> : null}
+            {more > 0 ? (
+              <p className="atr-group-more" data-group-more={more} title={moreNames.length ? moreNames.join(", ") : undefined}>
+                +{more} more
+              </p>
+            ) : null}
+            {!all.length && edit ? <p className="atr-group-empty" data-group-empty>Drag tiles here</p> : null}
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -264,7 +361,9 @@ export function ResourceBarView({ node, resolved, ctx }: P) {
             </li>
           );
         })}
-        {sample ? <li className="atr-sample-note" data-bar-sample>Sample readings: add your own in the inspector</li> : null}
+        {sample ? <li className="atr-sample-note" data-bar-sample>Sample readings, not published: add your own in the inspector</li> : null}
+        {/* Round 2 low: viewers of a bar with no readings see why it is short, not an empty card. */}
+        {!edit && !items.length ? <li className="atr-sample-note" data-bar-empty>No readings yet</li> : null}
       </ul>
       {resolved.clock === true || resolved.search === true ? (
         <div className="atr-bar-end">

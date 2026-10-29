@@ -1,6 +1,7 @@
 "use client";
 // Data components (spec 3.1.3): stat, table, list, status, gauge and progress. Each shows the data
 // states (states.tsx). Status never relies on colour alone: shape and word as well.
+import { useEffect, useRef } from "react";
 import type { ComponentNode, RenderContext, ShapedData } from "@/core/contracts";
 import { text as textOf } from "../bindings";
 import { useNodeEnv } from "./context";
@@ -9,6 +10,8 @@ import { NodeTitleBar } from "./titlebar";
 import { nodeSources } from "./resolve";
 import { shapeMismatch } from "./rollup";
 import { formatParts, templateFormat } from "./format";
+import { isNotChecked } from "./tiles-logic";
+import { matchColumns, reportTableOverflow } from "./measure";
 import type { PageScope } from "./resolve";
 import type { ValueFormat } from "@/core/contracts";
 
@@ -97,7 +100,7 @@ export function StatView({ resolved }: P) {
     <Frame label={label} showUpdated={resolved.showUpdated === true} data={resolved.value === undefined ? resolved.data : undefined}>
       <div className="atr-stat" data-level={lv}>
         <div className="atr-stat-line">
-          <span data-slot="value" className="atr-stat-value" aria-hidden {...(n === null && valueText ? { "data-text-value": "", title: valueText, style: { ["--atr-chars" as string]: Math.max(3, valueText.length) } } : {})}>
+          <span data-slot="value" className="atr-stat-value" aria-hidden {...(n === null && valueText ? { "data-text-value": "", title: valueText, style: { ["--atr-chars" as string]: Math.max(3, valueText.length) } } : n !== null ? { "data-num-value": "", style: { ["--atr-chars" as string]: Math.max(3, finalText.length), ["--atr-unit-w" as string]: unit ? `${8 + unit.length * 11}px` : "0px" } } : {})}>
             {valueText}
           </span>
           <span className="sr-only">{`${finalText}${unit ? ` ${unit}` : ""}${lv !== "ok" ? `, ${lv === "bad" ? "bad" : "warning"}` : ""}`}</span>
@@ -151,7 +154,8 @@ function Cell({ type, value, format }: { type: string; value: unknown; format?: 
     const n = num(value);
     if (n !== null && format && format !== "number") {
       const p = formatParts(n, format);
-      return <span className="atr-num">{p.unit ? `${p.text} ${p.unit}` : p.text}</span>;
+      // A no-break space: the number and its unit never part (round 2 low).
+      return <span className="atr-num">{p.unit ? `${p.text}\u00a0${p.unit}` : p.text}</span>;
     }
     if (type !== "number") return <span>{str(value)}</span>;
     return <span className="atr-num">{n === null ? str(value) : formatNumber(n)}</span>;
@@ -163,16 +167,39 @@ function Cell({ type, value, format }: { type: string; value: unknown; format?: 
   return <span>{str(value)}</span>;
 }
 
-export function TableView({ resolved }: P) {
+export function TableView({ resolved, ctx }: P) {
   const data = shaped(resolved.data, "table");
-  const keep = Array.isArray(resolved.columns) && resolved.columns.length ? (resolved.columns as string[]) : null;
-  const cols = data ? (keep ? keep.map((k) => data.columns.find((c) => c.key === k)).filter((c): c is NonNullable<typeof c> => !!c) : data.columns) : [];
+  const keep = Array.isArray(resolved.columns) && resolved.columns.length ? (resolved.columns as unknown[]).map(str) : null;
+  // Round 2 item 15: Columns takes the headers people see ("Disk (/)") as well as the keys, any case.
+  // Names that match nothing are listed in the builder; when nothing matches, every column shows.
+  const picked = data && keep ? matchColumns(data.columns, keep) : null;
+  const cols = data ? (picked && picked.columns.length ? picked.columns : data.columns) : [];
+  const unknown = picked?.unknown ?? [];
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // Item 14 (components half): the wrap says how much it hides sideways (data-overflow-x, px) and how
+  // many columns are cut (data-hidden-columns), for the builder's Fit; measureTableOverflow reads it live.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    reportTableOverflow(el);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => reportTableOverflow(el));
+    ro.observe(el);
+    const table = el.firstElementChild;
+    if (table) ro.observe(table);
+    return () => ro.disconnect();
+  }, [cols.length]);
   const max = num(resolved.maxRows) ?? 20;
   const rows = data ? data.rows.slice(0, max) : [];
   const total = data ? (typeof data.total === "number" ? data.total : data.rows.length) : 0;
   return (
     <Frame showUpdated={resolved.showUpdated === true} flush data={resolved.data}>
-      <div className="atr-table-wrap">
+      {ctx.mode === "edit" && unknown.length ? (
+        <p className="atr-table-note" data-columns-unknown={unknown.join(",")}>
+          {`No column called ${unknown.map((u) => `"${u}"`).join(", ")}. ${picked && picked.columns.length ? "" : "Showing every column. "}The columns are: ${data!.columns.map((c) => c.label || c.key).join(", ")}.`}
+        </p>
+      ) : null}
+      <div className="atr-table-wrap" ref={wrapRef}>
         <table className="atr-table">
           <thead data-slot="header">
             <tr>
@@ -254,7 +281,9 @@ export function StatusView({ resolved }: P) {
     <Frame showUpdated={resolved.showUpdated === true} data={resolved.data}>
       <ul className="atr-status" data-layout={layout}>
         {items.map((it, i) => {
-          const state = ["up", "down", "warn"].includes(it.state) ? it.state : "unknown";
+          // Round 2 item 7: an address Atrium refused to check is not down; it reads "not checked".
+          const unchecked = isNotChecked(it.detail);
+          const state = unchecked ? "unknown" : ["up", "down", "warn"].includes(it.state) ? it.state : "unknown";
           const label = <span data-slot="label">{it.label}</span>;
           return (
             <li key={i} data-slot="item" data-state={state}>
@@ -266,7 +295,7 @@ export function StatusView({ resolved }: P) {
               ) : (
                 label
               )}
-              <span className="atr-state-word">{STATE_WORD[state]}</span>
+              <span className="atr-state-word">{unchecked ? "not checked" : STATE_WORD[state]}</span>
               {it.detail ? <span className="atr-status-detail">{it.detail}</span> : null}
             </li>
           );
