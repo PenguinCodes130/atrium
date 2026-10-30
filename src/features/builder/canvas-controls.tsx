@@ -41,7 +41,7 @@ export const isPreviewW = (v: unknown): v is PreviewW => v === "fit" || v === 12
 
 const seg = "h-8 px-2 type-label touch:h-11";
 
-/** The Snap switch: on by default; Ctrl or Cmd while dragging flips it for that one move. */
+/** The Snap switch: on by default, meaning smart guides (F7, A11.7); Alt or Option held turns the pull off for one move. */
 export function SnapSwitch({ on, onChange }: { on: boolean; onChange(v: boolean): void }) {
   return (
     <button
@@ -49,7 +49,7 @@ export function SnapSwitch({ on, onChange }: { on: boolean; onChange(v: boolean)
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      title={on ? "Snapping to the grid. Hold Ctrl (Cmd on a Mac) while dragging to place freely" : "Free placement with alignment guides. Hold Ctrl (Cmd on a Mac) while dragging to snap"}
+      title={on ? "Widgets pull to other widgets' edges and centres, equal gaps and the columns. Hold Alt (Option on a Mac) while dragging to place freely" : "Free placement, nothing pulls. Turn Snap on for guides"}
       className={`inline-flex h-8 flex-none items-center gap-1.5 border border-line-strong px-2 type-label touch:h-11 ${on ? "bg-fg text-bg" : "text-fg-2 hover:bg-bg-sunk"}`}
       data-snap={on ? "on" : "off"}
     >

@@ -56,12 +56,13 @@ export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h:
   // padding (ICON_HUG_PX square), at most 2 columns. Measured on the 1280px builder in the default
   // theme (columns 28.7px, gap 24px, 6px hard shadow): 1.375 columns by 10 rows is 48 by 50px. Other
   // canvas widths and gaps change a column's px; hugSlot gives the exact slot for a measured canvas.
-  icon: { slot: { w: 1.375, h: 10 }, props: { fill: true } },
+  // F6: new icons carry a Scale (50% of the box) instead of a px size.
+  icon: { slot: { w: 1.375, h: 10 }, props: { scale: 50 } },
 };
 
 /** The square an inserted icon's box hugs (B8): the 24px icon at half the box, so 12px around it. */
 export const ICON_HUG_PX = 48;
-/** The share of its box a filling icon draws at (components.css .atr-icon[data-fill]). */
+/** The share of its box a new icon draws at (its Scale, render/icon-scale.ts SCALE_DEFAULT). */
 export const ICON_FILL_SHARE = 0.5;
 
 /**

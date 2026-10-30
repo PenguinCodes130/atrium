@@ -16,18 +16,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Theme, ThemeTokens } from "@/core/contracts";
-import { Button, Switch, THEME_FONTS, Window, contrastReport, isThemeColor, isThemeGradient, toast } from "@/features/shell";
+import { Button, Switch, THEME_FONTS, Window, contrastReport, isThemeColor, isThemeGradient, toast, useReducedMotion } from "@/features/shell";
 import { NUMBER_FIELDS, numberFieldError } from "@/features/themes/fields";
 import { makeDarkSet } from "@/features/themes/dark-set";
-import { CONTROL_RADIUS_MAX_BY_DENSITY, DENSITY_K, PILL_RADIUS, controlRadiusOf, resolveTokens, type Density } from "@/features/shell/theme";
+import { CONTROL_RADIUS_MAX_BY_DENSITY, DENSITY_K, PILL_RADIUS, controlRadiusOf, fontStack, resolveTokens, type Density } from "@/features/shell/theme";
 import { ThemeSample } from "@/features/themes/ui/theme-sample";
 import { refreshThemePicker } from "@/features/themes/ui/theme-picker";
 import { UploadField } from "@/features/uploads/ui/upload-field";
 import { api, errorText, type ApiError } from "./client-api";
-import { Checkbox, ChoiceGroup, Fold, INPUT_CLASS, LABEL_CLASS, MONO_INPUT_CLASS, RangeField, SelectMenu } from "./controls";
+import { Checkbox, ChoiceGroup, Fold, INPUT_CLASS, LABEL_CLASS, MONO_INPUT_CLASS, RangeField } from "./controls";
 import { useImageContrast } from "./image-contrast";
 import { formatGradient, parseGradient } from "./gradient";
 import { alphaOf, fromPicker, swatchHex } from "./colour";
+import { BorderSample, DensitySample, EntranceSample, FontSelect, MaterialSample, ModeSample, NavStyleSample, NumbersSample, Sampled, ShadowSample, WallpaperSample, WeightSample } from "./theme-samples";
 import { UsedBy } from "./used-by";
 import { UseOnApp } from "./use-on-app";
 
@@ -224,12 +225,18 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
     />
   );
   const num = (path: string) => <NumberField key={path} path={path} value={Number(getPath(t, path))} error={fieldErr[path]} onValid={(v) => set(`tokens.${path}`, v)} onError={(m) => err(path, m)} />;
-  const choice = <T extends string | number>(path: string, label: string, options: readonly T[]) => (
-    <ChoiceField key={path} label={label} value={getPath(t, path) as T} options={options} onChange={(v) => set(`tokens.${path}`, v)} name={path} />
-  );
+  // F10: each family drawn in itself, grouped by kind; the mono field lists the mono families only.
   const family = (path: string, label: string) => (
-    <SelectMenu key={path} label={label} name={path} value={String(getPath(t, path))} onChange={(v) => set(`tokens.${path}`, v)} options={[...THEME_FONTS, ...uploadedFamilies].map((f) => ({ value: f, label: f }))} />
+    <FontSelect key={path} label={label} name={path} value={String(getPath(t, path))} onChange={(v) => set(`tokens.${path}`, v)} uploaded={uploadedFamilies} monoOnly={path === "type.mono"} />
   );
+  // F10 sweep: a choice whose every option shows a small drawn sample.
+  const sampled = <T extends string | number>(path: string, label: string, options: readonly T[], labels: Partial<Record<string, string>> | undefined, sample: (v: T) => ReactNode, onChange?: (v: T) => void) => (
+    <ChoiceField key={path} label={label} value={getPath(t, path) as T} options={options} labels={labels} sample={sample} onChange={onChange ?? ((v) => set(`tokens.${path}`, v))} name={path} />
+  );
+  const headingFamily = fontStack(t.type.display, uploadedFamilies, "display");
+  // F11: Play re-mounts the preview's sample widgets so the chosen entrance runs on them once.
+  const [playKey, setPlayKey] = useState(0);
+  const reducedMotion = useReducedMotion();
 
   // Settings r3 (gauntlet w2-r2 item 7): the inspector's fold, a chevron on `pop` and the body on `sheet`.
   const group = (key: GroupKey, title: string, children: ReactNode) => (
@@ -259,7 +266,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
               <input value={theme.name} maxLength={80} onChange={(e) => { set("name", e.target.value); err("name", e.target.value.trim() ? null : "Give the theme a name."); }} className={INPUT_CLASS} data-field="name" aria-invalid={!!fieldErr.name} />
               {fieldErr.name && <span role="alert" className="type-caption text-bad">{fieldErr.name}</span>}
             </label>
-            <ChoiceField label="Mode" name="mode" value={theme.mode} options={["light", "dark", "auto"] as const} labels={{ light: "Light", dark: "Dark", auto: "Auto" }} onChange={(v) => set("mode", v)} />
+            <ChoiceField label="Mode" name="mode" value={theme.mode} options={["light", "dark", "auto"] as const} labels={{ light: "Light", dark: "Dark", auto: "Auto" }} sample={(m) => <ModeSample theme={theme} mode={m} />} onChange={(v) => set("mode", v)} />
             {colour("color.accent", "Accent")}
             <WallpaperFields w={t.wallpaper} onChange={(w) => set("tokens.wallpaper", w)} error={fieldErr["wallpaper.value"]} onError={(m) => err("wallpaper.value", m)} />
             {!chromeApart && <p className="type-caption text-fg-2 sm:col-span-2" data-chrome-follows>The nav's active item follows the accent. Set it apart under Nav chrome.</p>}
@@ -292,12 +299,10 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
         <div className="flex flex-col gap-3" data-more key={`more-${editing}`}>
           <h2 className={LABEL_CLASS}>More</h2>
           {group("surfaces", "Surfaces", <>
-            {choice("surface.material", "Material", ["solid", "glass"] as const)}
-            {num("surface.opacity")}
-            {num("surface.blurPx")}
-            {choice("surface.border.widthPx", "Border width (px)", [0, 1, 2] as const)}
+            <MaterialField which="surface" t={t} set={set} num={num} />
+            {sampled("surface.border.widthPx", "Border width (px)", [0, 1, 2] as const, undefined, (w) => <BorderSample width={w} />)}
             {colour("surface.border.color", "Border colour")}
-            {choice("surface.shadow", "Shadow", ["none", "soft", "hard"] as const)}
+            {sampled("surface.shadow", "Shadow", ["none", "soft", "hard"] as const, { none: "None", soft: "Soft", hard: "Hard" }, (v) => <ShadowSample shadow={v} />)}
             {num("surface.shadowOffsetPx")}
             <Switch label="Window title bars on cards" checked={t.surface.titleBars} onCheckedChange={(v) => set("tokens.surface.titleBars", v)} />
           </>)}
@@ -318,21 +323,30 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             {family("type.body", "Body font")}
             {family("type.mono", "Mono font")}
             {num("type.scale")}
-            {choice("type.numbers", "Numbers", ["tabular", "proportional"] as const)}
+            {sampled("type.numbers", "Numbers", ["tabular", "proportional"] as const, { tabular: "Tabular", proportional: "Proportional" }, (v) => <NumbersSample numbers={v} />)}
             {num("type.headingTracking")}
-            {choice("type.headingWeight", "Heading weight", [400, 500, 600, 700, 800] as const)}
+            {sampled("type.headingWeight", "Heading weight", [400, 500, 600, 700, 800] as const, undefined, (v) => <WeightSample weight={v} family={headingFamily} />)}
           </>)}
           {group("shape", "Shape and space", <>
             {num("shape.radiusPx")}
             <ControlRadiusField key={`shape.controlRadiusPx-${t.space.density}`} density={t.space.density} value={t.shape.controlRadiusPx} error={fieldErr["shape.controlRadiusPx"]} onValid={(v) => set("tokens.shape.controlRadiusPx", v)} onError={(m) => err("shape.controlRadiusPx", m)} />
             <NumberField key="space.gapPx" path="space.gapPx" value={t.space.gapPx} error={fieldErr["space.gapPx"]} onValid={(v) => set("tokens.space.gapPx", v)} onError={(m) => err("space.gapPx", m)} inForce={inForce("gap", t)} />
             <NumberField key="space.padPx" path="space.padPx" value={t.space.padPx} error={fieldErr["space.padPx"]} onValid={(v) => set("tokens.space.padPx", v)} onError={(m) => err("space.padPx", m)} inForce={inForce("pad", t)} />
-            <ChoiceField key="space.density" label="Density" name="space.density" value={t.space.density} options={["comfortable", "compact"] as const} labels={{ comfortable: "Comfortable", compact: "Compact" }} onChange={(v) => setDensity(v)} />
+            {sampled("space.density", "Density", ["comfortable", "compact"] as const, { comfortable: "Comfortable", compact: "Compact" }, (v) => <DensitySample density={v} />, (v) => setDensity(v))}
             <p className="type-caption text-fg-2 sm:col-span-2" data-density-hint>Compact tightens card padding, gaps, title bars, nav items and service tiles to two thirds and makes buttons 32 px tall. Touch screens keep 44 px controls. Boxes sized at Comfortable keep their height until you use Fit in the builder.</p>
           </>)}
           {group("motion", "Motion", <>
-            {choice("motion.enter", "Entrance", ["none", "fade", "rise", "sweep"] as const)}
+            {sampled("motion.enter", "Entrance", ["none", "fade", "rise", "sweep"] as const, { none: "None", fade: "Fade", rise: "Rise", sweep: "Sweep" }, (v) => <EntranceSample enter={v} />)}
             <Switch label="Light drift" checked={t.motion.lightDrift} onCheckedChange={(v) => set("tokens.motion.lightDrift", v)} />
+            {/* F11: Play runs the entrance on the preview's sample widgets; reduced motion plays the reduced version (none) and says so. */}
+            <div className="flex flex-col gap-1.5 sm:col-span-2" data-entrance-play>
+              <div><Button variant="secondary" onClick={() => { setPlayKey((k) => k + 1); if (docked === false && typeof window !== "undefined" && window.matchMedia("(max-width: 1023.98px)").matches) setDocked(true); }} data-play-entrance>Play entrance</Button></div>
+              {reducedMotion ? (
+                <p className="type-caption text-fg-2" data-entrance-reduced-note>Reduced motion is on, so Play shows what you see: widgets appear in place, without moving or fading. Viewers with reduced motion see the same.</p>
+              ) : (
+                <p className="type-caption text-fg-2">Runs {t.motion.enter === "none" ? "no entrance (widgets appear at once)" : `the ${t.motion.enter} entrance`} on the preview, as viewers see it when a page opens.</p>
+              )}
+            </div>
           </>)}
           {group("chrome", "Nav chrome", <>
             {colour("chrome.background", "Background")}
@@ -348,7 +362,8 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             ) : (
               <p className="type-caption text-fg-2 sm:col-span-2" data-chrome-following>Active fill <span className="font-mono text-fg">{t.chrome.activeFill}</span> and text <span className="font-mono text-fg">{t.chrome.activeText}</span>, following the accent.</p>
             )}
-            <ChoiceField key="chrome.style" label="Item style" name="chrome.style" value={t.chrome.style} options={["bar", "boxed-tabs", "pills", "underline"] as const} labels={{ bar: "Bar", "boxed-tabs": "Boxed tabs", pills: "Pills", underline: "Underline" }} onChange={(v) => set("tokens.chrome.style", v)} />
+            {sampled("chrome.style", "Item style", ["bar", "boxed-tabs", "pills", "underline"] as const, { bar: "Bar", "boxed-tabs": "Boxed tabs", pills: "Pills", underline: "Underline" }, (v) => <NavStyleSample style={v} />)}
+            <MaterialField which="chrome" t={t} set={set} num={num} />
           </>)}
           {group("dark", "Dark set", <>
             {hasDark ? (
@@ -403,14 +418,14 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
                 {(["light", "dark"] as const).map((sc) => (
                   <figure key={sc} className="m-0 flex min-w-0 flex-col gap-1.5">
                     <figcaption className={LABEL_CLASS}>{sc === "light" ? "Light viewers" : "Dark viewers"}</figcaption>
-                    <ThemeSample theme={theme} scheme={sc} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} />
+                    <ThemeSample theme={theme} scheme={sc} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} play={playKey} />
                   </figure>
                 ))}
               </div>
             </div>
           ) : (
             <div className="mt-3">
-              <ThemeSample theme={theme} scheme={previewMode} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} />
+              <ThemeSample theme={theme} scheme={previewMode} scopedCss={savedCss} scope={`s${id.replace(/[^a-z0-9]/g, "")}`} play={playKey} />
             </div>
           )}
           {!hasDark && theme.mode !== "dark" && (
@@ -569,8 +584,68 @@ function ControlRadiusField({ value, density, error, onValid, onError }: { value
   );
 }
 
-function ChoiceField<T extends string | number>({ label, name, value, options, labels, onChange }: { label: string; name: string; value: T; options: readonly T[]; labels?: Partial<Record<string, string>>; onChange(v: T): void }) {
-  return <ChoiceGroup<T> label={label} name={name} value={value} onChange={onChange} options={options.map((o) => ({ value: o, label: labels?.[String(o)] ?? String(o) }))} />;
+function ChoiceField<T extends string | number>({ label, name, value, options, labels, onChange, sample }: { label: string; name: string; value: T; options: readonly T[]; labels?: Partial<Record<string, string>>; onChange(v: T): void; sample?: (v: T) => ReactNode }) {
+  const text = (o: T) => labels?.[String(o)] ?? String(o);
+  // Sampled choices with four or more options take the whole row, so their samples and labels fit.
+  return <ChoiceGroup<T> label={label} name={name} value={value} onChange={onChange} columns={sample ? options.length : undefined} className={sample && options.length >= 4 ? "sm:col-span-2" : undefined} options={options.map((o) => ({ value: o, label: sample ? <Sampled sample={sample(o)}>{text(o)}</Sampled> : text(o) }))} />;
+}
+
+/** A theme colour moved toward another by `k` (0 to 1), as #rrggbb; null when either is not a colour. */
+function mixHex(a: string, b: string, k: number): string | null {
+  const x = swatchHex(a), y = swatchHex(b);
+  if (!x || !y) return null;
+  const ch = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  return `#${[0, 1, 2].map((i) => Math.round(ch(x, i) * (1 - k) + ch(y, i) * k).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * F12 (A11.5, design Note 2): the one material control, for the surfaces and for the nav chrome alike:
+ * Solid, Gradient (two colours at 135deg) or Frosted glass (opacity 0.3 to 1, blur 0 to 48 px). Blur
+ * and opacity show only for glass, the two colours only for Gradient. Picking glass or Gradient with
+ * nothing set yet starts from values that visibly change the preview.
+ */
+function MaterialField({ which, t, set, num }: { which: "surface" | "chrome"; t: ThemeTokens; set(path: string, v: unknown): void; num(path: string): ReactNode }) {
+  const g = which === "surface" ? t.surface : t.chrome;
+  const material = (g.material ?? "solid") as "solid" | "gradient" | "glass";
+  const base = which === "surface" ? t.color.surface : t.chrome.background;
+  const ink = which === "surface" ? t.surface.border.color : t.chrome.text;
+  const pair: [string, string] = g.gradient ?? [base, mixHex(base, t.color.accent, 0.35) ?? t.color.accent];
+  const pick = (m: "solid" | "gradient" | "glass") => {
+    set(`tokens.${which}.material`, m);
+    if (m === "glass") {
+      const op = g.opacity, bl = g.blurPx;
+      if (op === undefined || op >= 1) set(`tokens.${which}.opacity`, which === "surface" ? 0.72 : 0.6);
+      if (bl === undefined || bl === 0) set(`tokens.${which}.blurPx`, which === "surface" ? 24 : 16);
+    }
+    if (m === "gradient" && !g.gradient) set(`tokens.${which}.gradient`, pair);
+  };
+  const what = which === "surface" ? "cards and other surfaces" : "the nav bar";
+  return (
+    <div className="flex flex-col gap-3 sm:col-span-2" data-material={which}>
+      <ChoiceField
+        label={which === "surface" ? "Surface material" : "Nav material"}
+        name={`${which}.material`}
+        value={material}
+        options={["solid", "gradient", "glass"] as const}
+        labels={{ solid: "Solid", gradient: "Gradient", glass: "Frosted glass" }}
+        sample={(m) => <MaterialSample material={m} fill={base} gradient={pair} opacity={g.opacity} blurPx={g.blurPx} ink={ink} />}
+        onChange={pick}
+      />
+      <p className="type-caption text-fg-2">{material === "glass" ? `Frosted glass lets the wallpaper show through ${what}, blurred. Reduce transparency makes it solid.` : material === "gradient" ? `Two colours across ${what}, top left to bottom right.` : `One flat colour for ${what}.`}</p>
+      {material === "glass" && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {num(`${which}.opacity`)}
+          {num(`${which}.blurPx`)}
+        </div>
+      )}
+      {material === "gradient" && (
+        <div className="grid gap-4 sm:grid-cols-2" data-material-gradient={which}>
+          <ColourField path={`${which}.gradient.0`} label="From" value={pair[0]} onValid={(v) => set(`tokens.${which}.gradient`, [v, pair[1]])} onError={() => undefined} />
+          <ColourField path={`${which}.gradient.1`} label="To" value={pair[1]} onValid={(v) => set(`tokens.${which}.gradient`, [pair[0], v])} onError={() => undefined} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function WallpaperFields({ w, onChange, error, onError }: { w: ThemeTokens["wallpaper"]; onChange(w: ThemeTokens["wallpaper"]): void; error?: string; onError(m: string | null): void }) {
@@ -606,7 +681,7 @@ function WallpaperFields({ w, onChange, error, onError }: { w: ThemeTokens["wall
   };
   return (
     <div className="flex flex-col gap-3 sm:col-span-2" data-wallpaper>
-      <ChoiceField label="Wallpaper" name="wallpaper.kind" value={w.kind} options={["none", "color", "gradient", "image", "sky"] as const} labels={{ none: "None", color: "Colour", gradient: "Gradient", image: "Image", sky: "Sky" }} onChange={setKind} />
+      <ChoiceField label="Wallpaper" name="wallpaper.kind" value={w.kind} options={["none", "color", "gradient", "image", "sky"] as const} labels={{ none: "None", color: "Colour", gradient: "Gradient", image: "Image", sky: "Sky" }} sample={(k) => <WallpaperSample kind={k} w={w} />} onChange={setKind} />
       <div className="grid gap-4 sm:grid-cols-2">
         {w.kind === "color" && <ColourField path="wallpaper.value" label="Wallpaper colour" value={w.value} error={error} onValid={(v) => onChange({ ...w, value: v })} onError={onError} />}
         {(w.kind === "sky" || (w.kind === "gradient" && parsed)) && (

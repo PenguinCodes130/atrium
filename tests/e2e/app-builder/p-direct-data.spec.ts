@@ -403,7 +403,10 @@ test("criterion 9: a Just a link tile shows Up and a response time in ms, then D
   await ctx.close();
 });
 
-test("criterion 10: Insert > Start page from three stand-in services: a resource bar and a tile per service in groups by kind, in one undo step, in under 5 s", async ({ browser }) => {
+// Wave 2.10b F1 changed this test: with Prometheus ticked, the page starts with a health row for every
+// machine (a "card for each" repeat) instead of one resource bar, and the CPU and network charts sit
+// between the service groups and the Links group.
+test("criterion 10: Insert > Start page from three stand-in services: machine rows and a tile per service in groups by kind, in one undo step, in under 5 s", async ({ browser }) => {
   const slug = `dd-start-${RUN}`;
   const id = await newApp(slug);
   const ctx = await contextFor(browser, OWNER, { variant: SHELL_VARIANTS[1], viewport: { width: 1440, height: 900 }, recordVideo: path.join(EVIDENCE, "video-start-page") });
@@ -430,28 +433,28 @@ test("criterion 10: Insert > Start page from three stand-in services: a resource
   await page.locator("[data-start-make]").click();
   // Tiles appear at once; values fill in as the services answer.
   await expect(page.locator("[data-canvas-root] [data-type='service-tile']")).toHaveCount(4, { timeout: 5000 });
-  await expect(page.locator("[data-canvas-root] [data-type='resource-bar']")).toHaveCount(1);
+  await expect(page.locator("[data-canvas-root] [data-type='repeat']")).toHaveCount(1);
   const ms = Date.now() - t0;
   log("criterion 10 start page ms", ms);
   expect(ms).toBeLessThan(5000);
-  const d = await untilDraft(id, (x) => x.rev > before && allNodes(x).some((n) => n.type === "resource-bar"));
+  const d = await untilDraft(id, (x) => x.rev > before && allNodes(x).some((n) => n.type === "repeat"));
   expect(d.rev).toBe(before + 1);
   const root = d.doc.pages[0]!.root;
-  expect((root.children ?? []).map((c) => c.type)).toEqual(["resource-bar", "group", "group", "group", "group"]);
+  expect((root.children ?? []).map((c) => c.type)).toEqual(["repeat", "group", "group", "group", "chart", "chart", "group"]);
   // Groups by kind in the fixed order (kinds come from the packages), then the Links group.
-  const titles = (root.children ?? []).slice(1).map((c) => String(c.props.title));
+  const titles = (root.children ?? []).filter((c) => c.type === "group").map((c) => String(c.props.title));
   const ORDER = ["Containers", "Media", "Monitoring", "Network", "Smart home", "Storage", "Other", "Links"];
   expect(titles).toEqual([...titles].sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b)));
   expect(titles).toContain("Containers");
   expect(titles).toContain("Smart home");
   expect(titles.at(-1)).toBe("Links");
-  expect((root.children ?? []).slice(1).reduce((n, g) => n + (g.children ?? []).length, 0)).toBe(4);
+  expect((root.children ?? []).filter((c) => c.type === "group").reduce((n, g) => n + (g.children ?? []).length, 0)).toBe(4);
   await expect(page.locator("[data-canvas-root] [data-type='service-tile'] [data-stat-index]").first()).not.toBeEmpty({ timeout: 10_000 });
   await page.screenshot({ path: shot("c10-start-page-dark") });
   // One undo takes the whole start page back.
   await page.locator("[data-builder-canvas]").focus();
   await page.keyboard.press("Control+z");
-  const back = await untilDraft(id, (x) => !allNodes(x).some((n) => n.type === "resource-bar"));
+  const back = await untilDraft(id, (x) => !allNodes(x).some((n) => n.type === "repeat"));
   expect(back.doc.pages[0]!.root.children ?? []).toEqual([]);
   expect(back.doc.dataSources).toEqual([]);
   await ctx.close();
@@ -461,7 +464,8 @@ test("spec 3.6 and V7: a tile drags from one group into another at the pointer's
   const slug = `dd-drag-${RUN}`;
   const id = await newApp(slug);
   const c = await api(OWNER);
-  const r = await c.post(`/api/apps/${id}/start-page`, { data: { integrationIds: [promId, dockerId, haId], links: [{ name: "Router", href: "http://router.e2e.test/" }, { name: "Printer", href: "http://printer.e2e.test/" }] } });
+  // Wave 2.10b F1: without Prometheus, so no machine rows push the Links group below the window.
+  const r = await c.post(`/api/apps/${id}/start-page`, { data: { integrationIds: [dockerId, haId], links: [{ name: "Router", href: "http://router.e2e.test/" }, { name: "Printer", href: "http://printer.e2e.test/" }] } });
   expect(r.ok()).toBe(true);
   let d = await draft(id);
   const groups = d.doc.pages[0]!.root.children!.filter((n) => n.type === "group");
@@ -581,9 +585,14 @@ test("New app > Start page from your services: a fresh app opens on its start pa
   await page.locator("[data-new-app-name]").fill(`Home start ${RUN}`);
   await page.locator('[data-template-option="start-page"]').click();
   await expect(page.locator(`[data-start-service="${dockerId}"]`)).toHaveAttribute("aria-checked", "true");
-  // Untick Prometheus: only the ticked services are placed.
+  // Untick Prometheus: only the ticked services are placed. Wave 2.10b F1: other suites' services in the
+  // same data are unticked too (any Prometheus would add machine rows, each with its own resource bar).
   await page.locator(`[data-start-service="${promId}"]`).click();
   await expect(page.locator(`[data-start-service="${promId}"]`)).toHaveAttribute("aria-checked", "false");
+  for (const other of await page.locator("[data-start-service]").all()) {
+    if ([dockerId, haId].includes((await other.getAttribute("data-start-service"))!)) continue;
+    if ((await other.getAttribute("aria-checked")) === "true") await other.click();
+  }
   await page.screenshot({ path: shot("new-app-start-page-light") });
   await page.locator("[data-create-app]").click();
   await page.waitForURL(/\/build\//);
@@ -691,7 +700,8 @@ test("V4: the start page in the three app themes (Control Room, Dusk, Solid), an
     const ctx = await contextFor(browser, OWNER, { viewport: { width: 1440, height: 1000 } });
     const view = await ctx.newPage();
     await view.goto(`/a/${slug}`);
-    await expect(view.locator("[data-type='resource-bar']")).toBeVisible({ timeout: 10_000 });
+    // Wave 2.10b F1: one resource bar per machine row now (with Prometheus ticked), so the first one.
+    await expect(view.locator("[data-type='resource-bar']").first()).toBeVisible({ timeout: 10_000 });
     await expect(view.locator("[data-type='service-tile'] [data-stat-index]").first()).not.toBeEmpty({ timeout: 10_000 });
     await view.waitForTimeout(1500);
     await view.screenshot({ path: shot(`v4-start-page-${themeId}`), fullPage: true });

@@ -266,3 +266,55 @@ describe("agent tools apps.startPage and apps.bindData (A10.8, criterion 14)", (
     void agentFor;
   });
 });
+
+// Wave 2.10b F1: machines first, as a health row for each, then services, charts and links.
+describe("start page with machines (Wave 2.10b F1)", () => {
+  const machines: NonNullable<StartPlan["machines"]> = [{
+    integrationId: "i_prom", serviceName: "Prometheus",
+    rows: { endpointId: "machines-overview", label: "Machines overview", defaultRefreshSec: 30, minRefreshSec: 15 },
+    history: { endpointId: "machines-history", label: "One measure, every machine", defaultRefreshSec: 60, minRefreshSec: 30, measures: ["cpu", "memory", "netIn"] },
+  }];
+  it("orders machines, service groups, charts, then links, with no host bar", () => {
+    const d = blankDocument("Start");
+    const r = startPageOps(d, plan({ machines }));
+    const applied = applyOpsToDoc(d, r.ops);
+    if (!applied.ok) throw new Error(applied.problems[0]!.message);
+    const kids = applied.doc.pages[0]!.root.children!;
+    expect(kids.map((k) => k.type)).toEqual(["repeat", "group", "group", "group", "chart", "chart", "group"]);
+    expect(kids.at(-1)!.props.title).toBe("Links");
+    const rep = kids[0]!;
+    expect(rep.props.items).toEqual({ $bind: expect.stringMatching(/^\{\{ d_[a-z2-7]{8}\.rows \}\}$/) as unknown as string });
+    const card = rep.children![0]!;
+    expect(card.type).toBe("card");
+    expect(card.props.title).toEqual({ $bind: "{{ $item.name }}" });
+    const bar = card.children![0]!;
+    expect((bar.props.items as { label: string }[]).map((i) => i.label)).toEqual(["CPU", "Memory", "Disk", "Up"]);
+    // No two boxes overlap.
+    const ss = kids.map((k) => k.slot!);
+    for (let i = 0; i < ss.length; i++) for (let j = i + 1; j < ss.length; j++) {
+      const a = ss[i]!, b = ss[j]!;
+      expect(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h, `${i} and ${j} overlap`).toBe(false);
+    }
+    const charts = kids.filter((k) => k.type === "chart");
+    expect(charts.map((c) => c.title)).toEqual(["CPU, every machine, last 6 h", "Network in, every machine, last 6 h"]);
+    const src = applied.doc.dataSources;
+    expect(src.filter((s) => s.endpointId === "machines-history").map((s) => s.params)).toEqual([{ hours: 6, measure: "cpu" }, { hours: 6, measure: "netIn" }]);
+    expect(src.some((s) => s.endpointId === "host")).toBe(false);
+  });
+  it("only a CPU chart, full width, when the read has no network measure", () => {
+    const d = blankDocument("Start");
+    const r = startPageOps(d, plan({ machines: [{ ...machines[0]!, history: { ...machines[0]!.history!, measures: ["cpu"] } }] }));
+    const applied = applyOpsToDoc(d, r.ops);
+    if (!applied.ok) throw new Error(applied.problems[0]!.message);
+    const charts = applied.doc.pages[0]!.root.children!.filter((k) => k.type === "chart");
+    expect(charts.map((c) => c.slot!.w)).toEqual([12]);
+  });
+  it("one rows repeat per machine-reporting service, named by service when there are several", () => {
+    const d = blankDocument("Start");
+    const r = startPageOps(d, plan({ machines: [machines[0]!, { ...machines[0]!, integrationId: "i_prom2", serviceName: "Lab" }] }));
+    const applied = applyOpsToDoc(d, r.ops);
+    if (!applied.ok) throw new Error(applied.problems[0]!.message);
+    const reps = applied.doc.pages[0]!.root.children!.filter((k) => k.type === "repeat");
+    expect(reps.map((x) => x.name)).toEqual(["Machines, Prometheus", "Machines, Lab"]);
+  });
+});

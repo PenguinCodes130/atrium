@@ -79,7 +79,18 @@
     filter: none !important;
     inset: 0 !important;
   }
+  /* F12: frosted nav chrome turns opaque too (design Note 2: reduce transparency makes both opaque). */
+  :root[data-transparency="reduce"] [data-atrium-canvas] [data-canvas-nav] {
+    background-color: var(--theme-chrome-bg) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
   @media (prefers-reduced-transparency: reduce) {
+    [data-atrium-canvas] [data-canvas-nav] {
+      background-color: var(--theme-chrome-bg) !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
     [data-atrium-canvas] .canvas-surface {
       background-color: var(--theme-surface) !important;
       -webkit-backdrop-filter: none !important;
@@ -93,6 +104,9 @@
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     [data-atrium-canvas] .canvas-surface {
       background-color: var(--theme-surface) !important;
+    }
+    [data-atrium-canvas] [data-canvas-nav] {
+      background-color: var(--theme-chrome-bg) !important;
     }
   }
 }
@@ -120,6 +134,7 @@
     --theme-surface-opacity: 1;
     --theme-surface-fill: #fbf9f3;
     --theme-surface-blur: 0px;
+    --theme-surface-image: none;
     --theme-border-width: 1px;
     --theme-border-color: #15130f;
     --theme-shadow-kind: hard;
@@ -161,6 +176,10 @@
     --theme-chrome-active-fill: #15130f;
     --theme-chrome-active-text: #f3efe4;
     --theme-chrome-style: boxed-tabs;
+    --theme-chrome-material: solid;
+    --theme-chrome-fill: #f3efe4;
+    --theme-chrome-blur: 0px;
+    --theme-chrome-image: none;
     --theme-glow: color-mix(in oklab, #e9b949 35%, transparent);
     --theme-room-shaft: color-mix(in oklab, #e9b949 12%, transparent);
     --theme-room-shaft-dim: color-mix(in oklab, #e9b949 5%, transparent);
@@ -395,6 +414,8 @@
   .canvas-surface {
     position: relative;
     background-color: var(--theme-surface-fill);
+    /* F12: Gradient paints two colours at 135deg over the surface colour; none for Solid and glass. */
+    background-image: var(--theme-surface-image);
     -webkit-backdrop-filter: blur(var(--theme-surface-blur));
     backdrop-filter: blur(var(--theme-surface-blur));
     border: var(--theme-border-width) solid var(--theme-border-color);
@@ -418,8 +439,14 @@
   /* The app chrome's nav (app-builder renders it with data-canvas-nav; the theme editor's preview draws
      the same markup): colours from theme.chrome, the item look from chrome.style on the canvas root.
      Wave 2.10 B5, design Note 2: each of the four styles has its own look. Items are the nav's links. */
+  /* F12 (A11.5, design Note 2): the nav's material comes from the same control as the surfaces: Solid
+     (the background colour), Gradient (two colours at 135deg) or Frosted glass (the background at the
+     chosen opacity, blurring the wallpaper behind it). Reduce transparency makes it opaque (guard layer). */
   [data-atrium-canvas] [data-canvas-nav] {
-    background: var(--theme-chrome-bg);
+    background-color: var(--theme-chrome-fill);
+    background-image: var(--theme-chrome-image);
+    -webkit-backdrop-filter: blur(var(--theme-chrome-blur));
+    backdrop-filter: blur(var(--theme-chrome-blur));
     color: var(--theme-chrome-text);
   }
   /* Wave 2.10a r2 item 4: the top bar's padding and gaps follow density (Comfortable 12 and 16 px). */
@@ -537,6 +564,102 @@
       animation-timeline: scroll(self inline);
     }
   }
+
+  /* Wave 2.10b F11 (A11.5 motion.enter, design Note 2 "Entrance"): the theme's entrance plays on each
+     top-level widget when a page opens in a real app (the viewer, a published version, the draft
+     preview; never the builder's edit canvas) and on the theme editor's sample cards when Play is
+     pressed ([data-enter-play]). Staggered 30 ms per widget, never past 600 ms in total. CSS only, so it
+     starts with the first paint and needs no script. It runs on each top-level widget's grid cell
+     (.atr-cell), because components.css pins every [data-node] box (no animation, no transform) in the
+     guard layer. Reduced motion: none (components.css stops every animation inside .atr-render-root,
+     and the rules below say so again). */
+  [data-atrium-canvas] {
+    --atr-enter-i: 0;
+  }
+  :is(.atr-cell, [data-sample-card]):nth-child(2) { --atr-enter-i: 1; }
+  :is(.atr-cell, [data-sample-card]):nth-child(3) { --atr-enter-i: 2; }
+  :is(.atr-cell, [data-sample-card]):nth-child(4) { --atr-enter-i: 3; }
+  :is(.atr-cell, [data-sample-card]):nth-child(5) { --atr-enter-i: 4; }
+  :is(.atr-cell, [data-sample-card]):nth-child(6) { --atr-enter-i: 5; }
+  :is(.atr-cell, [data-sample-card]):nth-child(7) { --atr-enter-i: 6; }
+  :is(.atr-cell, [data-sample-card]):nth-child(8) { --atr-enter-i: 7; }
+  :is(.atr-cell, [data-sample-card]):nth-child(9) { --atr-enter-i: 8; }
+  :is(.atr-cell, [data-sample-card]):nth-child(10) { --atr-enter-i: 9; }
+  :is(.atr-cell, [data-sample-card]):nth-child(11) { --atr-enter-i: 10; }
+  :is(.atr-cell, [data-sample-card]):nth-child(12) { --atr-enter-i: 11; }
+  :is(.atr-cell, [data-sample-card]):nth-child(13) { --atr-enter-i: 12; }
+  :is(.atr-cell, [data-sample-card]):nth-child(14) { --atr-enter-i: 13; }
+  :is(.atr-cell, [data-sample-card]):nth-child(15) { --atr-enter-i: 14; }
+  :is(.atr-cell, [data-sample-card]):nth-child(16) { --atr-enter-i: 15; }
+  :is(.atr-cell, [data-sample-card]):nth-child(17) { --atr-enter-i: 16; }
+  :is(.atr-cell, [data-sample-card]):nth-child(18) { --atr-enter-i: 17; }
+  :is(.atr-cell, [data-sample-card]):nth-child(19) { --atr-enter-i: 18; }
+  :is(.atr-cell, [data-sample-card]):nth-child(20) { --atr-enter-i: 19; }
+  :is(.atr-cell, [data-sample-card]):nth-child(21) { --atr-enter-i: 20; }
+  [data-atrium-canvas]:is([data-canvas-enter="fade"], [data-canvas-enter="rise"], [data-canvas-enter="sweep"]) :is(
+      .atr-render-root:not([data-render-mode="edit"]) > .atr-node > .atr-grid > .atr-cell,
+      [data-enter-play] [data-sample-card]
+    ) {
+    animation-fill-mode: both;
+    animation-delay: min(calc(var(--atr-enter-i) * 30ms), var(--atr-enter-cap));
+  }
+  /* Fade: opacity, 240 ms. */
+  [data-atrium-canvas][data-canvas-enter="fade"] :is(
+      .atr-render-root:not([data-render-mode="edit"]) > .atr-node > .atr-grid > .atr-cell,
+      [data-enter-play] [data-sample-card]
+    ) {
+    --atr-enter-cap: 360ms;
+    animation-name: atr-enter-fade;
+    animation-duration: 240ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+  /* Rise: 8 px up plus opacity, on the settle spring (stiffness 300, damping 32) sampled as linear(). */
+  [data-atrium-canvas][data-canvas-enter="rise"] :is(
+      .atr-render-root:not([data-render-mode="edit"]) > .atr-node > .atr-grid > .atr-cell,
+      [data-enter-play] [data-sample-card]
+    ) {
+    --atr-enter-cap: 200ms;
+    animation-name: atr-enter-rise;
+    animation-duration: 400ms;
+    animation-timing-function: linear(0, 0.072, 0.222, 0.389, 0.541, 0.668, 0.767, 0.841, 0.895, 0.932, 0.958, 0.974, 0.985, 0.992, 0.996, 0.998, 1);
+  }
+  /* Sweep: the light sweep motif crosses each window once while it fades in. */
+  [data-atrium-canvas][data-canvas-enter="sweep"] :is(
+      .atr-render-root:not([data-render-mode="edit"]) > .atr-node > .atr-grid > .atr-cell,
+      [data-enter-play] [data-sample-card]
+    ) {
+    --atr-enter-cap: 120ms;
+    position: relative;
+    animation-name: atr-enter-fade;
+    animation-duration: 240ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+  [data-atrium-canvas][data-canvas-enter="sweep"] :is(
+      .atr-render-root:not([data-render-mode="edit"]) > .atr-node > .atr-grid > .atr-cell,
+      [data-enter-play] [data-sample-card]
+    )::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    border-radius: var(--theme-radius);
+    background: linear-gradient(100deg, transparent 35%, var(--theme-glow) 50%, transparent 65%) no-repeat;
+    background-size: 300% 100%;
+    opacity: 0;
+    animation: atr-enter-sweep 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: min(calc(var(--atr-enter-i) * 30ms), var(--atr-enter-cap));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-atrium-canvas] :is(.atr-cell, [data-sample-card]),
+    [data-atrium-canvas] :is(.atr-cell, [data-sample-card])::after {
+      animation-name: none !important;
+    }
+  }
+  :root[data-motion="reduce"] [data-atrium-canvas] :is(.atr-cell, [data-sample-card]),
+  :root[data-motion="reduce"] [data-atrium-canvas] :is(.atr-cell, [data-sample-card])::after {
+    animation-name: none !important;
+  }
 }
 
 /* The nav row's "more to the right" fade (see item 10 above): on until the row is scrolled to its end. */
@@ -549,5 +672,28 @@
   100% {
     -webkit-mask-image: none;
     mask-image: none;
+  }
+}
+
+/* F11 entrances (see "Wave 2.10b F11" above). Transform and opacity only. */
+@keyframes atr-enter-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes atr-enter-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes atr-enter-sweep {
+  0% {
+    opacity: 1;
+    background-position: 100% 0;
+  }
+  100% {
+    opacity: 1;
+    background-position: 0% 0;
   }
 }

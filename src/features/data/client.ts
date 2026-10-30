@@ -21,6 +21,8 @@ export type PageDataTarget = { appId: string; pageId: string; draft?: boolean };
 export class PageDataClient {
   private es: ES | undefined;
   private polls = new Map<string, unknown>();
+  /** Off sources (A11.8) already asked for while polling: at most once per page open. */
+  private polledOnce = new Set<string>();
   private reconnect: unknown;
   private stopped = false;
   mode: "connecting" | "stream" | "polling" = "connecting";
@@ -103,6 +105,8 @@ export class PageDataClient {
           else { const { key: _key, signedUrls: _signed, ...d } = body; void _key; void _signed; this.onData(s.key, d as SourceData); }
         } catch { /* keep polling */ }
       };
+      // A11.8: a source with refresh Off is asked once while the stream is down, never on a timer.
+      if (!(s.refreshSec > 0)) { if (!this.polledOnce.has(s.key)) { this.polledOnce.add(s.key); this.deps.setTimeout(() => void poll(), 0); } continue; }
       this.polls.set(s.key, this.deps.setInterval(poll, Math.max(s.refreshSec, 5) * 1000));
     }
   }

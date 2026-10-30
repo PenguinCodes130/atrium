@@ -1,6 +1,8 @@
 "use client";
-// "More settings" (builder ease spec 3.2): each inspector group opens on its simple set, the rest folds
-// under this, and whether a fold is open is remembered per person (in this browser) for each group.
+// The inspector folds (builder ease spec 3.2): each inspector group opens on its simple set, the rest folds
+// under one of these, and whether a fold is open is remembered per person (in this browser) for each group.
+// Wave 2.10b F4: a fold is titled with what it holds ("More: change, warning from, problem from"), from
+// `holds` (the labels of the settings inside), never a bare "More settings".
 // Browser storage here is only a convenience: without it every fold simply starts closed.
 import { useId, useSyncExternalStore, type ReactNode } from "react";
 import { motion } from "motion/react";
@@ -60,8 +62,18 @@ export function Chevron({ open }: { open: boolean }) {
  * The fold itself: a quiet toggle with how many of its settings hold a value, then its fields. `group`
  * names what is remembered ("content", "data", "layout", "style"...).
  */
-export function MoreFold({ group, count, children, label = "More settings", toggleAttr }: { group: string; count?: number; children: ReactNode; label?: string; /** An extra data attribute on the toggle (kept for older tests). */ toggleAttr?: string }) {
+/** "More: decimals, min and max, colours": a fold's title from the labels of what it holds (F4). */
+export function foldTitle(holds: readonly string[], lead = "More"): string {
+  // Sentence case inside the title: "Decimal places" reads "decimal places"; "CPU" stays as written.
+  const lower = (h: string) => (/^[A-Z][a-z]/.test(h) ? h[0]!.toLowerCase() + h.slice(1) : h);
+  const words = [...new Set(holds.map((h) => h.trim()).filter(Boolean))].map(lower);
+  return words.length ? `${lead}: ${words.join(", ")}` : lead;
+}
+
+export function MoreFold({ group, count, children, label, holds, toggleAttr }: { group: string; count?: number; children: ReactNode; /** A written title; otherwise it is made from `holds`. */ label?: string; /** The labels of the settings inside (F4), for the title. */ holds?: readonly string[]; /** An extra data attribute on the toggle (kept for older tests). */ toggleAttr?: string }) {
   const [open, setOpen] = useFoldOpen(group);
+  // Without a title or what it holds the fold keeps its older title (callers outside components pass holds).
+  const title = label ?? (holds ? foldTitle(holds) : "More settings");
   const id = useId();
   return (
     <div className="flex flex-col gap-3 border-t border-line pt-2" data-more-settings={group} data-open={open ? "" : undefined}>
@@ -75,7 +87,9 @@ export function MoreFold({ group, count, children, label = "More settings", togg
         {...(toggleAttr ? { [toggleAttr]: "" } : {})}
       >
         <Chevron open={open} />
-        {label}
+        <span className="min-w-0 flex-1" data-fold-title>
+          {title}
+        </span>
         {count ? <span className="font-mono text-[11px] text-fg-2" data-more-count>{count} set</span> : null}
       </button>
       {open ? (

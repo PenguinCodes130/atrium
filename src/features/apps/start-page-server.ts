@@ -13,7 +13,18 @@ import { measureOf } from "@/features/data/measure";
 import { choicesSpecs } from "@/features/integrations/choices";
 import * as repo from "./repo";
 import { appForEditor, applyDraftOps } from "./service";
-import { cleanLink, linkName, startPageOps, type BarItem, type StartPlan, type StartService } from "./start-page";
+import { cleanLink, linkName, startPageOps, type BarItem, type MachineSource, type StartPlan, type StartService } from "./start-page";
+
+/**
+ * F1: the "every machine" reads of each package, by endpoint id: a table with one row per machine
+ * (name, cpu, memory, disk, uptime) and a series of one measure across every machine. Prometheus has both
+ * (node-exporter recipes). Proxmox has no such read yet (its "nodes" read is up/down only): listed as an
+ * interface request in the Wave 2.10b layout report, and picked up here by id once it exists.
+ */
+const MACHINE_READS: Record<string, { rows: string; history?: string }> = {
+  prometheus: { rows: "machines-overview", history: "machines-history" },
+  proxmox: { rows: "nodes-overview" },
+};
 
 export const MAX_START_SERVICES = 40;
 export const MAX_START_LINKS = 40;
@@ -65,7 +76,25 @@ export function planStartPage(p: Principal, input: StartInput): StartPlan {
     const ep = row ? endpointsOf(row).find((e) => e.id === endpointId) : undefined;
     return ep ? { label: ep.label, shape: ep.shape, defaultRefreshSec: ep.defaultRefreshSec, minRefreshSec: ep.minRefreshSec } : null;
   };
-  return { services, links, bar: barFor(p, input, usable), info };
+  return { services, links, bar: barFor(p, input, usable), info, machines: machinesFor(input.integrationIds, usable, services) };
+}
+
+/** F1: every picked service with an "every machine" read, in the order picked. */
+function machinesFor(ids: string[], usable: (id: string) => ReturnType<typeof getIntegrationRow>, services: StartService[]): MachineSource[] {
+  const out: MachineSource[] = [];
+  for (const id of ids) {
+    const row = id === SYSTEM_INTEGRATION_ID ? undefined : usable(id);
+    const want = row ? MACHINE_READS[row.packageId] : undefined;
+    if (!row || !want) continue;
+    const eps = endpointsOf(row);
+    const rows = eps.find((e) => e.id === want.rows && e.shape === "table");
+    if (!rows) continue;
+    const hist = want.history ? eps.find((e) => e.id === want.history && e.shape === "series") : undefined;
+    const measures = ((hist?.params as { properties?: { measure?: { enum?: unknown[] } } } | undefined)?.properties?.measure?.enum ?? []).filter((m): m is string => typeof m === "string");
+    const read = (e: NonNullable<typeof rows>) => ({ endpointId: e.id, label: e.label, defaultRefreshSec: e.defaultRefreshSec, minRefreshSec: e.minRefreshSec, ...(e.params ? { schema: e.params as Record<string, unknown> } : {}) });
+    out.push({ integrationId: row.id, serviceName: services.find((x) => x.integrationId === row.id)?.name ?? row.name, rows: read(rows), ...(hist ? { history: { ...read(hist), measures } } : {}) });
+  }
+  return out;
 }
 
 /** The resource bar's readings: the machine's CPU, memory, disk and uptime reads, or the Atrium host's. */

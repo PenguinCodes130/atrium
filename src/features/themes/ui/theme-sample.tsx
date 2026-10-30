@@ -18,6 +18,7 @@
 // - Only the page part is inert. The nav takes the pointer (hover fills show) but no focus and no
 //   navigation: the whole canvas is aria-hidden and the links get tabIndex -1.
 // The sample is a picture of the theme, never a second set of controls on the page.
+// Wave 2.10b F11: `play` (the editor's Play) runs the theme's Entrance on the two sample cards.
 import { useEffect, useRef, type MouseEvent } from "react";
 import type { Theme } from "@/core/contracts";
 import { Canvas, DoorGlyph, type ScopedCss } from "@/features/shell";
@@ -70,7 +71,7 @@ function SampleTitleBar({ text }: { text: string }) {
 
 const stop = (e: MouseEvent) => e.preventDefault();
 
-export function ThemeSample({ theme, scopedCss, scope, height, label, scheme }: { theme: Theme; scopedCss?: string; scope?: string; height?: number; label?: string; scheme?: CanvasTone }) {
+export function ThemeSample({ theme, scopedCss, scope, height, label, scheme, play = 0 }: { theme: Theme; scopedCss?: string; scope?: string; height?: number; label?: string; scheme?: CanvasTone; /** F11: bump to run the theme's entrance once on the sample widgets (Play). */ play?: number }) {
   const shown = scheme ? themeForScheme(theme, scheme) : theme;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -81,7 +82,8 @@ export function ThemeSample({ theme, scopedCss, scope, height, label, scheme }: 
       <Canvas theme={shown} {...(scope ? { scope } : {})} {...(scopedCss ? { customCss: scopedCss as ScopedCss } : {})} driftNow={new Date(Date.UTC(2026, 0, 1, 12))} className={`!min-h-0 ${height ? "h-full" : ""}`} aria-hidden>
         <div className={`flex flex-col tracking-normal ${height ? "h-full" : ""}`} style={{ fontFamily: "var(--theme-font-body)", letterSpacing: "normal" }} onClickCapture={stop}>
           <SampleNav />
-          <div inert className="atr-render-root min-h-0 flex-1" style={{ padding: "var(--theme-pad)" }} data-sample-page>
+          {/* F11: each Play re-mounts the page with data-enter-play, so canvas-theme.css runs the entrance once. */}
+          <div inert key={play} className="atr-render-root min-h-0 flex-1" style={{ padding: "var(--theme-pad)" }} data-sample-page data-enter-play={play > 0 ? "" : undefined}>
             <div className="canvas-grid grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }} data-sample-grid>
               <section className="atr-card canvas-surface min-w-0" data-sample-card>
                 <SampleTitleBar text="Rack" />

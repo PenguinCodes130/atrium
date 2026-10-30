@@ -20,7 +20,9 @@ export async function POST(req: Request) {
     const b = await jsonBody(req, 64 * 1024);
     const mappings = b.mappings && typeof b.mappings === "object" && !Array.isArray(b.mappings) ? (b.mappings as Record<string, string | null>) : {};
     const template = isTemplateId(b.template) ? b.template : undefined;
-    const { app, rev } = createApp(principal, { name: String(b.name ?? ""), slug: String(b.slug ?? ""), ...(template ? { template } : {}), mappings });
+    // Wave 2.10b F1: the theme picked in New app, as { themeId } (anything else is ignored).
+    const t = b.theme && typeof b.theme === "object" && !Array.isArray(b.theme) ? (b.theme as { themeId?: unknown }).themeId : undefined;
+    const { app, rev } = createApp(principal, { name: String(b.name ?? ""), slug: String(b.slug ?? ""), ...(template ? { template } : {}), mappings, ...(typeof t === "string" ? { themeId: t } : {}) });
     return Response.json({ app: { id: app.id, slug: app.slug, name: app.name }, rev }, { status: 201 });
   });
 }

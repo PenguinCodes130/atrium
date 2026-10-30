@@ -621,7 +621,7 @@ export function PicturePanel({ node, doc, onChange, onOps, field, file, frame, w
         </>
       )}
       {moreKeys.length ? (
-        <MoreFold group="content" count={moreKeys.filter((k) => p[k] !== undefined && p[k] !== null).length}>
+        <MoreFold group="content" count={moreKeys.filter((k) => p[k] !== undefined && p[k] !== null).length} holds={moreKeys.filter((k) => k !== "focusY" && k !== "captionAt").map((k) => w(k).label)}>
           {moreKeys.filter((k) => k !== "focusY" && k !== "captionAt").map(control)}
         </MoreFold>
       ) : null}

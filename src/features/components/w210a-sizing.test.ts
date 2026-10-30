@@ -95,7 +95,9 @@ describe("B2 CSS half: no root that is not a scrolling kind scrolls", () => {
 describe("B8: an icon hugs on insert and scales with its box", () => {
   it("a new icon fills a box of at most 2 columns, about square on the 1280px builder", () => {
     const n = newNode("icon");
-    expect(n.props.fill).toBe(true);
+    // Wave 2.10b F6: a new icon carries Scale 50 (half its box) in place of fill and a px size.
+    expect(n.props.scale).toBe(50);
+    expect(n.props.size).toBeUndefined();
     expect(n.slot!.w).toBeLessThanOrEqual(2);
     expect(NEW_SIZE.icon!.slot).toEqual({ w: 1.375, h: 10 });
     // The 1280px builder in the default theme: columns 28.66px, gap 24px, a 6px hard shadow under each cell.
@@ -114,13 +116,19 @@ describe("B8: an icon hugs on insert and scales with its box", () => {
       expect(Math.abs(w - hh), JSON.stringify({ g, s, w, hh })).toBeLessThanOrEqual(8);
     }
   });
-  it("a filling icon marks itself and its svg is sized by CSS from the box; a px icon keeps its px", () => {
+  it("an icon is sized by CSS from its box at Scale (F6); an older fill icon draws at 50%; a stored px size keeps its px", () => {
+    // Wave 2.10b F6 changed this test: every icon now fills its box at Scale, so there is no px-only mode.
     const fill = render({ id: "c_iconaaaaaa", type: "icon", props: { name: "server", size: 24, fill: true } }, ctx("view"));
-    expect(fill).toMatch(/class="atr-icon" data-fill=""/);
+    expect(fill).toMatch(/class="atr-icon" data-fill="" data-scale="50"/);
+    expect(fill).toContain("--atr-icon-cell:calc(min(100cqw, 100cqh) * 0.5)");
     const px = render({ id: "c_iconbbbbbb", type: "icon", props: { name: "server", size: 40 } }, ctx("view"));
-    expect(px).not.toContain("data-fill");
-    expect(px).toContain('width="40"');
-    expect(css).toMatch(/\.atr-icon\[data-fill\] > svg \{ width: calc\(min\(100cqw, 100cqh\) \* 0\.5\);/);
+    expect(px).toContain('data-px="40"');
+    expect(px).toContain("--atr-icon-cell:min(40px, min(100cqw, 100cqh))");
+    expect(px).toContain("--atr-icon-free:40px");
+    const scaled = render({ id: "c_iconcccccc", type: "icon", props: { name: "server", scale: 80 } }, ctx("view"));
+    expect(scaled).toContain('data-scale="80"');
+    expect(scaled).toContain("--atr-icon-cell:calc(min(100cqw, 100cqh) * 0.8)");
+    expect(css).toMatch(/\.atr-cell > \.atr-node > \.atr-icon > svg, \.atr-cell > \.atr-node > \.atr-icon > \.atr-icon-img \{ width: var\(--atr-icon-cell/);
   });
 });
 

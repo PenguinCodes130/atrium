@@ -159,7 +159,9 @@ test("bug 2: dragging edges and corners resizes on the grid, shows the ghost, an
   await select(page, "c_obtextnode");
   await expect(page.locator("[data-resize-handle]")).toHaveCount(8);
   const start = kid(await draft(), "c_obtextnode")!.slot!;
-  const step = await page.locator(`[data-canvas-root] [data-node="${(await draft()).doc.pages[0]!.root.id}"]`).evaluate((el) => {
+  const step = await page.locator(`[data-canvas-root] [data-node="${(await draft()).doc.pages[0]!.root.id}"]`).evaluate((host) => {
+    // Wave 2.10b F7: the grid element itself, as the builder measures it (fine steps show any offset).
+    const el = host.matches(".atr-grid") ? host : ((host.querySelector(".atr-grid") as HTMLElement | null) ?? host);
     const cs = getComputedStyle(el);
     const w = el.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const gap = parseFloat(cs.columnGap) || 0;
@@ -169,11 +171,15 @@ test("bug 2: dragging edges and corners resizes on the grid, shows the ghost, an
     const b = (await page.locator(`[data-resize-handle="${id}"]`).boundingBox())!;
     const x = b.x + b.width / 2;
     const y = b.y + b.height / 2;
+    // Wave 2.10b F7: with Snap on a resize is pulled to other widgets' edges and centres within 6 px;
+    // Alt held resizes on the plain grid, which is what this test measures.
+    await page.keyboard.down("Alt");
     await page.mouse.move(x, y);
     await page.mouse.down();
     for (let i = 1; i <= 8; i++) await page.mouse.move(x + (dx * i) / 8, y + (dy * i) / 8);
     await expect(page.locator("[data-drop-ghost]")).toBeVisible();
     await page.mouse.up();
+    await page.keyboard.up("Alt");
   };
 
   // South-east corner: two columns wider, four rows taller.

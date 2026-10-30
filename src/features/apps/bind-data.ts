@@ -37,7 +37,7 @@ export async function bindDataOps(p: Principal, doc: AppDocument, input: BindDat
   if (!at) throw new NotFound("That component does not exist in the draft.");
   if (!/^[A-Za-z][A-Za-z0-9_]*(\.\d+\.[A-Za-z][A-Za-z0-9_]*)?$/.test(input.prop)) throw new FieldError("prop", "prop is a prop name, or a list prop path like stats.0.value.");
   const item = await itemFor(p, input.itemKey);
-  if (input.refreshSec !== undefined && input.refreshSec < item.minRefreshSec) throw new FieldError("refreshSec", `This read refreshes at most every ${item.minRefreshSec} s.`);
+  if (input.refreshSec !== undefined && input.refreshSec !== 0 && input.refreshSec < item.minRefreshSec) throw new FieldError("refreshSec", `This read refreshes at most every ${item.minRefreshSec} s.`);
   const r = input.prop === "lines" ? addLineOps(doc, input.nodeId, item) : bindItemOps(doc, input.nodeId, input.prop, item);
   if (!r) throw new FieldError("itemKey", input.prop === "lines" || propKind(at.node.type, input.prop) === "line" ? "A chart line needs values over time: pick a series read, or a value read that has a history." : "That read cannot be shown there.");
   let ops = r.ops;

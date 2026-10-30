@@ -480,6 +480,8 @@ test("item 7: theme editor folds open on sheet with a chevron on pop, instantly 
     await expect(page.locator('[data-group="surfaces"]')).toHaveAttribute("data-open", "true");
     const words = await page.locator("[data-group-toggle]").allInnerTexts();
     expect(words.some((w) => /\b(open|close)\b/.test(w))).toBe(false);
+    // Wave 2.10b F10: the basics now draw samples, so the fold can start below the first screen; bring it in.
+    await page.locator('[data-group="surfaces"]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: ev("screens", `r3-item7-fold-${reducedMotion ? "reduced" : "normal"}.png`), clip: await clipOf(page, '[data-group="surfaces"]', 8) });
     await ctx.close();
   }

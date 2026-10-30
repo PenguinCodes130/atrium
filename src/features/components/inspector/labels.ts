@@ -106,7 +106,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
       data: { label: "Series", hint: "The values over time this chart draws" },
       lines: { label: "Lines", hint: "Each line is its own read, with a name, a colour, Hide and Remove" },
       kind: { label: "Chart type", hint: "Lines, filled areas or bars", options: { line: "Lines", area: "Filled areas", bars: "Bars" } },
-      height: { label: "Height", hint: "In px" },
+      height: { label: "Height", hint: "The chart's height in px" },
       legend: { label: "Show the legend", hint: "Names each line under the chart" },
       showUpdated: updated,
     },
@@ -248,11 +248,13 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     },
   },
   icon: {
-    simple: ["name", "fill", "size"],
+    simple: ["name", "scale"],
     fields: {
-      name: { label: "Icon", hint: "Pick a built-in icon" },
-      size: { label: "Size", hint: "In px, used when Fill its box is off" },
-      fill: { label: "Fill its box", hint: "The icon grows and shrinks with its box. Off uses Size" },
+      name: { label: "Icon", hint: "Pick one of the built-in icons, or upload your own picture" },
+      scale: { label: "Scale", hint: "How much of its box the icon fills, keeping its shape. Resize the box to make it bigger" },
+      // F6: Size and Fill are only read from older icons; the inspector no longer shows them (HIDDEN_FIELDS).
+      size: { label: "Size", hint: "Older icons only: replaced by Scale" },
+      fill: { label: "Fill its box", hint: "Older icons only: every icon fills its box now" },
       label: { label: "Meaning", hint: "Read aloud by screen readers. Empty marks it as decoration" },
     },
   },
@@ -331,6 +333,12 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
     },
   },
 };
+
+/**
+ * Props kept in the schema (stored documents stay valid) but never shown in the inspector: the icon's px
+ * size and fill switch (F6, spec section 9: replaced by Scale) and a tile's builder reference (A10.7).
+ */
+export const HIDDEN_FIELDS: ReadonlySet<string> = new Set(["icon.size", "icon.fill", "service-tile.integrationId"]);
 
 /** The written words for one field, or null for a prop no table names (package and library props). */
 export function wordsFor(type: string, key: string): FieldWords | null {

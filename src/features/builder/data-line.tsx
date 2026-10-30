@@ -8,7 +8,7 @@ import type { CatalogueResponse, ComponentNode, DataSourceDef, DraftOp, PropValu
 import { evaluateTemplate, isBinding } from "@/features/components/bindings";
 import { formatValue, templateFormat } from "@/features/components/render/format";
 import { SelectMenu } from "@/features/settings/ui/controls";
-import { nodeRefresh, refreshChoices, secWords, REFRESH_FLOOR } from "@/features/apps/managed";
+import { nodeRefresh, refreshChoices, secWords, REFRESH_FLOOR, REFRESH_OFF } from "@/features/apps/managed";
 import { choiceParams, EVERY, everyWords } from "./data-pick";
 import { liveWords, type BindableIntegration } from "./data-picker";
 import { addLineOps, axisGroups, chartLines, thirdUnitRefusal, type LineUnit, type PickItem } from "./direct-data";
@@ -45,7 +45,7 @@ export function valueWords(template: string, live: Live | undefined): string | n
  * refresh: a managed source runs at the fastest of its components (A10.1); a source a person made keeps its
  * own interval, so the menu sets that.
  */
-export function RefreshControl({ node, def, bindable, apply }: { node: ComponentNode; def: DataSourceDef; bindable: BindableIntegration[]; apply(ops: DraftOp[]): void }) {
+export function RefreshControl({ node, def, bindable, apply, setting = false }: { node: ComponentNode; def: DataSourceDef; bindable: BindableIntegration[]; apply(ops: DraftOp[]): void; /** F4: drawn as an inspector setting, with its label and one-line hint. */ setting?: boolean }) {
   const [open, setOpen] = useState(false);
   const t = timingOf(def, bindable);
   const min = Math.max(REFRESH_FLOOR, t?.minRefreshSec ?? REFRESH_FLOOR);
@@ -65,21 +65,32 @@ export function RefreshControl({ node, def, bindable, apply }: { node: Component
     if (def.managed) apply([{ op: "node.update", nodeId: node.id, patch: { refreshSec: s } }]);
     else apply([{ op: "source.set", source: { ...def, refreshSec: s } }]);
   };
-  return (
+  const off = sec === REFRESH_OFF;
+  const now = off ? "Off" : `every ${secWords(sec)}`;
+  const control = (
     <span ref={ref} className="relative inline-flex items-center gap-2" data-refresh={sec}>
-      <span className="type-caption text-fg-2" aria-hidden>Refresh</span>
-      <button type="button" className={pill} aria-label={`Refresh: every ${secWords(sec)}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-refresh-change>
-        every {secWords(sec)}
+      <span className="type-caption text-fg-2" aria-hidden={!setting || undefined} data-field-label={setting ? "" : undefined}>Refresh</span>
+      <button type="button" className={pill} aria-label={`Refresh: ${now}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-refresh-change>
+        {now}
         <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
       </button>
       {open && (
-        <span role="menu" className="absolute left-0 top-full z-20 flex w-60 flex-col border border-line-strong bg-bg-hi p-1 shadow-window-sm" data-refresh-menu>
+        <span role="menu" className="absolute left-0 top-full z-20 flex w-64 flex-col border border-line-strong bg-bg-hi p-1 shadow-window-sm" data-refresh-menu>
           {choices.map((c) => (
-            <button key={c.sec} type="button" role="menuitemradio" aria-checked={c.sec === sec} disabled={c.disabled} className={`flex min-h-8 items-center px-2 text-left type-caption hover:bg-bg-sunk disabled:cursor-not-allowed disabled:text-fg-2 disabled:opacity-60 disabled:hover:bg-transparent touch:min-h-11 ${c.sec === sec ? "font-medium" : ""}`} onClick={() => choose(c.sec)} data-refresh-option={c.sec} data-refresh-disabled={c.disabled ? "yes" : undefined}>{c.label}{c.sec === sec ? " (now)" : ""}</button>
+            <button key={c.sec} type="button" role="menuitemradio" aria-checked={c.sec === sec} disabled={c.disabled} className={`flex min-h-8 items-center px-2 text-left type-caption hover:bg-bg-sunk disabled:cursor-not-allowed disabled:text-fg-2 disabled:opacity-60 disabled:hover:bg-transparent touch:min-h-11 ${c.sec === sec ? "font-medium" : ""} ${c.sec === REFRESH_OFF ? "mt-1 border-t border-line pt-1" : ""}`} onClick={() => choose(c.sec)} data-refresh-option={c.sec} data-refresh-disabled={c.disabled ? "yes" : undefined}>{c.label}{c.sec === sec ? " (now)" : ""}</button>
           ))}
           {choices.some((c) => c.disabled) && <span className="px-2 py-1 type-caption text-fg-2" data-refresh-min>This service allows every {secWords(min)} at most.</span>}
         </span>
       )}
+    </span>
+  );
+  // A11.8: Off says when the value loads, in place of the hint.
+  const offLine = off ? <span className="type-caption text-fg-2" data-refresh-off data-field-hint={setting ? "" : undefined}>Loads with the page, and again only when the page is reloaded.</span> : null;
+  if (!setting) return off ? <span className="inline-flex flex-wrap items-center gap-x-2">{control}{offLine}</span> : control;
+  return (
+    <span className="flex flex-col gap-0.5" data-builder-setting="refresh">
+      {control}
+      {offLine ?? <span className="type-caption text-fg-3" data-field-hint>How often the value is read again. The canvas shows each new value as it arrives.</span>}
     </span>
   );
 }
@@ -99,7 +110,7 @@ export function DataLine({ node, def, template, prop, bindable, live, apply, onC
         <span className="min-w-0 flex-1 type-body" data-data-line-words>{[what, value, integ?.integrationName].filter(Boolean).join(" · ")}</span>
         <button type="button" className={`${btn} flex-none`} onClick={() => onChange(prop)} data-data-change>Change</button>
       </span>
-      <RefreshControl node={node} def={def} bindable={bindable} apply={apply} />
+      <RefreshControl node={node} def={def} bindable={bindable} apply={apply} setting />
     </span>
   );
 }

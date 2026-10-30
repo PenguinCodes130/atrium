@@ -190,7 +190,8 @@ export function applyOpsToDoc(input: AppDocument, ops: DraftOp[], checks: OpChec
         // A8.5: the widget's own title and its "Show title bar" switch.
         if ("title" in patch && patch.title !== null && (typeof patch.title !== "string" || patch.title.length > 120)) { fail(problem("node.bad_patch", "A title is text of at most 120 characters.", { nodeId: op.nodeId, field: "title" })); break; }
         // A10.1: the component's own refresh, in whole seconds (null clears it back to the read's default).
-        if ("refreshSec" in patch && patch.refreshSec !== null && (typeof patch.refreshSec !== "number" || !Number.isFinite(patch.refreshSec) || patch.refreshSec < 1 || patch.refreshSec > 86400)) { fail(problem("node.bad_refresh", "A component's refresh is a number of seconds from 1 to 86400.", { nodeId: op.nodeId, field: "refreshSec" })); break; }
+        // A11.8: 0 is Off (read once per page open); otherwise 1 to 86400 seconds.
+        if ("refreshSec" in patch && patch.refreshSec !== null && (typeof patch.refreshSec !== "number" || !Number.isFinite(patch.refreshSec) || (patch.refreshSec !== 0 && (patch.refreshSec < 1 || patch.refreshSec > 86400)))) { fail(problem("node.bad_refresh", "A component's refresh is Off (0) or a number of seconds from 1 to 86400.", { nodeId: op.nodeId, field: "refreshSec" })); break; }
         if ("showTitle" in patch && patch.showTitle !== null && typeof patch.showTitle !== "boolean") { fail(problem("node.bad_patch", "Show title bar is true or false.", { nodeId: op.nodeId, field: "showTitle" })); break; }
         if ("type" in patch && at.parent === null && !isContainer(String(patch.type), checks)) { fail(problem("page.bad_root", "A page's root must stay a container.", { pageId: at.page.id, nodeId: op.nodeId })); break; }
         const next = mergePatch(at.node, patch);
@@ -234,7 +235,8 @@ export function applyOpsToDoc(input: AppDocument, ops: DraftOp[], checks: OpChec
         const s = op.source;
         if (!s || typeof s.name !== "string" || !SOURCE_NAME.test(s.name)) { fail(problem("source.bad_name", "A data source name starts with a letter and uses lowercase letters, digits and _ (at most 32).", { field: "name" })); break; }
         if (typeof s.integrationId !== "string" || !s.integrationId || typeof s.endpointId !== "string" || !s.endpointId) { fail(problem("source.bad", "Pick an integration and an endpoint.", { field: "endpointId" })); break; }
-        if (typeof s.refreshSec !== "number" || !Number.isFinite(s.refreshSec) || s.refreshSec <= 0) { fail(problem("source.bad_refresh", "The refresh interval is a number of seconds.", { field: "refreshSec" })); break; }
+        // A11.8: 0 is Off (read once per page open).
+        if (typeof s.refreshSec !== "number" || !Number.isFinite(s.refreshSec) || s.refreshSec < 0) { fail(problem("source.bad_refresh", "The refresh interval is Off (0) or a number of seconds.", { field: "refreshSec" })); break; }
         if (s.label !== undefined && s.label !== null && (typeof s.label !== "string" || s.label.length > 80)) { fail(problem("source.bad_label", "A data source's name in words is text of at most 80 characters.", { field: "label" })); break; }
         const label = typeof s.label === "string" ? s.label.trim() : "";
         const clean: DataSourceDef = { name: s.name, integrationId: s.integrationId, endpointId: s.endpointId, refreshSec: Math.round(s.refreshSec), ...(s.params !== undefined ? { params: clone(s.params) } : {}), ...(label ? { label } : {}), ...(s.managed === true ? { managed: true } : {}) };

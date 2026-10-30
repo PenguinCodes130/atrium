@@ -7,13 +7,16 @@ import { createContext, useContext, useEffect, useId, useMemo, useRef, useState,
 import type { AppDocument, ComponentNode, DraftOp, LibraryComponent, PropValue, RenderContext, StyleProps } from "@/core/contracts";
 import { AnimatePresence, motion } from "motion/react";
 import { Button, Switch, Tag, Window, transitionFor, useReducedMotion } from "@/features/shell";
-import { evaluateTemplate, isBinding, parseTemplate, rootsOf, sourcesInTemplate, text as textOf } from "../bindings";
+import { evaluateTemplate, isBinding, parseTemplate, resolveValue, rootsOf, sourcesInTemplate, text as textOf } from "../bindings";
 import { metaFor } from "../catalogue/meta";
 import { declarations, LAYOUT_LIMITS, SHADOW_REACH_MAX, THEME_TOKENS, type StyleRefusal } from "../style/compile";
 import { isLayoutType, LAYOUT_CSS_REFUSAL } from "../style/node-css-policy";
 import { compileNodeStylesAction } from "../actions";
 import { fieldsFor, type FieldSpec } from "./fields";
-import { FIELD_WORDS } from "./labels";
+import { FIELD_WORDS, HIDDEN_FIELDS } from "./labels";
+import { fieldReason, type ReasonEnv } from "./reasons";
+import { IconPickField } from "./icon-picker";
+import { ScaleField } from "./scale-field";
 import { DATA_NOTICE } from "../render/html-block";
 import { detachInstance, libraryDiff } from "../library-instance";
 import { blockLogs, clearBlockLogs, codeFieldProblem, subscribeBlockLogs } from "../sandbox/bridge";
@@ -344,16 +347,24 @@ export function BindingField({ label, value, onChange, scope, description, name,
  * case, the description under it and the switch on the right (gauntlet w2-r2 Fix 13). The label is a
  * real <label> for the switch, so a click on it toggles.
  */
-export function SwitchRow({ label, description, checked, onCheckedChange, id: given }: { label: string; description?: string; checked: boolean; onCheckedChange(c: boolean): void; id?: string }) {
+export function SwitchRow({ label, description, checked, onCheckedChange, id: given, reason }: { label: string; description?: string; checked: boolean; onCheckedChange(c: boolean): void; id?: string; /** F4: why the setting cannot show now, shown in place of the description. */ reason?: string | null }) {
   const auto = useId();
   const id = given ?? `sw-${auto}`;
   return (
     <div className="flex items-center justify-between gap-3" data-switch-field>
       <div className="flex min-w-0 flex-col gap-0.5">
-        <label htmlFor={id} className={`${labelCls} cursor-pointer`} data-switch-label>
+        <label htmlFor={id} className={`${labelCls} cursor-pointer`} data-switch-label data-field-label>
           {label}
         </label>
-        {description ? <span className="type-caption text-fg-3">{description}</span> : null}
+        {reason ? (
+          <span className="type-caption text-fg-2" data-field-reason>
+            {reason}
+          </span>
+        ) : description ? (
+          <span className="type-caption text-fg-3" data-field-hint>
+            {description}
+          </span>
+        ) : null}
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} aria-label={label} className="flex-none" />
     </div>
@@ -390,20 +401,30 @@ function StringsInput({ id, className, value, onChange }: { id: string; classNam
   );
 }
 
-function LiteralField({ spec, value, onChange }: { spec: FieldSpec; value: PropValue | undefined; onChange(v: PropValue | null): void }) {
+function LiteralField({ spec, value, onChange, reason, fallback }: { spec: FieldSpec; value: PropValue | undefined; onChange(v: PropValue | null): void; reason?: string | null; /** The type's default, what the widget draws while this is unset. */ fallback?: PropValue | undefined }) {
   const id = useId();
   const f = spec.field;
   const label = (
-    <label htmlFor={id} className={labelCls} title={spec.description || undefined}>
+    <label htmlFor={id} className={labelCls} title={spec.description || undefined} data-field-label>
       {spec.label}
     </label>
   );
-  const help = spec.hint ? <p className="type-caption m-0 text-fg-3" data-field-hint>{spec.hint}</p> : null;
+  // F4: a setting whose effect cannot show right now says why in place of its hint.
+  const help = reason ? (
+    <p className="type-caption m-0 text-fg-2" data-field-reason>
+      {reason}
+    </p>
+  ) : spec.hint ? (
+    <p className="type-caption m-0 text-fg-3" data-field-hint>
+      {spec.hint}
+    </p>
+  ) : null;
   switch (f.kind) {
     case "boolean":
       return (
         <div className="flex flex-col gap-1">
-          <SwitchRow id={id} checked={value === true} onCheckedChange={(c) => onChange(c)} label={spec.label} description={spec.hint || undefined} />
+          {/* F4: a switch that is on by default shows on until it is turned off (it used to show off, so the first click changed nothing). */}
+          <SwitchRow id={id} checked={value === true || ((value === undefined || value === null) && (fallback === true || /On by default/.test(spec.description)))} onCheckedChange={(c) => onChange(c)} label={spec.label} description={spec.hint || undefined} reason={reason ?? null} />
         </div>
       );
     case "number":
@@ -441,7 +462,7 @@ function LiteralField({ spec, value, onChange }: { spec: FieldSpec; value: PropV
       const opts = (Array.isArray(value) ? value : []) as { label: string; value: string }[];
       return (
         <div className="flex flex-col gap-1">
-          <span className={labelCls}>{spec.label}</span>
+          <span className={labelCls} data-field-label>{spec.label}</span>
           {opts.map((o, i) => (
             <div key={i} className="flex gap-1">
               <input aria-label={`Option ${i + 1} label`} className={inputCls} value={o.label} onChange={(e) => onChange(opts.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
@@ -542,7 +563,7 @@ export function chipFits(template: string, sources: readonly string[] | undefine
 }
 
 /** A prop field: a literal editor, or (switched with "Live data") a binding, shown as a data chip. */
-function PropField({ spec, node, scope, setProp, sources, onPick, describe, inlineLive = true }: { spec: FieldSpec; node: ComponentNode; scope: PageScope; setProp(k: string, v: PropValue | null): void; sources?: readonly string[]; onPick?(prop: string): void; describe?: BindingDescriber; /** False on a data widget's simple fields: their Pick data and Live data sit under More settings (data ease spec 3.1). */ inlineLive?: boolean }) {
+function PropField({ spec, node, scope, setProp, sources, onPick, describe, inlineLive = true, reason }: { spec: FieldSpec; node: ComponentNode; scope: PageScope; setProp(k: string, v: PropValue | null): void; sources?: readonly string[]; onPick?(prop: string): void; describe?: BindingDescriber; /** False on a data widget's simple fields: their Pick data and Live data sit under More settings (data ease spec 3.1). */ inlineLive?: boolean; /** F4: why this setting cannot show right now (reasons.ts). */ reason?: string | null }) {
   const value = node.props[spec.key];
   const bound = isBinding(value) || spec.field.kind === "data";
   const holdKey = `${node.id}:${spec.key}`;
@@ -554,7 +575,7 @@ function PropField({ spec, node, scope, setProp, sources, onPick, describe, inli
     if (spec.field.kind === "data" && !template.trim() && onPick && !asTemplate) {
       return (
         <div className="flex flex-col gap-1" data-field={spec.key} data-data-empty={spec.key}>
-          <span className={labelCls} title={spec.description || undefined}>{spec.label}</span>
+          <span className={labelCls} title={spec.description || undefined} data-field-label>{spec.label}</span>
           {spec.hint ? <p className="type-caption m-0 text-fg-3" data-field-hint>{spec.hint}</p> : null}
           <span className="flex flex-wrap items-center gap-x-3">
             <button type="button" className={linkBtn} data-pick-button={spec.key} onClick={() => onPick(spec.key)}>
@@ -571,7 +592,7 @@ function PropField({ spec, node, scope, setProp, sources, onPick, describe, inli
       <div className="flex flex-col gap-1" data-field={spec.key}>
         {chip ? (
           <div className="flex flex-col gap-1" data-binding-chip-field={spec.key}>
-            <span className={labelCls} title={spec.description || undefined}>{spec.label}</span>
+            <span className={labelCls} title={spec.description || undefined} data-field-label>{spec.label}</span>
             <DataChip prop={spec.key} template={template} scope={scope} describe={describe} {...(onPick && spec.bindable ? { onOpen: () => onPick(spec.key) } : {})} />
             {spec.hint ? <p className="type-caption m-0 text-fg-3" data-field-hint>{spec.hint}</p> : null}
             <button
@@ -641,7 +662,7 @@ function PropField({ spec, node, scope, setProp, sources, onPick, describe, inli
   const looksBound = spec.bindable && typeof value === "string" && value.trim().startsWith("{{");
   return (
     <div className="flex flex-col gap-1" data-field={spec.key}>
-      <LiteralField spec={spec} value={value} onChange={(v) => setProp(spec.key, v)} />
+      <LiteralField spec={spec} value={value} fallback={metaFor(node.type)?.defaults[spec.key]} onChange={(v) => setProp(spec.key, v)} reason={reason ?? null} />
       {looksBound ? (
         <p role="note" className="type-caption m-0 flex flex-wrap items-center gap-x-2 text-fg-2" data-looks-bound={spec.key}>
           This looks like live data.
@@ -946,14 +967,47 @@ function StyleControl({ prop, value, onChange, swatches }: { prop: keyof StylePr
 const SLOT_LABELS: Record<string, string> = { icon: "Icon", name: "Name", badge: "Status badge", stat: "Each number", bar: "Small bar", search: "Search box", clock: "Clock", domain: "Domain", root: "Whole component", value: "Value", label: "Label", unit: "Unit", delta: "Change", title: "Title", body: "Body", tab: "Tabs", panel: "Panel", description: "Description", item: "Each item", legend: "Legend", axis: "Axes", header: "Header row", row: "Rows", cell: "Cells", detail: "Detail", track: "Track", fill: "Fill", thumb: "Handle", field: "Field", time: "Time", date: "Date" };
 const STATE_LABELS: Record<string, string> = { hover: "Pointer over", active: "Pressed", focus: "Keyboard focus", on: "On", off: "Off", disabled: "Disabled" };
 
+// F4: every style setting has a one-line hint under it.
 const STYLE_HINTS: Partial<Record<keyof StyleProps, string>> = {
   background: "The colour or picture behind the component",
   color: "The colour of its words",
   borderRadius: "How round the corners are",
   padding: "Space between the edge and what is inside",
+  borderWidth: "How thick the line around it is",
+  borderColor: "The colour of the line around it",
   boxShadow: "A shadow under the component",
   fontSize: "How big the words are",
+  fontWeight: "How heavy the words are",
+  textAlign: "Where lines of words sit across the box",
+  textTransform: "Show the words as typed, in capitals or in lower case",
+  lineHeight: "Space between lines of words, as a multiple of the text size",
+  letterSpacing: "Space between letters",
+  fontVariantNumeric: "Even width numbers line up in columns",
+  fontFamily: "A font name; empty uses the theme's font",
+  margin: "Space outside the edge, pushing neighbours away",
+  width: "A fixed width; empty fills the box",
+  height: "A fixed height; empty follows the content",
+  minHeight: "The least height it may shrink to",
+  maxWidth: "The most width it may grow to",
+  gap: "Space between the items inside",
+  display: "How the items inside are laid out",
+  flexDirection: "Items across or down, with Layout set to Row or column",
+  alignItems: "How items line up across the layout",
+  justifyContent: "How items spread along the layout",
+  overflow: "What happens to content past the edge",
+  opacity: "How see-through the whole component is",
+  animation: "A small motion when it shows; none with reduced motion",
+  mixBlendMode: "How its colours mix with what is behind",
+  backgroundImage: "A picture or gradient behind it",
+  border: "The whole border in one CSS value",
+  outline: "A line outside the border that takes no space",
+  backdropFilter: "Blurs what is behind it, for a glass look",
+  filter: "Blur, brightness or grey on the component itself",
+  textShadow: "A shadow behind the words",
+  transition: "How changes between states animate",
+  transform: "Moves, turns or scales it without moving its neighbours",
 };
+const StyleHint = ({ prop }: { prop: keyof StyleProps }) => (STYLE_HINTS[prop] ? <p className="type-caption m-0 text-fg-3" data-field-hint>{STYLE_HINTS[prop]}</p> : null);
 
 function StylePanel({ node, onChange }: { node: ComponentNode; onChange(p: Patch): void }) {
   const meta = metaFor(node.type);
@@ -998,7 +1052,7 @@ function StylePanel({ node, onChange }: { node: ComponentNode; onChange(p: Patch
           const out = [
             <div key={`w-${p}`} className="flex flex-col gap-1">
               {control(p)}
-              {STYLE_HINTS[p] ? <p className="type-caption m-0 text-fg-3">{STYLE_HINTS[p]}</p> : null}
+              <StyleHint prop={p} />
             </div>,
           ];
           // Border (its width and colour) sits after Padding.
@@ -1007,17 +1061,20 @@ function StylePanel({ node, onChange }: { node: ComponentNode; onChange(p: Patch
               <fieldset key="border" className="m-0 flex flex-col gap-3 border-0 p-0" data-style-border>
                 <legend className={`${labelCls} mb-1`}>Border</legend>
                 {control("borderWidth")}
+                <StyleHint prop="borderWidth" />
                 {control("borderColor")}
+                <StyleHint prop="borderColor" />
               </fieldset>,
             );
           return out;
         })}
       </div>
-      <MoreFold group="style" label="More style" count={moreSet} toggleAttr="data-style-more-toggle">
+      <MoreFold group="style" label="More style: part, when, phones only, text, spacing, size, layout, effects" count={moreSet} toggleAttr="data-style-more-toggle">
         <div className="flex flex-col gap-3" data-style-more>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span className={labelCls}>Part</span>
+              <span className="type-caption text-fg-3" data-field-hint>Which part of it to style</span>
               <select className={inputCls} value={slot} onChange={(e) => setSlot(e.target.value)} data-style-slot>
                 {slots.map((s) => (
                   <option key={s} value={s}>
@@ -1028,6 +1085,7 @@ function StylePanel({ node, onChange }: { node: ComponentNode; onChange(p: Patch
             </label>
             <label className="flex flex-col gap-1">
               <span className={labelCls}>When</span>
+              <span className="type-caption text-fg-3" data-field-hint>Always, or only in a state like pointer over</span>
               <select className={inputCls} value={state} onChange={(e) => setState(e.target.value)} data-style-state>
                 <option value="">Always</option>
                 {states.map((s) => (
@@ -1039,7 +1097,12 @@ function StylePanel({ node, onChange }: { node: ComponentNode; onChange(p: Patch
             </label>
           </div>
           <SwitchRow checked={mobile} onCheckedChange={setMobile} label="Phones only" description="Styles here replace the desktop ones under 640px." />
-          {MORE.map((p) => control(p))}
+          {MORE.map((p) => (
+            <div key={`h-${key}-${p}`} className="flex flex-col gap-1">
+              {control(p)}
+              <StyleHint prop={p} />
+            </div>
+          ))}
         </div>
       </MoreFold>
     </div>
@@ -1206,7 +1269,7 @@ function HtmlContent({ node, doc, setProp }: { node: ComponentNode; doc: AppDocu
         </p>
       </div>
       <HtmlImages images={images} setImages={(v) => setProp("images", v.filter((x) => x.startsWith("/uploads/")))} />
-      <MoreFold group="content" count={(libs.length ? 1 : 0) + (Object.keys(data).length ? 1 : 0)}>
+      <MoreFold group="content" count={(libs.length ? 1 : 0) + (Object.keys(data).length ? 1 : 0)} holds={[FIELD_HTML.libs.label, FIELD_HTML.data.label]}>
         <fieldset className="m-0 flex flex-col gap-1 border-0 p-0" data-field="libs">
           <legend className={labelCls}>{FIELD_HTML.libs.label}</legend>
           <p className="type-caption m-0 text-fg-3" data-field-hint>{FIELD_HTML.libs.hint}</p>
@@ -1446,7 +1509,9 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
   }
   if (!meta) return <p className="type-body p-3 text-fg-2">This component type has no inspector.</p>;
   // A tile's integrationId is a builder reference (A10.7): never shown or typed.
-  const content = fields.filter((f) => f.group === "content" && f.key !== "showUpdated" && !(node.type === "html") && !(node.type === "service-tile" && f.key === "integrationId"));
+  // F6: the icon's px Size and Fill are only read from older icons (Scale replaces them); a tile's
+  // integrationId is a builder reference (A10.7). Neither is shown or typed (labels.ts HIDDEN_FIELDS).
+  const content = fields.filter((f) => f.group === "content" && f.key !== "showUpdated" && !(node.type === "html") && !HIDDEN_FIELDS.has(`${node.type}.${f.key}`));
   // Pictures and videos open on their own Picture (or Video) panel (media layout spec 3.1).
   const media = node.type === "image" || node.type === "video";
   const dataWidget = meta.category === "data";
@@ -1459,22 +1524,94 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
   const connectBox = sourcesBox || LIST_TYPES.includes(node.type);
   const pick = onConnectData ? { onPick: (k: string) => onConnectData(k) } : {};
   // Wave 2.9 list props (A10.2, A10.7): their own editors, with Pick data per entry by prop path.
+  // F4 reasons: what the inspector knows about the widget now (its value, whether it reads data, pages).
+  const reasonEnv: ReasonEnv = (() => {
+    const main = node.props.value ?? node.props.data;
+    let now: unknown = undefined;
+    try {
+      now = resolveValue(main as PropValue | undefined, scope, "value", []);
+    } catch {
+      now = undefined;
+    }
+    if (now && typeof now === "object" && !Array.isArray(now) && typeof (now as { value?: unknown }).value === "number") now = (now as { value: number }).value;
+    const valueNow = typeof now === "number" && Number.isFinite(now) ? now : typeof now === "string" && now.trim() !== "" && Number.isFinite(Number(now)) ? Number(now) : null;
+    const bound = Object.values(node.props).some((v) => isBinding(v) && v.$bind.trim() !== "");
+    // What the widget's data is now: "table", "list" (a plain list), or null with none.
+    let dataKind: string | null = null;
+    const dataProp = node.props.data ?? node.props.items;
+    if (dataProp !== undefined && dataProp !== null) {
+      let d: unknown;
+      try {
+        d = resolveValue(dataProp as PropValue, scope, "data", []);
+      } catch {
+        d = undefined;
+      }
+      dataKind = Array.isArray(d) ? "list" : d && typeof d === "object" && typeof (d as { kind?: unknown }).kind === "string" ? (d as { kind: string }).kind : null;
+    }
+    const parentType = (() => {
+      for (const pg of doc.pages) {
+        const walk = (n: ComponentNode): string | null => {
+          for (const c of n.children ?? []) {
+            if (c.id === node.id) return n.type;
+            const r = walk(c);
+            if (r) return r;
+          }
+          return null;
+        };
+        const r = walk(pg.root);
+        if (r) return r;
+      }
+      return null;
+    })();
+    return { valueNow, bound, pages: doc.pages.map((p) => ({ id: p.id, slug: p.slug })), children: node.children?.length ?? 0, dataKind, parentType };
+  })();
+  // Reasons read the props as the widget draws them: its own, over the type's defaults.
+  const drawnProps = { ...(meta?.defaults ?? {}), ...node.props } as Record<string, unknown>;
   const listEnv: ListEnv = { node, scope, sources: sourceNames, ...(describe ? { describe } : {}), ...(onConnectData ? { onPick: (p: string) => onConnectData(p) } : {}), setProp, setProps: (p) => onChange({ props: { ...node.props, ...p } } as unknown as Patch) };
   // With the builder's own data summary (its picker-led lines and numbers, Wave 2.9 app-builder), these
   // full editors (labels, formats, icons, templates) fold under "by hand", so each list has one main path.
   // The wrapper names the prop (data-fields) so the folded view still counts it as shown: the fold stands for it.
   const byHand = (key: string, label: string, el: ReactNode) => (dataSummary ? <div key={key} data-fields={key}><MoreFold group={`${key}-by-hand`} label={label}>{el}</MoreFold></div> : el);
+  const reasonFor = (key: string) => fieldReason(node.type, key, drawnProps, reasonEnv);
   const LIST_EDITORS: Record<string, () => ReactNode> = {
-    "service-tile.stats": () => byHand("stats", "Edit the numbers by hand", <StatsEditor key="stats" env={listEnv} />),
-    "resource-bar.items": () => byHand("items", "Edit the readings by hand", <BarItemsEditor key="items" env={listEnv} />),
+    "service-tile.stats": () => byHand("stats", "Numbers by hand: label, value, format", <StatsEditor key="stats" env={listEnv} />),
+    "resource-bar.items": () => byHand("items", "Readings by hand: icon, label, value, bar, format", <BarItemsEditor key="items" env={listEnv} />),
     "bookmarks.items": () => <BookmarksEditor key="items" env={listEnv} />,
-    "chart.lines": () => byHand("lines", "Edit the lines by hand", <LinesEditor key="lines" env={listEnv} doc={doc} {...(onOps ? { onOps } : {})} />),
+    "chart.lines": () => byHand("lines", "Lines by hand: name, colour, data, hide", <LinesEditor key="lines" env={listEnv} doc={doc} {...(onOps ? { onOps } : {})} />),
     "service-tile.icon": () => <div key="icon" data-field="icon"><IconField label="Icon" path="icon" value={node.props.icon} onSet={(v) => setProp("icon", v ?? "server")} hint="A built-in icon, the service's own, or an uploaded picture" /></div>,
+    // F4: a link's page is picked from this app's pages (typing a name that is no page was refused silently).
+    "link.page": () => {
+      const f = fields.find((x) => x.key === "page")!;
+      const cur = typeof node.props.page === "string" ? node.props.page : "";
+      const known = doc.pages.find((p) => p.id === cur || p.slug === cur);
+      const reason = reasonFor("page");
+      return (
+        <label key="page" className="flex flex-col gap-1" data-field="page">
+          <span className={labelCls} data-field-label>{f.label}</span>
+          <select className={inputCls} value={known ? known.id : ""} onChange={(e) => setProp("page", e.target.value || null)} data-link-page>
+            <option value="">No page (use the web address)</option>
+            {doc.pages.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title || p.slug}
+              </option>
+            ))}
+          </select>
+          {reason ? <span className="type-caption text-fg-2" data-field-reason>{reason}</span> : <span className="type-caption text-fg-3" data-field-hint>{f.hint}</span>}
+        </label>
+      );
+    },
+    // F6: the icon's one visual grid picker, and Scale in place of the px size.
+    "icon.name": () => (
+      <div key="name" data-field="name">
+        <IconPickField label={fields.find((x) => x.key === "name")?.label ?? "Icon"} path="name" value={isBinding(node.props.name) ? "" : node.props.name} onSet={(v) => setProp("name", v ?? "server")} hint={fields.find((x) => x.key === "name")?.hint ?? ""} />
+      </div>
+    ),
+    "icon.scale": () => <ScaleField key="scale" node={node} hint={fields.find((x) => x.key === "scale")?.hint ?? ""} onScale={(v) => onChange({ props: { ...node.props, scale: v, size: null, fill: null } } as unknown as Patch)} />,
   };
   const field = (f: FieldSpec) => {
     const custom = LIST_EDITORS[`${node.type}.${f.key}`];
     if (custom) return custom();
-    const pf = (spec: FieldSpec) => <PropField key={`${node.id}:${f.key}`} spec={spec} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={!(dataWidget && spec.simple)} {...pick} />;
+    const pf = (spec: FieldSpec) => <PropField key={`${node.id}:${f.key}`} spec={spec} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={!(dataWidget && spec.simple)} reason={reasonFor(spec.key)} {...pick} />;
     // Pictures and videos (spec 3.1): Upload, Your uploads, and the typed or live address folded under "Paste an address".
     if ((node.type === "image" || node.type === "video") && f.key === "src") {
       const v = node.props.src;
@@ -1499,7 +1636,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
       <>
         {simple.map(field)}
         {more.length || live.length ? (
-          <MoreFold group={group} count={more.filter(isSet).length}>
+          <MoreFold group={group} count={more.filter(isSet).length} holds={[...more.map((f) => f.label), ...(live.length ? ["Live data for one field"] : [])]}>
             {live.length ? (
               <div className="flex flex-col gap-1" data-live-data-fields={group}>
                 <span className={labelCls}>Live data for one field</span>

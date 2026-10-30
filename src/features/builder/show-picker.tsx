@@ -7,9 +7,16 @@
 // reads or a value read's history (A10.3), and a third unit is refused with two ways out (spec 3.4).
 // The Wave 2.5 to 2.8 picker stays one click away ("Set it up by hand") for data already in the app, a
 // typed template, a card for each, or a read's own settings.
+// Wave 2.10b F2: pointing at or focusing a candidate draws it in the target widget beside the list, with
+// its live value, and each candidate carries a marker in words and shape when its value is Empty, Zero, an
+// Error (with the reason) or Stale (with its age). Nothing changes on the canvas until Use (or the row
+// itself) is pressed. F10: measures and "Show it as" choices are drawn as small samples.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogueItem, CatalogueResponse, CatalogueService, ComponentNode, DataShapeKind, DraftOp, Measure, PeekResponse, PropValue, ShapedData, ValueFormat } from "@/core/contracts";
-import { Button, Sheet } from "@/features/shell";
+import type { CatalogueItem, CatalogueResponse, CatalogueService, ComponentNode, DataShapeKind, DraftOp, Measure, PeekResponse, PropValue, RenderContext, ShapedData, Theme, ValueFormat } from "@/core/contracts";
+import { Button, Canvas, Sheet } from "@/features/shell";
+import { RenderDeviceProvider, RenderNode } from "./components-client";
+import { candidateMarker, type Marker, type PeekValue } from "./candidate-marks";
+import { MarkerShape, MeasureSample, ShowAsSample } from "./data-samples";
 import { findNode, nodeLabel } from "@/features/apps/doc";
 import type { AppDocument } from "@/core/contracts";
 import { META } from "@/features/components/catalogue/meta";
@@ -40,6 +47,8 @@ type Props = {
   onSelect?(nodeId: string): void;
   /** Makes a node id for a new component. */
   newNodeId(): string;
+  /** F2: the app's theme and the canvas's render context, so a candidate is drawn in the target widget as the page draws it. */
+  preview?: { theme: Theme; ctx: RenderContext };
 };
 
 const MEASURES: { id: Measure; label: string }[] = [
@@ -51,7 +60,7 @@ const input = "h-11 w-full border border-line-strong bg-bg-hi px-3 type-body out
 const link = "inline-flex min-h-11 items-center px-1 type-caption underline";
 const tab = "inline-flex min-h-11 items-center border px-3 type-label";
 
-type Peeked = Record<string, { data?: ShapedData; error?: string }>;
+type Peeked = Record<string, PeekValue>;
 
 /** The catalogue for this query (A10.4), editors only; null while loading. */
 function useCatalogue(params: Record<string, string> | null): { res: CatalogueResponse | null; error: string | null } {
@@ -98,7 +107,8 @@ function usePeek(items: PickItem[]): Peeked {
           if (!mounted.current) return;
           const got: Peeked = {};
           // The answer comes back in the order asked; its keys follow the catalogue's.
-          batch.forEach((it, n) => { const v = j?.values[n]; got[it.key!] = v ? { ...(v.data ? { data: v.data } : {}), ...(v.error ? { error: v.error } : {}) } : { error: "No answer." }; });
+          // `fetchedAt` is optional and only read when the server sends one (F2 Stale; see the build report).
+          batch.forEach((it, n) => { const v = j?.values[n] as (PeekResponse["values"][number] & { fetchedAt?: string }) | undefined; got[it.key!] = v ? { ...(v.data ? { data: v.data } : {}), ...(v.error ? { error: v.error } : {}), ...(typeof v.fetchedAt === "string" ? { fetchedAt: v.fetchedAt } : {}) } : { error: "No answer." }; });
           setValues((s) => ({ ...s, ...got }));
         })
         .catch(() => { if (mounted.current) setValues((s) => ({ ...s, ...Object.fromEntries(batch.map((i) => [i.key!, { error: "No answer." }])) })); });
@@ -120,7 +130,7 @@ function unitOf(d: ShapedData | undefined, fallback?: LineUnit): LineUnit {
   return fallback ?? {};
 }
 
-export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHand, onPeeked, onSelect, newNodeId }: Props) {
+export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHand, onPeeked, onSelect, newNodeId, preview }: Props) {
   const node = findNode(doc, target.nodeId)?.node ?? null;
   const type = node?.type ?? "stat";
   const kind = propKind(type, target.prop);
@@ -213,6 +223,46 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   const observe = useCallback((el: HTMLElement | null) => { if (el) observer.current?.observe(el); }, []);
   const ordered = [...fitting, ...other];
   const peeked = usePeek(ordered.filter((it, i) => i < 20 || inView.has(it.key)));
+  // F2: the candidate pointed at or focused, drawn in the target widget beside the list. Kept as the item
+  // itself, so the preview stays while the person moves the pointer to Use.
+  const [previewing, setPreviewing] = useState<(CatalogueItem & { fit?: boolean }) | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const t = window.setInterval(() => setClock(Date.now()), 15_000); return () => window.clearInterval(t); }, []);
+  const markerFor = (it: CatalogueItem) => candidateMarker(peeked[it.key], it, clock);
+  // The target widget as Use would leave it: the same ops a pick makes, applied to a copy of the node only.
+  const shown = useMemo(() => {
+    if (!node || !previewing) return null;
+    const it = previewing;
+    let r: ReturnType<typeof bindItemOps> = null;
+    let as: string | null = null;
+    if (lineMode) r = it.shape === "series" ? addLineOps(doc, node.id, it) : null;
+    else if (itemFits(type, target.prop, it)) r = bindItemOps(doc, node.id, target.prop, it);
+    else {
+      as = showChoices(it.shape as DataShapeKind).find((c) => c.type !== "cards")?.type ?? null;
+      r = as ? bindItemOps(doc, node.id, target.prop, it, { switchTo: as }) : null;
+    }
+    const up = r?.ops.find((o): o is Extract<DraftOp, { op: "node.update" }> => o.op === "node.update" && o.nodeId === node.id);
+    if (!r || !up) return { node: null, name: null, as };
+    const props = Object.fromEntries(Object.entries((up.patch.props ?? node.props) as Record<string, PropValue>).filter(([, v]) => v !== null)) as Record<string, PropValue>;
+    const copy: ComponentNode = { ...node, id: `pv_${node.id}`, ...(up.patch.type ? { type: up.patch.type } : {}), props };
+    delete copy.slot;
+    return { node: copy, name: r.name, as };
+  }, [node, previewing, doc, lineMode, type, target.prop]);
+  const shownCtx = useMemo<RenderContext | null>(() => {
+    if (!preview || !previewing || !shown?.name) return null;
+    const base = preview.ctx.values as Record<string, unknown>;
+    const p = peeked[previewing.key];
+    const mk = candidateMarker(p, previewing, clock);
+    const refreshSec = previewing.defaultRefreshSec;
+    const state = !p ? undefined : p.data ? { state: mk?.kind === "stale" ? "stale" : "fresh", refreshSec, ...(p.fetchedAt ? { fetchedAt: p.fetchedAt } : {}) } : { state: "failed", refreshSec, error: { code: "unreachable", message: p.error ?? "No answer." } };
+    return { ...preview.ctx, mode: "view", values: { ...base, $data: { ...(base.$data as Record<string, unknown>), [shown.name]: p?.data }, $sources: { ...(base.$sources as Record<string, unknown>), [shown.name]: state } } as unknown as RenderContext["values"] };
+  }, [preview, previewing, shown, peeked, clock]);
+  // The widget's size on the canvas, so the preview shows it at the size the page draws it (within the pane).
+  const size = useMemo(() => {
+    const el = node && typeof document !== "undefined" ? document.querySelector(`[data-canvas-root] [data-node="${CSS.escape(node.id)}"]`) : null;
+    const b = el?.getBoundingClientRect();
+    return b && b.width > 0 ? { w: Math.round(Math.min(272, Math.max(160, b.width))), h: Math.round(Math.min(240, Math.max(56, b.height))) } : { w: 240, h: 96 };
+  }, [node?.id, previewing?.key]);
 
   const close = () => onClose();
 
@@ -356,15 +406,19 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   const targetWords = node ? `${nodeLabel(node)}${target.prop !== "data" && target.prop !== "items" ? `: ${target.prop.replace(/\.(\d+)\./, (_, n) => ` ${Number(n) + 1} `)}` : ""}` : "this app";
   const rowFor = (it: CatalogueItem & { fit?: boolean }) => {
     const v = valueWords(peeked[it.key]);
+    const mk = markerFor(it);
     return (
       <li key={it.key} className="flex items-stretch gap-1">
-        <button ref={observe} type="button" className={`${row} flex-1 ${it.key === currentKey ? "border-fg bg-bg-sunk" : ""}`} aria-current={it.key === currentKey || undefined} onClick={() => pick(it)} data-show-item={it.key} data-show-current={it.key === currentKey ? "yes" : undefined} data-show-integration={it.integrationId} data-show-endpoint={it.endpointId} data-show-thing-value={it.thing?.value ?? ""} data-fits={it.fit ? "yes" : "no"}>
+        <button ref={observe} type="button" className={`${row} min-w-0 flex-1 ${it.key === currentKey ? "border-fg bg-bg-sunk" : ""} ${previewing?.key === it.key ? "bg-bg-sunk" : ""}`} aria-current={it.key === currentKey || undefined} aria-describedby={mk ? `mk-${idOf(it.key)}` : undefined} onClick={() => pick(it)} onMouseEnter={() => setPreviewing(it)} onFocus={() => setPreviewing(it)} data-show-item={it.key} data-show-current={it.key === currentKey ? "yes" : undefined} data-show-integration={it.integrationId} data-show-endpoint={it.endpointId} data-show-thing-value={it.thing?.value ?? ""} data-fits={it.fit ? "yes" : "no"}>
           <span className="flex-none"><PackageIcon id={it.serviceIcon || it.packageId} size={20} /></span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="type-body truncate font-medium" data-show-item-words>{itemWords(it)}</span>
             <span className="type-caption truncate text-fg-2">{it.key === currentKey ? <span className="font-medium text-fg" data-show-now>Showing now · </span> : null}{it.integrationName}{it.needsSettings ? " · asks for a setting" : ""}{it.from ? ` · ${it.from}` : ""}</span>
           </span>
-          <span className={`type-caption flex-none font-mono ${v?.failed ? "text-fg-2" : ""}`} data-show-value={v ? (v.failed ? "none" : "yes") : "loading"}>{v ? v.text : it.needsSettings ? "" : "…"}</span>
+          <span className="flex flex-none flex-col items-end gap-0.5">
+            <span className={`type-caption font-mono ${v?.failed ? "text-fg-2" : ""}`} data-show-value={v ? (v.failed ? "none" : "yes") : "loading"}>{v ? v.text : it.needsSettings ? "" : "…"}</span>
+            {mk && <MarkerChip marker={mk} id={`mk-${idOf(it.key)}`} />}
+          </span>
         </button>
         {it.thing && it.thing.value !== "*" && (
           <button type="button" className="inline-flex min-h-11 w-[5.5rem] flex-none items-center justify-center border border-line px-1 text-center type-caption leading-tight hover:bg-bg-sunk focus-visible:outline-2 focus-visible:outline-accent-ink" onClick={() => setAnother(it)} title={`Pick another ${it.thing.param}`} data-show-another={it.key}>Pick another</button>
@@ -374,7 +428,7 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   };
 
   return (
-    <Sheet open onOpenChange={(o) => { if (!o) close(); }} title="What should this show?" path={`builder / data / ${targetWords}`} name="data-picker" width={520}
+    <Sheet open onOpenChange={(o) => { if (!o) close(); }} title="What should this show?" path={`builder / data / ${targetWords}`} name="data-picker" width={preview ? 860 : 520}
       footer={
         <div className="flex flex-wrap items-center gap-2">
           {target.fromInsert ? (
@@ -385,7 +439,8 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
           {!lineMode && <button type="button" className={`${link} ml-auto`} onClick={() => { onByHand(); }} data-pick-by-hand>Set it up by hand</button>}
         </div>
       }>
-      <div className="flex flex-col gap-4" data-data-picker data-show-picker data-target={targetWords} data-mode={lineMode ? "line" : kind}>
+      <div className={`grid gap-4 ${preview ? "md:grid-cols-[minmax(0,1fr)_17.5rem]" : ""}`} data-data-picker data-show-picker data-target={targetWords} data-mode={lineMode ? "line" : kind}>
+        <div className="flex min-w-0 flex-col gap-4" data-show-list>
         {rowList.length > 0 && !lineMode && (
           <section className="flex flex-col gap-1" data-show-this-row={around!.repeatId}>
             <h3 className="type-label m-0">This row</h3>
@@ -496,7 +551,7 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
             )}
             {!typed && browse === "measure" && !measure && (
               <ul className="m-0 grid list-none grid-cols-2 gap-1 p-0" data-show-measures>
-                {MEASURES.map((m) => <li key={m.id}><button type="button" className={row} onClick={() => setMeasure(m.id)} data-show-measure={m.id}><span className="type-body font-medium">{m.label}</span></button></li>)}
+                {MEASURES.map((m) => <li key={m.id}><button type="button" className={row} onClick={() => setMeasure(m.id)} data-show-measure={m.id}><MeasureSample measure={m.id} /><span className="type-body font-medium">{m.label}</span></button></li>)}
               </ul>
             )}
             {!typed && browse === "measure" && measure && <button type="button" className={`${link} self-start`} onClick={() => setMeasure(null)} data-show-up>All measures</button>}
@@ -525,8 +580,58 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
             )}
           </>
         )}
+        </div>
+        {preview && (
+          <aside className={`flex min-w-0 flex-col gap-2 border border-line p-3 md:sticky md:top-0 md:self-start max-md:order-first ${previewing ? "" : "max-md:hidden"}`} aria-label="Preview" data-show-preview data-show-preview-for={previewing?.key ?? ""}>
+            <h3 className="type-label m-0">Preview</h3>
+            {!previewing ? (
+              <p className="type-caption m-0 text-fg-2" data-show-preview-empty>Point at a choice, or move to it with Tab, to see it in {lineMode ? "the chart" : `the ${fitsTitle.replace(/^an? /, "")}`} here with its live value. Nothing changes on the page until you press Use.</p>
+            ) : (
+              <>
+                <div className="flex min-w-0 flex-col" aria-live="polite">
+                  <span className="type-body truncate font-medium" data-show-preview-words>{itemWords(previewing)}</span>
+                  <span className="type-caption truncate text-fg-2">{previewing.integrationName}</span>
+                </div>
+                {(() => { const mk = markerFor(previewing); return mk ? <MarkerChip marker={mk} wrap /> : null; })()}
+                {shown?.as && <p className="type-caption m-0 text-fg-2" data-show-preview-as={shown.as}>A {fitsTitle.replace(/^an? /, "")} cannot show this as it is. Use offers it as a {shown.as}.</p>}
+                <div className="min-w-0 overflow-hidden border border-line" style={{ width: "100%", maxWidth: size.w }} data-show-preview-widget>
+                  {previewing.needsSettings ? (
+                    <p className="type-caption m-0 p-3 text-fg-2">This read asks for a setting first; Use opens it.</p>
+                  ) : !peeked[previewing.key] ? (
+                    <div className="animate-pulse bg-bg-sunk motion-reduce:animate-none" style={{ height: size.h }} aria-busy data-show-preview-loading />
+                  ) : shown?.node && shownCtx ? (
+                    <Canvas theme={preview.theme} className="!min-h-0" data-show-preview-canvas>
+                      <div className="p-2" style={{ minHeight: size.h }}>
+                        <RenderDeviceProvider device="desktop">
+                          <RenderNode node={shown.node} ctx={shownCtx} />
+                        </RenderDeviceProvider>
+                      </div>
+                    </Canvas>
+                  ) : (
+                    <p className="type-caption m-0 p-3 text-fg-2" data-show-preview-none>{lineMode ? "Its line is drawn once it is on the chart." : "This cannot be drawn here."}</p>
+                  )}
+                </div>
+                <Button variant="primary" onClick={() => pick(previewing)} data-show-use>Use</Button>
+                <p className="type-caption m-0 text-fg-3">Nothing changes on the page until you press Use.</p>
+              </>
+            )}
+          </aside>
+        )}
       </div>
     </Sheet>
+  );
+}
+
+const idOf = (key: string) => key.replace(/[^A-Za-z0-9_-]/g, "_").slice(-48);
+
+/** A candidate's marker (F2): its shape and its words, never colour alone. */
+function MarkerChip({ marker, id, wrap = false }: { marker: Marker; id?: string; wrap?: boolean }) {
+  const tone = marker.kind === "error" ? "text-bad" : marker.kind === "stale" ? "text-warn" : "text-fg-2";
+  return (
+    <span id={id} className={`inline-flex min-w-0 items-center gap-1 type-caption ${tone}`} title={marker.words} data-show-marker={marker.kind}>
+      <MarkerShape kind={marker.kind} />
+      <span className={wrap ? "min-w-0 break-words" : "max-w-[14rem] truncate"}>{marker.words}</span>
+    </span>
   );
 }
 
@@ -572,7 +677,11 @@ function SwitchOffer({ item, type, lineMode, onSwitch, onBack }: { item: PickIte
       <p className="type-body m-0">{lineMode ? `${itemWords(item)} has no values over time, so it cannot be a chart line.` : `A ${title} cannot show ${itemWords(item)} as it is.`}</p>
       {choices.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {choices.map((c) => <Button key={c.type} variant="secondary" onClick={() => onSwitch(c.type)} data-show-switch-to={c.type}>Show it as a {c.label.toLowerCase()}</Button>)}
+          {choices.map((c) => (
+            <button key={c.type} type="button" className="inline-flex min-h-11 items-center gap-2 border border-line-strong px-3 type-label hover:bg-bg-sunk focus-visible:outline-2 focus-visible:outline-accent-ink" onClick={() => onSwitch(c.type)} data-show-switch-to={c.type}>
+              <ShowAsSample type={c.type} />Show it as a {c.label.toLowerCase()}
+            </button>
+          ))}
         </div>
       )}
       <button type="button" className={`${link} self-start`} onClick={onBack} data-show-switch-back>Back to the list</button>

@@ -5,7 +5,7 @@
 // version or draft, an imported app file, a shared theme file, an older format file, an agent draft or
 // a value written straight into storage. A value that fails is replaced by Control Room's value for
 // that field (numbers outside a range are clamped), never passed through. Free text (names, authors)
-// never reaches CSS at all; font family names reach it only when they are one of the ten built-in
+// never reaches CSS at all; font family names reach it only when they are one of the built-in
 // families or a family the theme declares with an uploaded woff2 file.
 //
 // Pure module: no DOM, no Node APIs, safe on the server and in the browser.
@@ -63,6 +63,13 @@ function oneOf<T extends string>(ctx: Ctx, path: string, v: unknown, allowed: re
 
 function bool(ctx: Ctx, path: string, v: unknown, fb: boolean): boolean {
   return typeof v === "boolean" ? v : bad(ctx, path, fb);
+}
+
+/** F12: an optional two-colour gradient pair; anything else is dropped and counted. */
+function pair(ctx: Ctx, path: string, v: unknown): [string, string] | undefined {
+  if (v === undefined) return undefined;
+  if (Array.isArray(v) && v.length === 2 && v.every((c) => typeof c === "string" && c.length <= 80 && isThemeColor(c))) return [(v[0] as string).trim(), (v[1] as string).trim()];
+  return bad(ctx, path, undefined);
 }
 
 function family(ctx: Ctx, path: string, v: unknown, uploaded: readonly string[], fb: string): string {
@@ -124,8 +131,9 @@ function surfaceGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["surfac
   if (!s) return bad(ctx, p, { ...fb, border: { ...fb.border } });
   const b = obj(s.border);
   if (!b) bad(ctx, `${p}.border`, null);
+  const gradient = pair(ctx, `${p}.gradient`, s.gradient);
   return {
-    material: oneOf(ctx, `${p}.material`, s.material, ["solid", "glass"] as const, fb.material),
+    material: oneOf(ctx, `${p}.material`, s.material, ["solid", "glass", "gradient"] as const, fb.material),
     opacity: num(ctx, `${p}.opacity`, s.opacity, 0.3, 1, fb.opacity),
     blurPx: num(ctx, `${p}.blurPx`, s.blurPx, 0, 48, fb.blurPx),
     border: b
@@ -134,6 +142,7 @@ function surfaceGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["surfac
     shadow: oneOf(ctx, `${p}.shadow`, s.shadow, ["none", "soft", "hard"] as const, fb.shadow),
     shadowOffsetPx: num(ctx, `${p}.shadowOffsetPx`, s.shadowOffsetPx, 0, 12, fb.shadowOffsetPx),
     titleBars: bool(ctx, `${p}.titleBars`, s.titleBars, fb.titleBars),
+    ...(gradient ? { gradient } : {}),
   };
 }
 
@@ -184,6 +193,11 @@ function chromeGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["chrome"
     activeFill: color(ctx, `${p}.activeFill`, c.activeFill, fb.activeFill),
     activeText: color(ctx, `${p}.activeText`, c.activeText, fb.activeText),
     style: oneOf(ctx, `${p}.style`, c.style, ["bar", "boxed-tabs", "pills", "underline"] as const, fb.style),
+    // F12 (A11.5): the nav's material, all optional; absent material reads as solid.
+    ...(c.material !== undefined ? { material: oneOf(ctx, `${p}.material`, c.material, ["solid", "gradient", "glass"] as const, "solid") } : {}),
+    ...(c.opacity !== undefined ? { opacity: num(ctx, `${p}.opacity`, c.opacity, 0.3, 1, 0.6) } : {}),
+    ...(c.blurPx !== undefined ? { blurPx: num(ctx, `${p}.blurPx`, c.blurPx, 0, 48, 16) } : {}),
+    ...(c.gradient !== undefined ? (() => { const g = pair(ctx, `${p}.gradient`, c.gradient); return g ? { gradient: g } : {}; })() : {}),
   };
 }
 

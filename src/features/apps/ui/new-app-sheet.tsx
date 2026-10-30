@@ -7,9 +7,11 @@ import { slugify } from "@/features/apps/doc";
 import { ChoiceGroup, SelectMenu } from "@/features/settings/ui/controls";
 import { apiJson, Field, inputClass } from "./fields";
 import { StartPageForm, type StartChoice } from "@/features/builder/service-sheets";
+import { ThemePicker } from "@/features/themes/client";
+import type { ThemeRef } from "@/core/contracts";
 
 /** Wave 2.9 (spec 3.7, A10.8): a new app can start as a page made from your services. */
-const START_PAGE: TemplateOption = { id: "start-page", title: "Start page from your services", description: "A resource bar, then your services in groups by kind, each a tile with its live status and numbers. Like Homepage, and all of it editable.", integrations: [] };
+const START_PAGE: TemplateOption = { id: "start-page", title: "Start page from your services", description: "A health row for every machine, your services in groups by kind with their live status and numbers, CPU and network charts, then your links. Like Homepage, and all of it editable.", integrations: [] };
 
 export type TemplateOption = { id: string; title: string; description: string; integrations: { key: string; packageId: string; name: string; why: string }[] };
 export type IntegrationOption = { id: string; name: string; packageId: string };
@@ -25,7 +27,10 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [template, setTemplate] = useState(initialTemplate ?? "blank");
+  // Wave 2.10b F1: the start page is preselected once a service is connected (with none, it could only
+  // say "connect a service first", so a blank app is the useful default then).
+  const [template, setTemplate] = useState(initialTemplate ?? (integrations.length ? START_PAGE.id : "blank"));
+  const [theme, setTheme] = useState<ThemeRef>({ themeId: "control-room" });
   const [mappings, setMappings] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -45,7 +50,7 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
     }
     const startPage = template === START_PAGE.id;
     if (startPage && !start) { setBusy(false); setErrors({ form: "Tick at least one service, or add a link." }); return; }
-    const r = await apiJson<{ app: { id: string; slug: string } }>("/api/apps", { method: "POST", body: JSON.stringify({ name, slug: shownSlug, template: startPage ? "blank" : template, mappings: map }) });
+    const r = await apiJson<{ app: { id: string; slug: string } }>("/api/apps", { method: "POST", body: JSON.stringify({ name, slug: shownSlug, template: startPage ? "blank" : template, mappings: map, ...("themeId" in theme ? { theme } : {}) }) });
     if (r.ok && startPage && start) {
       // The app exists; its first page is made from the services in one change (A10.8).
       const made = await apiJson<{ rev: number }>(`/api/apps/${encodeURIComponent(r.data.app.id)}/start-page`, { method: "POST", body: JSON.stringify(start) });
@@ -71,6 +76,10 @@ export function NewAppSheet({ open, onClose, onCreated, templates, integrations,
         {/* The shared square controls (gauntlet w2-r2 item 6): one row per template with an ink-fill square radio. */}
         <ChoiceGroup<string> label="Start from" look="rows" name="template" value={template} onChange={setTemplate} options={all.map((x) => ({ value: x.id, label: x.title, description: `${x.description}${needsWords(x, integrations)}`, data: { "template-option": x.id } }))} />
         {template === START_PAGE.id && <StartPageForm onChoice={setStart} />}
+        {/* Wave 2.10b F1: the new app starts in the person's own theme (built in or one of theirs). */}
+        <div data-new-app-theme>
+          <ThemePicker label="Theme" inheritLabel={null} value={theme} onChange={(r) => r && setTheme(r)} />
+        </div>
         {t && t.integrations.length > 0 && (
           <fieldset className="flex flex-col gap-3" data-template-mapping>
             <legend className="mb-1 type-label text-fg">Connect your services</legend>

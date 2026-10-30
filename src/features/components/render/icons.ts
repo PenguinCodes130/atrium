@@ -1,5 +1,8 @@
-// The built-in icon set (24 x 24, stroked). Names match ICON_NAMES in catalogue/schemas.ts.
-export const ICON_PATHS: Record<string, string[]> = {
+// The built-in icon set (24 x 24, stroked). ICON_NAMES in catalogue/schemas.ts lists every key; Wave
+// 2.10b F6 adds icons-more.ts (the picker's categories and search words are in icon-catalogue.ts).
+import { MORE_ICON_PATHS } from "./icons-more";
+
+const BASE_ICON_PATHS: Record<string, string[]> = {
   home: ["M3 11 12 4l9 7", "M5 10v10h14V10", "M10 20v-6h4v6"],
   server: ["M4 4h16v6H4z", "M4 14h16v6H4z", "M8 7h.01", "M8 17h.01"],
   cpu: ["M7 7h10v10H7z", "M10 10h4v4h-4z", "M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"],
@@ -81,3 +84,5 @@ export const ICON_PATHS: Record<string, string[]> = {
   "custom-api": ["M8 7 3 12l5 5m8-10 5 5-5 5M14 5l-4 14"],
   atrium: ["M5 21V10a7 7 0 0 1 14 0v11", "M3 21h18", "M9 21v-7a3 3 0 0 1 6 0v7"],
 };
+
+export const ICON_PATHS: Record<string, string[]> = { ...BASE_ICON_PATHS, ...MORE_ICON_PATHS };

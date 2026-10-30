@@ -138,6 +138,8 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
       const st = evalData(n.props.status);
       if (st.ok && st.value !== undefined && st.value !== null && !(typeof st.value === "object" && (st.value as { kind?: unknown }).kind === "status") && typeof st.value !== "string" && typeof st.value !== "boolean") problems.push({ severity: "warning", code: "tile.status_shape", where: where("status"), message: "The status badge needs status data (an up or down item); this binding gives something else.", fix: "Bind a status read, such as atrium/health or atrium/reach." });
     }
+    // F6: the icon component takes any icon reference now (a built-in name, pkg:<id>, an upload).
+    if (n.type === "icon" && !isBinding(n.props.name)) checkIcon(n.props.name, "name");
     if (n.type === "resource-bar") (Array.isArray(n.props.items) ? n.props.items : []).forEach((it, i) => checkIcon((it as Record<string, unknown> | null)?.icon, `items[${i}].icon`));
     if (n.type === "bookmarks") {
       (Array.isArray(n.props.items) ? n.props.items : []).forEach((it, i) => {

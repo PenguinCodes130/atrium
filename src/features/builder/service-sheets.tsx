@@ -171,16 +171,13 @@ export function StartPageForm({ onChoice, busy, error }: { onChoice(c: StartChoi
   const [name, setName] = useState("");
   const [href, setHref] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [machine, setMachine] = useState("host");
   const ids = useMemo(() => (services ?? []).filter((s) => !off.has(s.integrationId)).map((s) => s.integrationId), [services, off]);
   const shownMachines = useMemo(() => machines.filter((m) => ids.includes(m.integrationId)), [machines, ids.join(",")]);
-  // A machine of a service ticked off falls back to this server.
-  useEffect(() => { if (machine !== "host" && !shownMachines.some((m) => m.value === machine)) setMachine("host"); }, [shownMachines, machine]);
+  // Wave 2.10b F1: every machine the ticked services report gets its own health row, so there is no
+  // single machine to pick any more (the old "The resource bar shows" list is gone; see the report).
   useEffect(() => {
-    const m = machine === "host" ? null : (JSON.parse(machine) as [string, string]);
-    const label = m ? machines.find((x) => x.value === machine)?.label.replace(/ \([^)]*\)$/, "") ?? m[1] : "";
-    onChoice(ids.length || links.length ? { integrationIds: ids, links, ...(m ? { machine: { integrationId: m[0], thing: m[1], label } } : {}) } : null);
-  }, [ids.join(","), JSON.stringify(links), machine]);
+    onChoice(ids.length || links.length ? { integrationIds: ids, links } : null);
+  }, [ids.join(","), JSON.stringify(links)]);
   const addLink = () => {
     const clean = cleanLink(href);
     if (!clean) { setLinkError("Type an http or https address, like http://10.0.0.5:8096."); return; }
@@ -221,23 +218,12 @@ export function StartPageForm({ onChoice, busy, error }: { onChoice(c: StartChoi
         <Button variant="secondary" onClick={addLink} disabled={!href.trim()} data-start-link-add>Add the link</Button>
       </section>
       <section className="flex flex-col gap-1" data-start-machine>
-        {/* Round 2 item 17: a bounded list inside the sheet (the dropdown drew its options outside it and the
-            wheel could not reach the person's machines), with only the machines of the services ticked above. */}
-        <span className="type-label" id="start-machine-label">The resource bar shows</span>
-        <div role="radiogroup" aria-labelledby="start-machine-label" className="flex max-h-60 flex-col overflow-y-auto overscroll-contain border border-line-strong" data-start-machine-list>
-          {[{ value: "host", label: "This Atrium server", name: "This Atrium server", service: "" }, ...shownMachines].map((m) => {
-            const on = machine === m.value;
-            return (
-              <button key={m.value} type="button" role="radio" aria-checked={on} onClick={() => setMachine(m.value)} className={`flex min-h-11 w-full flex-none items-center gap-3 border-b border-line px-3 text-left last:border-b-0 hover:bg-bg-sunk focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-ink ${on ? "bg-bg-sunk" : ""}`} data-start-machine-option={m.value}>
-                <span aria-hidden className={`inline-flex size-4 flex-none items-center justify-center rounded-full border border-[color:var(--ink)] dark:border-line-strong`}>{on ? <span className="size-2 rounded-full bg-[color:var(--ink)] dark:bg-fg" /> : null}</span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="type-body truncate">{m.name}</span>
-                  {m.service ? <span className="type-caption truncate text-fg-2">{m.service}</span> : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <h3 className="type-label m-0">Machines</h3>
+        <p className="type-caption m-0 text-fg-2" data-start-machines={shownMachines.length}>
+          {shownMachines.length
+            ? `Every machine the ticked services report gets a health row (CPU, memory, disk, uptime), ${shownMachines.length} now. A new machine shows up there by itself.`
+            : "None of the ticked services reports machines, so the page starts with this Atrium server's CPU, memory, disk and uptime."}
+        </p>
       </section>
       {error && <p role="alert" className="type-body m-0 text-bad" data-start-error>{error}</p>}
       {busy && <p className="type-caption m-0 text-fg-2">Making the page…</p>}
@@ -265,7 +251,7 @@ export function StartPageSheet({ appId, apply, onClose, onMade }: { appId: strin
     <Sheet open onOpenChange={(o) => { if (!o) onClose(); }} title="Start page from your services" path="builder / start page" name="start-page" width={520}
       footer={<div className="flex gap-2"><Button variant="primary" onClick={() => void make()} disabled={!choice || busy} data-start-make>Make the page</Button><Button variant="quiet" onClick={onClose} data-start-cancel>Cancel</Button></div>}>
       <div className="flex flex-col gap-3" data-start-sheet>
-        <p className="type-body m-0 text-fg-2">A resource bar on top, then a group for each kind of service with a tile per service and its live numbers. Everything stays editable, and one undo takes it all back.</p>
+        <p className="type-body m-0 text-fg-2">A health row for every machine, a tile for each service grouped by kind, charts of CPU and network across machines, then your links. Everything stays editable, and one undo takes it all back.</p>
         <StartPageForm onChoice={setChoice} busy={busy} error={error} />
       </div>
     </Sheet>

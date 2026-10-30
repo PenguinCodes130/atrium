@@ -1,9 +1,13 @@
 // Design v4 section 2 themes (round 4, Fix 7): the four built-ins value for value, every v4 token as a
 // --theme-* property, auto mode, fonts, the v4 schema and the v3 import.
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_THEMES,
   THEME_FONTS,
+  THEME_FONT_KINDS,
+  selfHostedFontSlug,
   THEME_FONT_STACKS,
   contrastReport,
   controlRoom,
@@ -25,13 +29,15 @@ import {
   type ThemeTokens,
 } from "./theme";
 
+const APP_DIR = path.resolve(__dirname, "../../..");
+
 /** Every v4 token has a property (gauntlet r2 customisation M2's list, plus the remaining fields). */
 const V4_VARS = [
   "--theme-wallpaper", "--theme-wallpaper-blur", "--theme-wallpaper-dim", "--theme-wallpaper-grain", "--theme-wallpaper-position",
   "--theme-surface", "--theme-surface-text", "--theme-surface-muted", "--theme-canvas-text",
   "--theme-accent", "--theme-accent-text", "--theme-accent-ink",
   "--theme-ok", "--theme-warn", "--theme-bad", "--theme-info", "--theme-line",
-  "--theme-surface-opacity", "--theme-surface-fill", "--theme-surface-blur",
+  "--theme-surface-opacity", "--theme-surface-fill", "--theme-surface-blur", "--theme-surface-image", // F12
   "--theme-border-width", "--theme-border-color", "--theme-shadow-kind", "--theme-shadow-offset", "--theme-shadow", "--theme-title-bars",
   "--theme-font-display", "--theme-font-body", "--theme-font-mono", "--theme-type-scale", "--theme-numbers", "--theme-heading-tracking", "--theme-heading-weight",
   "--theme-radius", "--theme-control-radius",
@@ -41,6 +47,7 @@ const V4_VARS = [
   "--theme-nav-item-h", "--theme-nav-bar-h", "--theme-nav-pad-y", "--theme-nav-pad-x", "--theme-nav-gap", "--theme-tile-pad-y", "--theme-tile-pad-x", "--theme-tile-gap", "--theme-tile-icon", "--theme-group-head-h",
   "--theme-motion-enter",
   "--theme-chrome-bg", "--theme-chrome-text", "--theme-chrome-active-fill", "--theme-chrome-active-text", "--theme-chrome-style",
+  "--theme-chrome-material", "--theme-chrome-fill", "--theme-chrome-blur", "--theme-chrome-image", // Wave 2.10b F12 (A11.5)
   "--theme-glow", "--theme-room-shaft", "--theme-room-shaft-dim",
 ];
 
@@ -174,9 +181,34 @@ describe("themeToCssVars", () => {
 });
 
 describe("fonts", () => {
-  it("has all ten design v4 families self-hosted (next/font variables)", () => {
-    expect(THEME_FONTS.sort()).toEqual(["Atkinson Hyperlegible", "Fraunces", "Geist", "Geist Mono", "IBM Plex Mono", "IBM Plex Sans", "Inter", "Inter Tight", "JetBrains Mono", "Space Grotesk"]);
-    for (const s of Object.values(THEME_FONT_STACKS)) expect(s).toMatch(/^var\(--font-[a-z-]+\), /);
+  // Wave 2.10b F10 (A11.5): the ten design v4 families stay on next/font; 27 more are self-hosted files.
+  it("keeps the ten design v4 families on next/font variables", () => {
+    const ten = ["Atkinson Hyperlegible", "Fraunces", "Geist", "Geist Mono", "IBM Plex Mono", "IBM Plex Sans", "Inter", "Inter Tight", "JetBrains Mono", "Space Grotesk"] as const;
+    for (const f of ten) expect(THEME_FONT_STACKS[f]).toMatch(/^var\(--font-[a-z-]+\), /);
+  });
+  it("F10: at least 30 built-in families across sans, serif, mono, display and rounded, each with its own stack", () => {
+    expect(THEME_FONTS.length).toBeGreaterThanOrEqual(30);
+    const kinds = new Set(THEME_FONTS.map((f) => THEME_FONT_KINDS[f]));
+    expect([...kinds].sort()).toEqual(["display", "mono", "rounded", "sans", "serif"]);
+    for (const k of kinds) expect(THEME_FONTS.filter((f) => THEME_FONT_KINDS[f] === k).length).toBeGreaterThanOrEqual(4);
+    expect(new Set(Object.values(THEME_FONT_STACKS)).size).toBe(THEME_FONTS.length);
+    for (const f of THEME_FONTS) if (selfHostedFontSlug(f)) expect(THEME_FONT_STACKS[f]).toBe(`"${f}", ${THEME_FONT_STACKS[f].split(", ").slice(1).join(", ")}`);
+  });
+  it("F10: every self-hosted family has an @font-face rule pointing at a file in public/fonts, and nothing else does", () => {
+    const css = readFileSync(path.join(APP_DIR, "src/features/themes/fonts/theme-fonts.css"), "utf8");
+    const declared = new Set([...css.matchAll(/font-family: "([^"]+)"/g)].map((m) => m[1]));
+    const self = THEME_FONTS.filter((f) => selfHostedFontSlug(f));
+    expect([...declared].sort()).toEqual([...self].sort());
+    for (const m of css.matchAll(/url\("([^"]+)"\)/g)) {
+      expect(m[1]).toMatch(/^\/fonts\/[a-z0-9-]+\.woff2$/);
+      expect(existsSync(path.join(APP_DIR, "public", m[1]!)), m[1]).toBe(true);
+    }
+    expect(css).not.toMatch(/https?:/);
+  });
+  it("F10: a mono field picked from a mono family is kept", () => {
+    const v = tokensToCssVars({ ...controlRoom.tokens, type: { ...controlRoom.tokens.type, mono: "Fira Code", display: "Lora" } }, "light");
+    expect(v["--theme-font-mono"]).toBe(THEME_FONT_STACKS["Fira Code"]);
+    expect(v["--theme-font-display"]).toBe(`"Lora", ui-serif, Georgia, serif`);
   });
 
   it("names an uploaded family only when the theme declares it", () => {
@@ -288,5 +320,34 @@ describe("validators", () => {
     expect(isThemeGradient("linear-gradient(var(--bg), red)")).toBe(false);
     expect(isUploadPath("/uploads/a.png")).toBe(true);
     expect(isUploadPath("/uploads/../a.png")).toBe(false);
+  });
+});
+
+// Wave 2.10b F12 (A11.5, design Note 2): one material control for surfaces and the nav chrome.
+describe("F12 materials", () => {
+  const t = controlRoom.tokens;
+  it("Solid nav chrome: the background colour, no blur, no image (absent material reads as solid)", () => {
+    const v = tokensToCssVars(t, "light");
+    expect([v["--theme-chrome-material"], v["--theme-chrome-fill"], v["--theme-chrome-blur"], v["--theme-chrome-image"]]).toEqual(["solid", "#F3EFE4", "0px", "none"]);
+  });
+  it("Frosted glass nav chrome: the background at its opacity, blurred", () => {
+    const v = tokensToCssVars({ ...t, chrome: { ...t.chrome, material: "glass", opacity: 0.4, blurPx: 16 } }, "light");
+    expect(v["--theme-chrome-fill"]).toBe("color-mix(in oklab, #F3EFE4 40%, transparent)");
+    expect(v["--theme-chrome-blur"]).toBe("16px");
+    const clamped = tokensToCssVars({ ...t, chrome: { ...t.chrome, material: "glass", opacity: 0.1, blurPx: 99 } }, "light");
+    expect([clamped["--theme-chrome-fill"], clamped["--theme-chrome-blur"]]).toEqual(["color-mix(in oklab, #F3EFE4 30%, transparent)", "48px"]);
+  });
+  it("Gradient for the nav and for surfaces: two colours at 135deg; a bad pair falls back to the flat colour", () => {
+    const v = tokensToCssVars({ ...t, chrome: { ...t.chrome, material: "gradient", gradient: ["#FFFFFF", "#A9C8E4"] }, surface: { ...t.surface, material: "gradient", gradient: ["#FFFFFF", "#E8E2D2"] } }, "light");
+    expect(v["--theme-chrome-image"]).toBe("linear-gradient(135deg, #FFFFFF, #A9C8E4)");
+    expect(v["--theme-surface-image"]).toBe("linear-gradient(135deg, #FFFFFF, #E8E2D2)");
+    expect(v["--theme-surface-blur"]).toBe("0px");
+    const bad = tokensToCssVars({ ...t, surface: { ...t.surface, material: "gradient", gradient: ["red;}", "#fff"] as [string, string] } }, "light");
+    expect(bad["--theme-surface-image"]).toBe("linear-gradient(135deg, #FBF9F3, #FBF9F3)");
+  });
+  it("the schema takes gradient surfaces and the nav's material fields", () => {
+    const theme = { ...controlRoom, tokens: { ...t, surface: { ...t.surface, material: "gradient", gradient: ["#FFFFFF", "#E8E2D2"] }, chrome: { ...t.chrome, material: "glass", opacity: 0.5, blurPx: 20 } } };
+    const r = parseTheme(theme);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
   });
 });

@@ -73,6 +73,45 @@ describe("sharing (spec 3.1, criterion 4)", () => {
   });
 });
 
+describe("refresh Off (Wave 2.10b F5, A11.8)", () => {
+  it("fastest non-zero wins: Off binders do not slow or stop a source another binder refreshes", () => {
+    const mixed = doc([bound("d_aaaaaaaa", { refreshSec: 0 }), bound("d_aaaaaaaa", { refreshSec: 300 }), bound("d_aaaaaaaa", { refreshSec: 60 })], [managed("d_aaaaaaaa", { refreshSec: 30 })]);
+    expect(normaliseOps(mixed, timing)).toEqual([{ op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: 60 }) }]);
+    // A binder with no setting counts as the read's default (30 s), and beats a slower one beside an Off.
+    const dflt = doc([bound("d_aaaaaaaa", { refreshSec: 0 }), bound("d_aaaaaaaa"), bound("d_aaaaaaaa", { refreshSec: 3600 })], [managed("d_aaaaaaaa", { refreshSec: 0 })]);
+    expect(normaliseOps(dflt, timing)).toEqual([{ op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: 30 }) }]);
+    // An unknown read: only the non-zero settings count.
+    const unknown = doc([bound("d_cccccccc", { refreshSec: 0 }), bound("d_cccccccc", { refreshSec: 120 })], [managed("d_cccccccc", { endpointId: "gone", refreshSec: 45 })]);
+    expect(normaliseOps(unknown, timing)).toEqual([{ op: "source.set", source: managed("d_cccccccc", { endpointId: "gone", refreshSec: 120 }) }]);
+  });
+  it("a source every binder of which is Off is stored as Off (0), on any page, known read or not", () => {
+    const d = blankDocument("T");
+    d.pages[0]!.root.children = [bound("d_aaaaaaaa", { refreshSec: 0 })];
+    d.pages.push({ ...structuredClone(d.pages[0]!), id: "p2", slug: "two", root: { ...d.pages[0]!.root, id: newId("c"), children: [bound("d_aaaaaaaa", { refreshSec: 0 })] } });
+    d.dataSources = [managed("d_aaaaaaaa", { refreshSec: 30 })];
+    expect(normaliseOps(d, timing)).toEqual([{ op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: 0 }) }]);
+    const gone = doc([bound("d_cccccccc", { refreshSec: 0 })], [managed("d_cccccccc", { endpointId: "gone", refreshSec: 45 })]);
+    expect(normaliseOps(gone, timing)).toEqual([{ op: "source.set", source: managed("d_cccccccc", { endpointId: "gone", refreshSec: 0 }) }]);
+    // Turning one back on brings the source back to that rate.
+    const back = doc([bound("d_aaaaaaaa", { refreshSec: 0 }), bound("d_aaaaaaaa", { refreshSec: 300 })], [managed("d_aaaaaaaa", { refreshSec: 0 })]);
+    expect(normaliseOps(back, timing)).toEqual([{ op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: 300 }) }]);
+  });
+  it("the Data line says Off for an Off component, and ops validation accepts 0 on a component and a source", () => {
+    expect(nodeRefresh({ refreshSec: 0 }, managed("d_aaaaaaaa", { refreshSec: 30 }), { defaultRefreshSec: 30, minRefreshSec: 10 })).toBe(0);
+    const s = bound("d_aaaaaaaa");
+    const d = doc([s], [managed("d_aaaaaaaa")]);
+    const r = applyOpsToDoc(d, [{ op: "node.update", nodeId: s.id, patch: { refreshSec: 0 } }, { op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: 0 }) }]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(findNode(r.doc, s.id)!.node.refreshSec).toBe(0);
+    expect(r.doc.dataSources[0]!.refreshSec).toBe(0);
+    const bad = applyOpsToDoc(d, [{ op: "node.update", nodeId: s.id, patch: { refreshSec: -1 } }]);
+    expect(bad.ok).toBe(false);
+    const badSource = applyOpsToDoc(d, [{ op: "source.set", source: managed("d_aaaaaaaa", { refreshSec: -5 }) }]);
+    expect(badSource.ok).toBe(false);
+  });
+});
+
 describe("refresh from components (spec 3.3, criterion 5)", () => {
   it("runs at the fastest of its components, each without a setting counting as the read's default", () => {
     const d = doc([bound("d_aaaaaaaa", { refreshSec: 60 }), bound("d_aaaaaaaa", { refreshSec: 300 })], [managed("d_aaaaaaaa", { refreshSec: 30 })]);
@@ -95,14 +134,15 @@ describe("refresh from components (spec 3.3, criterion 5)", () => {
   it("the Data line's interval and the menu's choices respect the minimum", () => {
     expect(nodeRefresh({}, managed("d_aaaaaaaa", { refreshSec: 10 }), { defaultRefreshSec: 30, minRefreshSec: 10 })).toBe(30);
     expect(nodeRefresh({ refreshSec: 300 }, managed("d_aaaaaaaa"), { defaultRefreshSec: 30, minRefreshSec: 10 })).toBe(300);
-    expect(refreshChoices(10).map((c) => c.sec)).toEqual([10, 30, 60, 300, 3600]);
+    // Wave 2.10b F5: Off (0) comes last, never disabled.
+    expect(refreshChoices(10).map((c) => c.sec)).toEqual([10, 30, 60, 300, 3600, 0]);
     expect(refreshChoices(10).every((c) => !c.disabled)).toBe(true);
     // F5: presets faster than the read allows stay listed, disabled.
-    expect(refreshChoices(30).map((c) => [c.sec, c.disabled])).toEqual([[10, true], [30, false], [60, false], [300, false], [3600, false]]);
-    expect(refreshChoices(30).map((c) => c.label)).toEqual(["Every 10 s", "Every 30 s", "Every 1 min", "Every 5 min", "Every 1 hour"]);
+    expect(refreshChoices(30).map((c) => [c.sec, c.disabled])).toEqual([[10, true], [30, false], [60, false], [300, false], [3600, false], [0, false]]);
+    expect(refreshChoices(30).map((c) => c.label)).toEqual(["Every 10 s", "Every 30 s", "Every 1 min", "Every 5 min", "Every 1 hour", "Off: loads with the page"]);
     // A minimum between presets is offered too, as the fastest allowed.
     const c15 = refreshChoices(15);
-    expect(c15.map((c) => [c.sec, c.disabled])).toEqual([[10, true], [15, false], [30, false], [60, false], [300, false], [3600, false]]);
+    expect(c15.map((c) => [c.sec, c.disabled])).toEqual([[10, true], [15, false], [30, false], [60, false], [300, false], [3600, false], [0, false]]);
     expect(c15[1]!.label).toBe("Every 15 s (fastest allowed)");
     expect(refreshChoices(5)[0]).toEqual({ sec: 10, label: "Every 10 s", disabled: false });
   });

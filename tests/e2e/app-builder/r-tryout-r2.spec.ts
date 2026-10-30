@@ -549,7 +549,7 @@ test("item 16: a stat bound by service shows no internal ids in the inspector, t
 // ---------------------------------------------------------------------------------------------------------
 // Item 17 [medium] and the low "Your services": the New app sheet's machine list stays in its frame and
 // reaches the person's own machines; other people's services are not pre-ticked.
-test("item 17: the resource bar list stays in the sheet, reaches the person's own machines, and others' services start unticked", async ({ browser }) => {
+test("item 17: the start page form names what happens to machines (F1: no list to escape the sheet), and others' services start unticked", async ({ browser }) => {
   const ctx = await contextFor(browser, OWNER, { variant: LIGHT, viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   await page.goto("/");
@@ -563,32 +563,14 @@ test("item 17: the resource bar list stays in the sheet, reaches the person's ow
   await expect(mine).toBeVisible();
   const ticked = async (l: typeof mine) => (await l.getAttribute("aria-checked")) === "true" || (await l.getAttribute("data-state")) === "checked" || (await l.locator('[role="checkbox"][aria-checked="true"], [data-state="checked"]').count()) > 0;
   const lowTicks = { mine: await ticked(mine), theirs: (await theirs.count()) ? await ticked(theirs) : false };
-  const trigger = page.getByRole("combobox", { name: /resource bar shows/i });
-  if (await trigger.count()) await trigger.click();
-  await page.waitForTimeout(500);
-  const sheetBox = (await page.locator('[role="dialog"]').filter({ hasText: "New app" }).last().boundingBox())!;
-  const opts = page.locator('[role="listbox"] [role="option"], [data-start-machine] [role="radio"]');
-  const all = await opts.allTextContents();
-  const boxes = (await Promise.all((await opts.all()).map((o) => o.boundingBox()))).filter(Boolean) as { x: number; y: number; width: number; height: number }[];
-  const vh = 900;
-  const outside = boxes.filter((b) => b.y + b.height > 1 && b.y < vh - 1).filter((b) => b.x < sheetBox.x - 1 || b.x + b.width > sheetBox.x + sheetBox.width + 1 || b.y < sheetBox.y - 1 || b.y + b.height > sheetBox.y + sheetBox.height + 1);
+  // Wave 2.10b F1 changed this test: the machine list is gone (every machine of the ticked services gets
+  // its own health row), so nothing can be drawn outside the sheet; the Machines line says what happens.
+  const line = page.locator("[data-start-machines]");
+  await expect(line).toBeVisible();
+  await expect(line).toContainText("health row");
+  await expect(page.locator("[data-start-machine-list], [data-start-machine-option]")).toHaveCount(0);
   await page.screenshot({ path: out("item17-open.png") });
-  // Wheel down over the list until the last of the person's own machines can be clicked.
-  const target = opts.filter({ hasText: "RP5-3" }).filter({ hasText: `R2 Prometheus ${RUN}` }).first();
-  const list = page.locator('[role="listbox"], [data-start-machine-list]').first();
-  // A person scrolls the sheet down to the list first (the old dropdown drew over the sheet instead).
-  await list.scrollIntoViewIfNeeded().catch(() => {});
-  const lb = await list.boundingBox();
-  if (lb) await page.mouse.move(lb.x + lb.width / 2, lb.y + Math.min(lb.height / 2, 100));
-  for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 200); await page.waitForTimeout(60); }
-  const tb = await target.boundingBox();
-  const reachable = !!tb && tb.y >= 0 && tb.y + tb.height <= vh;
-  await page.screenshot({ path: out("item17-wheeled.png") });
-  note("item17", { all, outside, sheetBox, lowTicks, reachable, tb });
-  expect(all.join("|"), "only the services ticked above (not Erin's)").not.toContain(`Erin Prometheus ${RUN}`);
-  expect(outside, "options drawn outside the sheet").toEqual([]);
-  expect(reachable, "the person's own last machine is reachable by wheel").toBe(true);
-  await target.click();
+  note("item17", { lowTicks, machinesLine: await line.textContent() });
   expect(lowTicks.mine).toBe(true);
   expect(lowTicks.theirs, "another person's service starts unticked").toBe(false);
   await ctx.close();

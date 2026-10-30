@@ -22,6 +22,7 @@ import { getIntegrationRow } from "@/features/integrations/repo";
 import { endpointsOf } from "@/features/integrations/runtime";
 import * as repo from "./repo";
 import { templateDocument, type TemplateId } from "./templates";
+import { themeById } from "@/features/themes/store";
 
 const log = logger("apps");
 export const DRAFT_AUDIT_WINDOW_MS = 10 * 60 * 1000;
@@ -48,7 +49,7 @@ export function appForViewer(p: Principal, appId: string): App {
 
 // ---- Create ----
 
-export type CreateInput = { name: string; slug?: string; template?: TemplateId; mappings?: Record<string, string | null> };
+export type CreateInput = { name: string; slug?: string; template?: TemplateId; mappings?: Record<string, string | null>; /** Wave 2.10b F1: the theme picked in New app (a built-in or saved theme). */ themeId?: string };
 
 export function createApp(p: Principal, input: CreateInput, opts: { doc?: AppDocument; fromImport?: boolean; event?: AuditEvent } = {}): { app: App; rev: number } {
   if (!canCreate(p)) throw new Forbidden("Only owners and members can create apps.");
@@ -63,6 +64,10 @@ export function createApp(p: Principal, input: CreateInput, opts: { doc?: AppDoc
   const doc = opts.doc ?? (input.template && input.template !== "blank" ? templateDocument(input.template, name, input.mappings ?? {}, a) : blankDocument(name));
   doc.app.name = name;
   if (doc.chrome.title === undefined || opts.doc === undefined) doc.chrome.title = name;
+  if (input.themeId !== undefined) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(input.themeId) || !themeById(input.themeId)) throw new FieldError("theme", "That theme does not exist. Pick another one.");
+    doc.theme = { themeId: input.themeId };
+  }
   const now = new Date().toISOString();
   const app: App = {
     id: `a_${randomUUID().replace(/-/g, "").slice(0, 16)}`,

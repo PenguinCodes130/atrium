@@ -26,6 +26,8 @@ export const NUMBER_FIELDS: Record<string, { min: number; max: number; step: num
   "wallpaper.grain": { min: 0, max: 0.3, step: 0.01, label: "Grain" },
   "surface.opacity": { min: 0.3, max: 1, step: 0.01, label: "Surface opacity" },
   "surface.blurPx": { min: 0, max: 48, step: 1, label: "Glass blur (px)" },
+  "chrome.opacity": { min: 0.3, max: 1, step: 0.01, label: "Nav opacity" },
+  "chrome.blurPx": { min: 0, max: 48, step: 1, label: "Nav glass blur (px)" },
   "surface.shadowOffsetPx": { min: 0, max: 12, step: 1, label: "Hard shadow offset (px)" },
   "type.scale": { min: 0.85, max: 1.3, step: 0.01, label: "Type scale" },
   "type.headingTracking": { min: -0.06, max: 0.02, step: 0.005, label: "Heading tracking (em)" },
@@ -54,7 +56,7 @@ export function issueMessage(path: string): string {
   if (nf) return `${nf.label} must be between ${nf.min} and ${nf.max}.`;
   if (RANGE_TEXT[leaf]) return `${path} must be ${RANGE_TEXT[leaf]}.`;
   if (/color|Text|surface$|accent|line|ok$|warn$|bad$|info$|background|activeFill/.test(leaf) || path.includes(".color.")) return `${path} must be an oklch() or #hex colour.`;
-  if (/display|body|mono/.test(leaf)) return `${path} must be one of the ten built-in font families or an uploaded font.`;
+  if (/display|body|mono/.test(leaf)) return `${path} must be one of the built-in font families or an uploaded font.`;
   if (path.startsWith("fonts")) return "Fonts must be uploaded woff2 files (at most 2 MB each), with a family name, a weight such as 400 and a style.";
   if (leaf === "value") return "That wallpaper value is not allowed: a colour, a gradient, an /uploads/ image, or two sky colours.";
   if (leaf === "customCss") return "Custom CSS is limited to 64 KB.";

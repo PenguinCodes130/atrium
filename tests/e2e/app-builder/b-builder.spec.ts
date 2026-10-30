@@ -98,7 +98,9 @@ test("drag a stat from Insert into the grid: it lands in the cell under the poin
   const grid = page.locator(`[data-canvas-root] [data-node="${root}"]`);
   const gb = (await grid.boundingBox())!;
   const target = { x: gb.x + gb.width * 0.62, y: gb.y + 200 };
-  const expected = await grid.evaluate((el, t) => {
+  // Wave 2.10b F7: measured on the grid element itself, as the builder does (gridBoxOf).
+  const expected = await grid.evaluate((host, t) => {
+    const el = host.matches(".atr-grid") ? host : ((host.querySelector(".atr-grid") as HTMLElement | null) ?? host);
     const cs = getComputedStyle(el);
     const r = el.getBoundingClientRect();
     const px = (v: string) => parseFloat(v) || 0;
@@ -107,7 +109,8 @@ test("drag a stat from Insert into the grid: it lands in the cell under the poin
     const rowGap = px(cs.rowGap);
     const rowPx = px(cs.gridAutoRows) || 8;
     const colW = (width - 11 * colGap) / 12;
-    return { x: Math.min(12 - 3, Math.floor((t.x - r.left - px(cs.paddingLeft)) / (colW + colGap))), y: Math.floor((t.y - r.top - px(cs.paddingTop)) / (rowPx + rowGap)) };
+    // Wave 2.10b F7 (A11.7): Alt places exactly, to the eighth of a column under the pointer.
+    return { x: Math.min(12 - 3, Math.round(((t.x - r.left - px(cs.paddingLeft)) / (colW + colGap)) * 8) / 8), y: Math.round((t.y - r.top - px(cs.paddingTop)) / (rowPx + rowGap)) };
   }, target);
   // Round 3 (w2-r2 item 16): a loose drop below the content snaps to the next row at the left; Alt is the
   // deliberate placement that keeps the cell under the pointer, which is what this criterion measures.

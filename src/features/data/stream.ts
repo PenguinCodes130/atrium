@@ -2,7 +2,9 @@
 // The cached value of every data source the page binds goes out at once, keyed by data source
 // name, then updates are pushed as the scheduler refreshes keys. Guests never receive whole data
 // sources: for a guest the server resolves the page's bindings itself (app-builder's guestValues)
-// and sends only the resolved values, keyed "nodeId:prop".
+// and sends only the resolved values, keyed "nodeId:prop". A source with refresh Off (refreshSec 0, A11.8)
+// gets one fresh value when the page opens (when the cache has none younger than the read's minimum) and
+// is then left alone: no later refresh of the same key, by this page or any other, reaches it.
 import type { DataSourceDef, Principal, ShapedData } from "@/core/contracts";
 import type { ReadCache } from "./cache";
 import { cacheKey } from "./keys";
@@ -120,8 +122,16 @@ export function createPageStream(sources: StreamSource[], deps: StreamDeps, sign
         computing = false;
       };
       for (const s of live) {
-        const sub = deps.scheduler.subscribe(s, s.refreshSec, (entry) => {
+        const off = !(s.refreshSec > 0);
+        let delivered = false;
+        const sub = deps.scheduler.subscribe(s, off ? 0 : s.refreshSec, (entry) => {
           if (closed) return;
+          if (off) {
+            // A11.8: the one page-open value, then this source stops listening.
+            if (delivered) return;
+            delivered = true;
+            sub.unsubscribe();
+          }
           if (opts.guest) {
             // One recomputation of the resolved values at a time; a burst ends with one more.
             void pushValues();
@@ -131,6 +141,8 @@ export function createPageStream(sources: StreamSource[], deps: StreamDeps, sign
           send(sseEvent("update", withSigned({ key: s.key, ...d }, { [s.key]: d.data })));
         });
         unsubs.push(sub.unsubscribe);
+        // Off, and the cache already held a value younger than the read's minimum: the snapshot was it.
+        if (off && !sub.pending) { delivered = true; sub.unsubscribe(); }
       }
       heartbeat = setInterval(() => send(enc.encode(": ping\n\n")), deps.heartbeatMs ?? 25_000);
       (heartbeat as { unref?: () => void }).unref?.();

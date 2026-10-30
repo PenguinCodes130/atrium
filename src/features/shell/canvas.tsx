@@ -22,6 +22,9 @@ import { createContext, useContext, useId, useMemo, useSyncExternalStore, type C
 import { controlRoom, resolveTokens, themeCanvasCss, type CanvasTone, type Theme, type ThemeTokens } from "./theme";
 import type { ScopedCss } from "./custom-css";
 import { LightDrift } from "./light-drift";
+// Wave 2.10b F10: the @font-face rules of the self-hosted built-in families (public/fonts/). Declared
+// with every canvas; a browser fetches a family's file only when text on screen uses it.
+import "@/features/themes/fonts/theme-fonts.css";
 
 const ToneContext = createContext<CanvasTone | null>(null);
 

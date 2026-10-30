@@ -98,15 +98,24 @@ export function bindersOf(doc: AppDocument, name: string): ComponentNode[] {
 /** What normalisation needs to know about a read: its default and minimum refresh. Null when unknown. */
 export type ReadTiming = (s: DataSourceDef) => { defaultRefreshSec: number; minRefreshSec: number } | null;
 
-/** The interval a managed source should run at, given its binders (null keeps the current one). */
+/** A11.8: refresh Off, stored as 0 on a component and on a source: read once per page open. */
+export const REFRESH_OFF = 0;
+const isOff = (n: Pick<ComponentNode, "refreshSec">) => n.refreshSec === REFRESH_OFF;
+
+/**
+ * The interval a managed source should run at, given its binders (null keeps the current one). A11.8: the
+ * fastest non-zero refresh among them; 0 (Off: read once per page open) when every binder is Off.
+ */
 export function managedRefresh(s: DataSourceDef, binders: ComponentNode[], timing: ReturnType<ReadTiming>): number | null {
+  if (binders.length && binders.every(isOff)) return REFRESH_OFF;
+  const on = binders.filter((n) => !isOff(n));
   if (!timing) {
     // Unknown read (the listing is not loaded, or the integration is gone): only components' own settings count.
-    const own = binders.map((n) => n.refreshSec).filter((x): x is number => typeof x === "number" && x > 0);
+    const own = on.map((n) => n.refreshSec).filter((x): x is number => typeof x === "number" && x > 0);
     return own.length ? Math.max(REFRESH_FLOOR, Math.round(Math.min(...own))) : null;
   }
   // A component without its own setting runs at the read's default (spec 3.3); the source runs at the fastest.
-  const each = binders.map((n) => (typeof n.refreshSec === "number" && n.refreshSec > 0 ? n.refreshSec : timing.defaultRefreshSec));
+  const each = on.map((n) => (typeof n.refreshSec === "number" && n.refreshSec > 0 ? n.refreshSec : timing.defaultRefreshSec));
   const fastest = Math.min(...each);
   return Math.max(REFRESH_FLOOR, timing.minRefreshSec, Math.round(fastest));
 }
@@ -134,6 +143,7 @@ export function normaliseOps(doc: AppDocument, timing: ReadTiming = () => null):
 
 /** The interval a component shows in its Data line: its own setting, else the read's default (or the source's). */
 export function nodeRefresh(n: Pick<ComponentNode, "refreshSec">, s: DataSourceDef, timing: ReturnType<ReadTiming>): number {
+  if (isOff(n)) return REFRESH_OFF;
   if (typeof n.refreshSec === "number" && n.refreshSec > 0) return n.refreshSec;
   if (s.managed && timing) return Math.max(timing.minRefreshSec, timing.defaultRefreshSec);
   return s.refreshSec;
@@ -144,17 +154,22 @@ export const REFRESH_PRESETS = [10, 30, 60, 300, 3600];
 
 /**
  * Every preset, those faster than the read allows shown disabled (F5); a read whose minimum falls between
- * presets also offers that minimum, so its fastest rate stays one click away.
+ * presets also offers that minimum, so its fastest rate stays one click away. Off (A11.8) comes last: the
+ * value loads with the page and is never read again until the page is reloaded.
  */
 export function refreshChoices(minRefreshSec: number): { sec: number; label: string; disabled: boolean }[] {
   const min = Math.max(REFRESH_FLOOR, minRefreshSec);
   const between = min > REFRESH_PRESETS[0]! && !REFRESH_PRESETS.includes(min);
   const secs = between ? [...REFRESH_PRESETS, min].sort((a, b) => a - b) : REFRESH_PRESETS;
-  return secs.map((sec) => ({ sec, label: `Every ${secWords(sec)}${between && sec === min ? " (fastest allowed)" : ""}`, disabled: sec < min }));
+  return [
+    ...secs.map((sec) => ({ sec, label: `Every ${secWords(sec)}${between && sec === min ? " (fastest allowed)" : ""}`, disabled: sec < min })),
+    { sec: REFRESH_OFF, label: "Off: loads with the page", disabled: false },
+  ];
 }
 
 /** "30 s", "1 min", "5 min", "1 hour". */
 export function secWords(sec: number): string {
+  if (sec === REFRESH_OFF) return "Off";
   if (sec % 3600 === 0) return sec === 3600 ? "1 hour" : `${sec / 3600} hours`;
   if (sec % 60 === 0) return `${sec / 60} min`;
   return `${sec} s`;

@@ -80,6 +80,8 @@ test("build a lights dashboard: create, connect data, compose, pages, fit, publi
     await page.locator("[data-new-app], [data-new-app-tile]").first().click();
     await page.locator("[data-new-app-name]").fill(NAME);
     await page.locator("[data-new-app-slug]").fill(SLUG);
+    // Wave 2.10b F1: the start page is preselected once a service exists, so pick Blank.
+    await page.locator('[data-template-option="blank"]').click();
     await page.locator("[data-create-app]").click();
     await page.waitForURL(new RegExp(`/build/${SLUG}`));
     await expect(page.locator("[data-builder-bar]")).toBeVisible();
@@ -348,6 +350,7 @@ test("import a Grafana dashboard and put a read on a page: a stat picks the dash
       await page.locator("[data-new-app], [data-new-app-tile]").first().click();
       await page.locator("[data-new-app-name]").fill(`Grafana ${RUN}`);
       await page.locator("[data-new-app-slug]").fill(slug);
+      await page.locator('[data-template-option="blank"]').click();
       await page.locator("[data-create-app]").click();
       await page.waitForURL(new RegExp(`/build/${slug}`));
       await expect(page.locator("[data-builder-bar]")).toBeVisible();
@@ -417,7 +420,8 @@ test("a start page from three services, then a CPU chart for every machine, publ
       await page.locator("[data-create-app]").click();
       await page.waitForURL(/\/build\//);
       slug = page.url().split("/build/")[1]!.split(/[/?]/)[0]!;
-      await expect(page.locator("[data-canvas-root] [data-type='resource-bar']")).toHaveCount(1, { timeout: 8000 });
+      // Wave 2.10b F1: every machine the ticked services report gets its own row (the stand-in has 9).
+      await expect(page.locator("[data-canvas-root] [data-type='resource-bar']")).toHaveCount(9, { timeout: 8000 });
       const tiles = page.locator("[data-canvas-root] [data-type='service-tile']");
       await expect(tiles).toHaveCount(3, { timeout: 8000 });
       for (const name of [`Start Prometheus ${RUN}`, `Start Docker ${RUN}`, "Home Assistant"]) await expect(tiles.filter({ hasText: name })).toHaveCount(1, { timeout: 8000 });
@@ -447,7 +451,7 @@ test("a start page from three services, then a CPU chart for every machine, publ
       await page.locator("[data-publish-confirm]").click();
       await expect(page.locator("[data-publish-glow]")).toBeAttached();
       await page.goto(`/a/${slug}`);
-      await expect(page.locator("[data-type='resource-bar']")).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator("[data-type='resource-bar']")).toHaveCount(9, { timeout: 10_000 });
       await expect(page.locator("[data-type='service-tile']")).toHaveCount(3);
       await expect.poll(async () => (await page.locator("[data-type='chart'] [data-legend-line]").allTextContents()).length, { timeout: 10_000 }).toBeGreaterThan(1);
       await page.screenshot({ path: shot("start-page-published"), fullPage: true });

@@ -152,8 +152,8 @@ export const META: Record<BuiltInType, ComponentMeta> = {
     docs: { summary: "An uploaded MP4 or WebM video, muted and looping by default.", whenToUse: "A short loop that makes a dashboard feel alive: weather, a fireplace, a logo animation.", examples: [node("video", "video", { src: "/uploads/loop.mp4", alt: "Rain on the window" })] },
   },
   icon: {
-    type: "icon", title: "Icon", category: "content", container: false, defaults: { name: "server", size: 24 }, styleSlots: ["root"],
-    docs: { summary: "One icon from the built-in set.", whenToUse: "Mark a section or a value with a symbol.", examples: [node("icon", "icon", { name: "light", size: 32, label: "Lights" })] },
+    type: "icon", title: "Icon", category: "content", container: false, defaults: { name: "server" }, styleSlots: ["root"],
+    docs: { summary: "One icon from the built-in set (over 200), a package's own glyph or an uploaded picture, filling its box at Scale.", whenToUse: "Mark a section or a value with a symbol.", examples: [node("icon", "icon", { name: "light", scale: 60, label: "Lights" })] },
   },
   link: {
     type: "link", title: "Link", category: "content", container: false, defaults: { label: "Open" }, styleSlots: ["root"], states: ["hover", "focus", "active"],

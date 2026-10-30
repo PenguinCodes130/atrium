@@ -293,10 +293,13 @@
   .atr-image { display: block; width: 100%; border-radius: var(--theme-radius, 0px); }
   .atr-image-placeholder { display: grid; place-items: center; background: color-mix(in oklab, var(--theme-surface-text) 8%, transparent); color: var(--theme-surface-muted); }
   .atr-icon { display: inline-flex; color: var(--theme-canvas-text); }
-  /* B8 (A11.2 scale): a filling icon in a grid cell is drawn at half its box's shorter side, centred, so it
-     grows and shrinks with the box (insert.ts ICON_FILL_SHARE; the inserted box hugs it, ICON_HUG_PX). */
-  .atr-cell > .atr-node > .atr-icon[data-fill] { display: flex; align-items: center; justify-content: center; container-type: size; min-width: 0; min-height: 0; }
-  .atr-cell > .atr-node > .atr-icon[data-fill] > svg { width: calc(min(100cqw, 100cqh) * 0.5); height: calc(min(100cqw, 100cqh) * 0.5); flex: none; }
+  /* F6 (A11.2 scale): the icon fills its box keeping its shape, at Scale (25 to 100%) of the box's shorter
+     side; render/icon-scale.ts sets --atr-icon-cell (in a grid cell) and --atr-icon-free (anywhere else).
+     The inserted box hugs a 50% icon (insert.ts ICON_HUG_PX). */
+  .atr-icon > svg, .atr-icon > .atr-icon-img { width: var(--atr-icon-free, 24px); height: var(--atr-icon-free, 24px); flex: none; }
+  .atr-icon > .atr-icon-img { object-fit: contain; }
+  .atr-cell > .atr-node > .atr-icon { display: flex; align-items: center; justify-content: center; container-type: size; min-width: 0; min-height: 0; }
+  .atr-cell > .atr-node > .atr-icon > svg, .atr-cell > .atr-node > .atr-icon > .atr-icon-img { width: var(--atr-icon-cell, calc(min(100cqw, 100cqh) * 0.5)); height: var(--atr-icon-cell, calc(min(100cqw, 100cqh) * 0.5)); }
   .atr-divider { border: 0; border-top: 1px solid var(--theme-line); width: 100%; }
   .atr-clock { display: flex; flex-direction: column; gap: 2px; color: var(--theme-canvas-text); }
   .atr-clock-time { font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking); font-size: calc(44px * var(--theme-type-scale, 1)); line-height: 1; font-variant-numeric: tabular-nums; }

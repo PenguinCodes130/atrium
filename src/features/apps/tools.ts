@@ -366,8 +366,8 @@ export const appTools: ToolDef<never, unknown>[] = [
   tool({
     name: "apps.bindData",
     title: "Show data on a component",
-    description: "Binds one prop of a draft component to a read from data.search (its item key), creating or reusing the app's hidden managed data source for that read, as the builder's picker does. prop is a prop name (data, value, status, items) or a path into a list prop (stats.0.value, items.2.value, lines.1.data); prop \"lines\" adds a chart line (a value read binds its history). value is an optional template body against the read, like value or rows | filter('state', 'running') | count. refreshSec optionally sets the component's own refresh (at or above the read's minimum). Answers no config or secrets.",
-    input: z.object({ ...appRef, ...expectRev, nodeId: z.string().min(1).max(40), prop: z.string().min(1).max(60), itemKey: z.string().min(3).max(2000).describe("A key from data.search."), value: z.string().max(400).optional(), refreshSec: z.number().int().min(1).max(86400).optional() }),
+    description: "Binds one prop of a draft component to a read from data.search (its item key), creating or reusing the app's hidden managed data source for that read, as the builder's picker does. prop is a prop name (data, value, status, items) or a path into a list prop (stats.0.value, items.2.value, lines.1.data); prop \"lines\" adds a chart line (a value read binds its history). value is an optional template body against the read, like value or rows | filter('state', 'running') | count. refreshSec optionally sets the component's own refresh (at or above the read's minimum, or 0 for Off: read once per page open). Answers no config or secrets.",
+    input: z.object({ ...appRef, ...expectRev, nodeId: z.string().min(1).max(40), prop: z.string().min(1).max(60), itemKey: z.string().min(3).max(2000).describe("A key from data.search."), value: z.string().max(400).optional(), refreshSec: z.number().int().min(0).max(86400).optional() }),
     output: z.object({ rev: z.number(), changed: z.array(z.string()), source: z.string(), template: z.string(), words: z.string() }),
     scope: "atrium:edit",
     effect: "draft",

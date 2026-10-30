@@ -16,6 +16,7 @@ import { tagFor } from "./tags";
 import { overflowRowsOf, overflowXOf } from "./fit-measure";
 import { growTriggers, MAX_GROW_ROWS, sizingOf, WATCH_MS } from "./auto-grow";
 import { getComponentDef, iconSlotIn, measureTableOverflow } from "./components-client";
+import { guidesFor, nearestGapPx, smartSnap, spacingFor, type SpacingMark } from "./snap";
 import { alignGuides, alignOps, cellAt, columnsOn, coveredOnPage, distributeOps, FINE, fitOps, freeSpot, freshCopy, gridColumns, groupDuplicateOps, groupMoveOps, keyAction, overlaps, resizeSlot, sameSizeOps, slotOn, slotOp, slotRect, snapDrop, withGapsClosed, type AlignHow, type Device, type Edges, type GridBox, type Guide } from "./geometry";
 import { boxForShape, shapeRatio } from "@/features/components/inspector/media";
 import { uploadFile, guessKind } from "@/features/uploads/client";
@@ -25,6 +26,7 @@ import { ArrangeBar, InsertGlyph, InsertPanel, LayersPanel, MultiPanel, type Arr
 import { unmappedStates, usePageData, type UnmappedSource } from "./use-page-data";
 import { ReviewSheet } from "@/features/versions/ui/review-sheet";
 import { AppLookSheet } from "./app-look";
+import { ThemePanel } from "./theme-panel";
 import { SelectMenu } from "@/features/settings/ui/controls";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "@/features/components/render/render-node";
 import { failingSources, repeatAround, wholeProp } from "./data-pick";
@@ -52,7 +54,7 @@ type Drag = { kind: "insert"; item: InsertItem; w: number; h: number } | { kind:
 type Into = { id: string; name: string; rect: { left: number; top: number; width: number; height: number }; /** A group (A10.7): where among its tiles the drop lands. */ index?: number };
 /** Containers a widget can be dropped into; a Repeat takes one child. */
 const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat", "group"]);
-type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[] };
+type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[]; /** F7: equal-spacing marks and the gap to the nearest neighbour, in canvas px. */ spacing?: SpacingMark[]; gap?: { px: number; axis: "x" | "y" } | null; /** F7: the faint columns (Snap on, even while Alt holds the pull off). */ columns?: boolean };
 /** One button on a selected widget's toolbar: a 10px stroked icon, a 44px hit area on touch screens. */
 function BarButton({ label, title, onClick, disabled, pressed, danger, children, ...data }: { label: string; title: string; onClick(): void; disabled?: boolean; pressed?: boolean; danger?: boolean; children: React.ReactNode } & Record<`data-${string}`, unknown>) {
   return (
@@ -209,6 +211,10 @@ export function BuilderScreen(props: BuilderProps) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [lookOpen, setLookOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  // Wave 2.10b F9: Theme on the builder bar, and a theme shown on the canvas without being written.
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [previewTheme, setPreviewTheme] = useState<{ theme: Theme; id: string } | null>(null);
+  const previewOn = useCallback((t: Theme | null, id: string | null) => setPreviewTheme(t && id ? { theme: t, id } : null), []);
   const [glow, setGlow] = useState(0);
   // While the publish glow plays, the bar's text sits on gold in --accent-fg (design v4 Note 1).
   const [glowing, setGlowing] = useState(false);
@@ -635,12 +641,25 @@ export function BuilderScreen(props: BuilderProps) {
     const rootEl = rootRef.current?.querySelector(`[data-node="${CSS.escape(page.root.id)}"]`) as HTMLElement | null;
     return page.root.type === "grid" && rootEl ? { id: page.root.id, el: rootEl } : null;
   };
-  /** Alignment guides for a slot in a grid (snap off): pulls it into line within 6px of screen. */
-  const guided = (slot: GridSlot, gridNode: ComponentNode, box: GridBox, exceptId?: string): { slot: GridSlot; guides: Guide[] } => {
+  /** The other widgets' slots in a grid on this device (the moving one, and hidden ones, left out). */
+  const othersIn = (gridNode: ComponentNode, exceptId?: string): GridSlot[] =>
+    (gridNode.children ?? []).filter((k) => k.id !== exceptId && !(device === "mobile" ? k.responsive?.mobile?.hidden : k.hidden)).flatMap((k) => { const s = slotOn(k, device, gridColumns(gridNode)); return s ? [s] : []; });
+  /**
+   * F7 (A11.7): the one snapping model. `raw` is where the pointer puts the widget in unrounded grid
+   * units; it is pulled within 6 px to other widgets' edges and centres, the page centre, matching gaps
+   * and the column lines, then rounded to an eighth of a column and a whole row.
+   */
+  const guided = (raw: GridSlot, gridNode: ComponentNode, box: GridBox, exceptId?: string): { slot: GridSlot; guides: Guide[]; spacing: SpacingMark[]; byGuide: boolean } => {
     const colW = (box.width - (box.cols - 1) * box.colGap) / box.cols;
-    const others = (gridNode.children ?? []).filter((k) => k.id !== exceptId && !(device === "mobile" ? k.responsive?.mobile?.hidden : k.hidden)).flatMap((k) => { const s = slotOn(k, device, gridColumns(gridNode)); return s ? [s] : []; });
-    const r = alignGuides(slot, others, box.cols, { x: GUIDE_PULL_PX / (colW + box.colGap), y: GUIDE_PULL_PX / (box.rowPx + box.rowGap) });
-    return { slot: { ...slot, x: r.box.x, y: r.box.y }, guides: r.guides };
+    const r = smartSnap(raw, othersIn(gridNode, exceptId), box.cols, { x: GUIDE_PULL_PX / (colW + box.colGap), y: GUIDE_PULL_PX / (box.rowPx + box.rowGap) });
+    return { slot: { ...raw, x: r.box.x, y: r.box.y }, guides: r.guides, spacing: r.spacing, byGuide: r.pulled.x === "guide" || r.pulled.x === "spacing" };
+  };
+  /** F7 readout: the drawn gap in canvas px from a slot to its nearest neighbour in the grid. */
+  const gapOf = (slot: GridSlot, gridNode: ComponentNode, box: GridBox, exceptId?: string) => {
+    const z = zoomRef.current || 1;
+    const me = slotRect(box, slot);
+    const r = nearestGapPx(me, othersIn(gridNode, exceptId).map((s) => slotRect(box, s)), box.cellPad ?? 0);
+    return r ? { px: Math.round(r.px / z), axis: r.axis } : null;
   };
   /** The same for a resize: only the edges being dragged are pulled into line. */
   const guidedResize = (slot: GridSlot, edges: Edges, gridNode: ComponentNode, box: GridBox, nodeId: string): { slot: GridSlot; guides: Guide[] } => {
@@ -648,7 +667,8 @@ export function BuilderScreen(props: BuilderProps) {
     const others = (gridNode.children ?? []).filter((k) => k.id !== nodeId).flatMap((k) => { const s = slotOn(k, device, gridColumns(gridNode)); return s ? [s] : []; });
     const px = GUIDE_PULL_PX / (colW + box.colGap);
     const py = GUIDE_PULL_PX / (box.rowPx + box.rowGap);
-    const tx = [box.cols / 2, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w])];
+    // F7: column lines pull too (after the widgets' edges, which win when both are near).
+    const tx = [box.cols / 2, ...others.flatMap((o) => [o.x, o.x + o.w / 2, o.x + o.w]), ...Array.from({ length: box.cols + 1 }, (_, i) => i)];
     const ty = others.flatMap((o) => [o.y, o.y + o.h / 2, o.y + o.h]);
     const near = (v: number, ts: number[], lim: number) => ts.reduce<number | null>((b, t) => (Math.abs(t - v) <= lim && (b === null || Math.abs(t - v) < Math.abs(b - v)) ? t : b), null);
     const s2 = { ...slot };
@@ -670,7 +690,16 @@ export function BuilderScreen(props: BuilderProps) {
       if (r) { grab.x = Math.max(0, Math.min(r.width, startX - r.left)); grab.y = Math.max(0, Math.min(r.height, startY - r.top)); }
     }
     let started = false;
+    const boxes = new Map<string, GridBox>();
+    // F7 (V7): pointer moves are folded into one update per frame, so a fast pointer never draws twice.
+    let frame = 0;
+    let latest: PointerEvent | null = null;
     const move = (ev: PointerEvent) => {
+      latest = ev;
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; if (latest) step(latest); });
+    };
+    const flush = () => { if (frame) { cancelAnimationFrame(frame); frame = 0; if (latest) step(latest); } };
+    const step = (ev: PointerEvent) => {
       if (!started && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
       if (!started) { started = true; setDrag(d); }
       setPointer({ x: ev.clientX, y: ev.clientY });
@@ -685,19 +714,32 @@ export function BuilderScreen(props: BuilderProps) {
       const g = gridUnder(ev.clientX, ev.clientY);
       if (!g || !canvasRef.current) return setGhost(null);
       const gridNode = findNode(client.current!.doc, g.id)?.node;
-      const box = gridBoxOf(g.el, columnsOn(gridNode, device), zoomRef.current);
-      // Snap (spec 3.5): Ctrl or Cmd flips the switch for as long as it is held during this move.
-      const snapNow = snapRef.current !== (ev.ctrlKey || ev.metaKey);
-      const step = snapNow ? 1 : FINE;
-      // With snap off a move keeps the pointer where it grabbed the component (exact placement); a new
-      // one, and every snapped move, hangs from the pointer as before.
-      const g0 = snapNow ? { x: 0, y: 0 } : grab;
-      const cell = cellAt(box, ev.clientX - g0.x, ev.clientY - g0.y, d.w, d.h, step);
-      // A loose drop below the content snaps to the next row at the left; Alt places it exactly (item 16).
+      // F7 (V7): a grid's geometry is measured once per drag (it does not move while dragging).
+      const box = boxes.get(g.id) ?? gridBoxOf(g.el, columnsOn(gridNode, device), zoomRef.current);
+      boxes.set(g.id, box);
+      // F7 (A11.7): Snap on means smart guides; Alt or Option held turns every pull off for this move.
+      // Ctrl and Cmd no longer flip it. The widget hangs from where the pointer grabbed it.
+      const snapNow = snapRef.current && !ev.altKey;
       const groupMove = d.kind === "move" && !!d.group;
-      let slot = gridNode ? snapDrop(cell, gridNode, device, { ...(d.kind === "move" ? { exceptId: d.nodeId } : {}), deliberate: ev.altKey || !snapNow || groupMove }) : cell;
+      const exceptId = d.kind === "move" ? d.nodeId : undefined;
+      const cell = cellAt(box, ev.clientX - grab.x, ev.clientY - grab.y, d.w, d.h, FINE);
+      const stepX = (box.width - (box.cols - 1) * box.colGap) / box.cols + box.colGap;
+      const stepY = box.rowPx + box.rowGap;
+      const raw = { ...cell, x: Math.max(0, Math.min(box.cols - cell.w, (ev.clientX - grab.x - box.left) / stepX)), y: Math.max(0, (ev.clientY - grab.y - box.top) / stepY) };
+      let slot: GridSlot = { ...cell, x: Math.max(0, Math.min(box.cols - cell.w, Math.round(raw.x * 8) / 8)), y: Math.round(raw.y) };
       let guides: Guide[] | undefined;
-      if (!snapNow && gridNode && !groupMove) ({ slot, guides } = guided(slot, gridNode, box, d.kind === "move" ? d.nodeId : undefined));
+      let spacing: SpacingMark[] | undefined;
+      let byGuide = false;
+      if (snapNow && gridNode && !groupMove) ({ slot, guides, spacing, byGuide } = guided(raw, gridNode, box, exceptId));
+      // A loose drop below the content goes to the next free row, so it leaves no empty band (item 16):
+      // at the left, unless a guide placed it across. Alt places it exactly.
+      if (gridNode) {
+        const dropped = snapDrop(slot, gridNode, device, { ...(exceptId ? { exceptId } : {}), deliberate: !snapNow || groupMove });
+        slot = byGuide ? { ...slot, y: dropped.y } : dropped;
+        // The lines and marks describe where it lands, after that rule.
+        if (snapNow && !groupMove) { const others = othersIn(gridNode, exceptId); guides = guidesFor(slot, others, box.cols); spacing = spacingFor(slot, others); }
+      }
+      const gap = gridNode && !groupMove ? gapOf(slot, gridNode, box, exceptId) : null;
       // A group move shows where every selected widget lands, moved by the same columns and rows.
       let group: GridSlot[] | undefined;
       if (d.kind === "move" && d.group) {
@@ -707,9 +749,10 @@ export function BuilderScreen(props: BuilderProps) {
         if (start && me?.parent?.id === g.id) group = d.group.filter((id) => id !== d.nodeId).flatMap((id) => { const n = findNode(cur, id)?.node; const s0 = n ? slotOn(n, device, gridColumns(me.parent)) : undefined; return s0 ? [{ ...s0, x: s0.x + slot.x - start.x, y: s0.y + slot.y - start.y }] : []; });
       }
       const o = canvasRef.current.getBoundingClientRect();
-      setGhost({ gridId: g.id, slot, rect: slotRect(box, slot), box, origin: { left: box.left - o.left, top: box.top - o.top }, snap: snapNow, ...(guides ? { guides } : {}), ...(group ? { group } : {}) });
+      setGhost({ gridId: g.id, slot, rect: slotRect(box, slot), box, origin: { left: box.left - o.left, top: box.top - o.top }, snap: snapNow, columns: snapRef.current, ...(guides ? { guides } : {}), ...(spacing?.length ? { spacing } : {}), gap, ...(group ? { group } : {}) });
     };
     const up = () => {
+      flush();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       setDrag(null);
@@ -838,11 +881,12 @@ export function BuilderScreen(props: BuilderProps) {
     setHoverId(null);
     setGhost({ gridId, slot: start, rect: slotRect(box, start), box, origin });
     const move = (ev: PointerEvent) => {
-      const snapNow = snapRef.current !== (ev.ctrlKey || ev.metaKey);
-      last = resizeSlot(start, edges, ev.clientX - startX, ev.clientY - startY, box, snapNow ? 1 : FINE);
+      // F7 (A11.7): the same model as a move; Alt held, no pull.
+      const snapNow = snapRef.current && !ev.altKey;
+      last = resizeSlot(start, edges, ev.clientX - startX, ev.clientY - startY, box, FINE);
       let guides: Guide[] | undefined;
-      if (!snapNow) ({ slot: last, guides } = guidedResize(last, edges, gridNode, box, nodeId));
-      setGhost({ gridId, slot: last, rect: slotRect(box, last), box, origin, snap: snapNow, ...(guides ? { guides } : {}) });
+      if (snapNow) ({ slot: last, guides } = guidedResize(last, edges, gridNode, box, nodeId));
+      setGhost({ gridId, slot: last, rect: slotRect(box, last), box, origin, snap: snapNow, columns: snapRef.current, ...(guides ? { guides } : {}), gap: gapOf(last, gridNode, box, nodeId) });
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -1294,7 +1338,7 @@ export function BuilderScreen(props: BuilderProps) {
     const aligns: Record<string, [AlignHow, string]> = { left: ["left", "Left edges lined up"], centre: ["centre", "Centres lined up"], right: ["right", "Right edges lined up"], top: ["top", "Tops lined up"], middle: ["middle", "Middles lined up"], bottom: ["bottom", "Bottoms lined up"] };
     if (aligns[a]) return done(alignOps(cur, ids, aligns[a]![0], dev), aligns[a]![1]);
     if (a === "across" || a === "down") return done(distributeOps(cur, ids, a, dev), a === "across" ? "Spaced evenly across" : "Spaced evenly down");
-    if (a === "width" || a === "height") return done(sameSizeOps(cur, ids, a, dev), a === "width" ? "Same width" : "Same height");
+    if (a === "width" || a === "height") return done(sameSizeOps(cur, ids, a, dev), a === "width" ? "Matched width" : "Matched height");
     if (a === "duplicate") {
       const r = groupDuplicateOps(cur, ids);
       if (!r.ops.length) return;
@@ -1524,6 +1568,9 @@ export function BuilderScreen(props: BuilderProps) {
         {!narrow && <PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} />}
         {/* Wave 2.10b F8: Navigation sits beside Pages, not inside Look. */}
         {!narrow && <button type="button" onClick={() => setNavOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-navigation><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 3h9M1.5 6h9M1.5 9h9" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>Navigation</button>}
+        {/* Wave 2.10b F9: Theme beside Navigation: pick with a preview on this page, edit, create. */}
+        {/* Like Navigation and Look, it is on the full builder only (phones get the reduced edit mode). */}
+        {!narrow && <button type="button" onClick={() => setThemeOpen((o) => !o)} aria-expanded={themeOpen} aria-label="Theme" className={`inline-flex h-8 flex-none items-center justify-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk max-sm:h-11 max-sm:min-w-11 max-sm:px-0 ${themeOpen ? "bg-bg-sunk" : ""}`} data-builder-theme><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2z" fill="currentColor" /></svg><span className="max-sm:sr-only">Theme</span></button>}
         {!narrow && <button type="button" onClick={() => setLookOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-look><span aria-hidden className="h-3 w-3 border border-line-strong bg-accent" />Look</button>}
         {/* Round 2 (gauntlet r1, low): the status fills the space that is left (basis 0), so its text changing
             never moves the page switcher, Pages or Look, and it gives way first when the bar is short. */}
@@ -1561,7 +1608,7 @@ export function BuilderScreen(props: BuilderProps) {
             {page.maxWidth ? `${page.maxWidth} px wide` : "Fills the screen"} · padding {page.padding === undefined ? "from the theme" : page.padding === "none" ? "none" : `${page.padding} px`}
           </span>
           <span className="ml-auto" />
-          <SnapSwitch on={snap} onChange={(v) => { setSnap(v); setAnnounce(v ? "Snapping on" : "Snapping off: free placement with alignment guides"); }} />
+          <SnapSwitch on={snap} onChange={(v) => { setSnap(v); setAnnounce(v ? "Snapping on: widgets pull to guides. Hold Alt to place freely" : "Snapping off: free placement, nothing pulls"); }} />
           <PreviewWidth value={previewW} onChange={setPreviewW} zoom={zoom} disabled={device === "mobile"} />
           <FoldButton side="right" folded={foldRight} onToggle={() => setFoldRight(!foldRight)} />
         </div>
@@ -1628,6 +1675,7 @@ export function BuilderScreen(props: BuilderProps) {
                 if (id) { setMulti([]); setSelectedId(id); setAnnounce(`Selected ${nodeLabel(findNode(doc, id)!.node)}`); }
               }}
               data-canvas-root
+              data-theme-previewing={previewTheme?.id}
             >
               {/* Preview width (spec 3.6): the page at its real width, scaled to fit; overlays stay unscaled. */}
               <div ref={scaledRef} className={scaled ? "absolute left-0 top-0 origin-top-left" : undefined} style={scaled ? { width: previewW as number, transform: zoom === 1 ? undefined : `scale(${zoom})` } : undefined} data-canvas-scaled={scaled ? String(previewW) : undefined}>
@@ -1635,7 +1683,7 @@ export function BuilderScreen(props: BuilderProps) {
                 doc={doc}
                 page={page}
                 ctx={!editMode ? { ...ctx, mode: "view" } : ctx}
-                theme={render.theme}
+                theme={previewTheme?.theme ?? render.theme}
                 canvasCss={render.canvasCss}
                 chromeCss={render.chromeCss}
                 nodeCss={render.nodeCss}
@@ -1643,6 +1691,7 @@ export function BuilderScreen(props: BuilderProps) {
                 hrefFor={(p) => `/build/${app.slug}/${p.slug}`}
                 device={narrow ? "mobile" : device}
                 className="min-h-[600px]"
+                overlay={editMode && !(page.root.children ?? []).length ? <p className="pointer-events-none absolute inset-x-0 top-16 mx-auto m-0 max-w-[46ch] border border-line bg-bg-hi/90 p-3 text-center type-caption text-fg-2" data-canvas-hint>This page is empty. Insert widgets from the left. To line several up, shift-click them or drag a box on empty canvas around them, then use Align, Distribute or Match size.</p> : undefined}
               />
               </div>
               {/* Outlines: hovered 1px, selected 2px with its type as a mono tag (the tag is the drag handle).
@@ -1770,12 +1819,17 @@ export function BuilderScreen(props: BuilderProps) {
                 <>
                   {/* Only the target cell is lit; the columns show as quiet hairlines (gauntlet w2-r1 item 17),
                       at the line colour's 25% (A11.7, Wave 2.10 B7), over the page and only during the drag.
-                      With snap off the cells are not drawn; alignment guides show instead (spec 3.5). */}
-                  {ghost.snap !== false && <div aria-hidden className="pointer-events-none absolute opacity-25" style={{ left: ghost.origin.left, top: ghost.origin.top, width: ghost.box.width, height: Math.max(ghost.rect.top + ghost.rect.height + 80, 200) }} data-grid-cells>
+                      F7: drawn while Snap is on (they pull too, except while Alt is held); not with Snap off. */}
+                  {(ghost.columns ?? ghost.snap !== false) && <div aria-hidden className="pointer-events-none absolute opacity-25 [contain:strict]" style={{ left: ghost.origin.left, top: ghost.origin.top, width: ghost.box.width, height: Math.ceil(Math.max(ghost.rect.top + ghost.rect.height + 80, 200) / 400) * 400 }} data-grid-cells>
                     <div className="h-full w-full" style={{ backgroundImage: `repeating-linear-gradient(to right, transparent 0 ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols}px, var(--line) ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols}px ${(ghost.box.width - (ghost.box.cols - 1) * ghost.box.colGap) / ghost.box.cols + ghost.box.colGap}px)` }} />
                   </div>}
-                  {ghost.snap === false && ghost.guides?.map((g, i) => <GuideLine key={`${g.axis}${g.at}${i}`} g={g} ghost={ghost} />)}
-                  <motion.div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink bg-[color-mix(in_srgb,var(--accent)_25%,transparent)]" initial={false} animate={{ x: ghost.origin.left + ghost.rect.left, y: ghost.origin.top + ghost.rect.top }} transition={transitionFor("glide", reduced)} style={{ left: 0, top: 0, width: ghost.rect.width, height: Math.max(8, ghost.rect.height - (ghost.box.cellPad ?? 0)) }} data-drop-ghost={`${ghost.slot.x},${ghost.slot.y}`} data-ghost-slot={`${ghost.slot.x},${ghost.slot.y},${ghost.slot.w},${ghost.slot.h}`} />
+                  {/* F7 (A11.7): smart guides while snapping (red lines), equal-spacing marks and the gap readout. */}
+                  {ghost.snap !== false && ghost.guides?.map((g, i) => <GuideLine key={`${g.axis}${g.at}${i}`} g={g} ghost={ghost} />)}
+                  {ghost.snap !== false && ghost.spacing?.map((m, i) => <SpacingMarkView key={`sp${m.axis}${m.from}${i}`} m={m} ghost={ghost} />)}
+                  {ghost.gap && <GapReadout ghost={ghost} />}
+                  {/* F7: the ghost follows the pointer exactly (fine placement with pulls), so it is placed with a
+                      plain transform instead of a glide: no animation to restart on every pointer move (V7). */}
+                  <div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink bg-[color-mix(in_srgb,var(--accent)_25%,transparent)] will-change-transform" style={{ left: 0, top: 0, transform: `translate(${ghost.origin.left + ghost.rect.left}px, ${ghost.origin.top + ghost.rect.top}px)`, width: ghost.rect.width, height: Math.max(8, ghost.rect.height - (ghost.box.cellPad ?? 0)) }} data-drop-ghost={`${ghost.slot.x},${ghost.slot.y}`} data-ghost-slot={`${ghost.slot.x},${ghost.slot.y},${ghost.slot.w},${ghost.slot.h}`} />
                 </>
               )}
               {/* Files dropped on the canvas while they upload (spec 3.1, 4 Loading). */}
@@ -1796,7 +1850,7 @@ export function BuilderScreen(props: BuilderProps) {
             {multiOn ? (
               <MultiPanel names={multi.map((id) => { const n = findNode(doc, id)?.node; return n ? nodeLabel(n) : id; })} onAction={arrange} onClear={() => setMulti([])} />
             ) : (
-            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow}
+            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow} titleBars={(previewTheme?.theme ?? render.theme).tokens.surface.titleBars}
               live={{ data: shownData, states: live.states }} onPick={onInspectorPick} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
             )}
           </aside>
@@ -1836,24 +1890,76 @@ export function BuilderScreen(props: BuilderProps) {
       {show && (
         <ShowPicker target={show} doc={doc} bindable={bindable ?? bindableRef.current} data={shownData} apply={(ops) => { apply(ops); void client.current!.flush(); }} onClose={() => setShow(null)}
           onByHand={() => { const t = show; setShow(null); setPicker({ nodeId: t.nodeId, ...(/^[A-Za-z]+$/.test(t.prop) && t.prop !== "lines" ? { prop: t.prop } : {}), ...(t.fromInsert ? { fromInsert: true } : {}), ...(t.source && !client.current!.doc.dataSources.find((x) => x.name === t.source)?.managed ? { source: t.source } : {}) }); }}
-          onPeeked={(name, d) => setInstant((m) => ({ ...m, [name]: d }))} onSelect={(id) => { setSelectedId(id); reveal(id); }} newNodeId={() => newId("c")} />
+          onPeeked={(name, d) => setInstant((m) => ({ ...m, [name]: d }))} onSelect={(id) => { setSelectedId(id); reveal(id); }} newNodeId={() => newId("c")}
+          preview={{ theme: previewTheme?.theme ?? render.theme, ctx }} />
       )}
       {barFor && <MachineChooser nodeId={barFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setBarFor(null)} />}
       {tileFor && <ServiceChooser nodeId={tileFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setTileFor(null)} />}
       {startOpen && <StartPageSheet appId={app.id} apply={(ops) => { apply(ops, { announce: "Made a start page" }); void client.current!.flush(); }} onClose={() => setStartOpen(false)} onMade={(pageId) => {
         setStartOpen(false);
         const p = findPage(client.current!.doc, pageId);
+        // Wave 2.10b F1: the start page is one undo step, its growth included. Its boxes are watched in the
+        // start page's own entry, so opening the new page adds no step of its own.
+        if (p) {
+          openedPages.current.add(p.id);
+          const entry = client.current!.lastEntryId;
+          const until = Date.now() + OPEN_WATCH_MS;
+          for (const k of p.root.children ?? []) growWatch.current.set(k.id, { until, entry, grown: 0 });
+          for (const ms of [60, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
+        }
         if (p && p.id !== page.id) goPage(p);
         toast({ kind: "success", title: "Start page made", description: "Values fill in as your services answer. Undo takes it all back." });
       }} />}
       {naming && (() => { const np = findPage(doc, naming.pageId); return np ? <PageNameSheet key={naming.pageId} title={np.title} fresh={naming.fresh} onSave={(t) => { renamePage(naming.pageId, t, naming.fresh); setNaming(null); }} onClose={() => setNaming(null)} /> : null; })()}
       {lookOpen && <AppLookSheet appId={app.id} doc={doc} page={page} theme={render.theme} chromeRemoved={render.chromeRemoved} onClose={() => setLookOpen(false)} apply={(ops) => apply(ops)} />}
+      {themeOpen && !narrow && <ThemePanel current={doc.theme} apply={(ops) => apply(ops, { announce: "Theme changed. Undo with Ctrl+Z." })} preview={previewOn} saved={() => void refreshRender(pageIdRef.current)} onClose={() => setThemeOpen(false)} />}
       {navOpen && <AppLookSheet only="navigation" appId={app.id} doc={doc} page={page} theme={render.theme} chromeRemoved={render.chromeRemoved} onClose={() => setNavOpen(false)} apply={(ops) => apply(ops)} />}
     </div>
   );
 }
 
-/** One alignment guide across the grid (snap off), at an edge or centre of the ghost's grid (spec 3.5). */
+/** F7: an equal-spacing mark, a short red bar across one gap with its size in px (design v4 Note 2). */
+function SpacingMarkView({ m, ghost }: { m: SpacingMark; ghost: Ghost }) {
+  const b = ghost.box;
+  const colW = (b.width - (b.cols - 1) * b.colGap) / b.cols;
+  const stepX = colW + b.colGap;
+  const stepY = b.rowPx + b.rowGap;
+  const pad = b.cellPad ?? 0;
+  if (m.axis === "x") {
+    const left = ghost.origin.left + m.from * stepX - b.colGap;
+    // From one widget's drawn right edge to the next one's left edge.
+    const width = (m.to - m.from) * stepX + b.colGap;
+    const top = ghost.origin.top + m.cross * stepY;
+    const px = Math.round(width);
+    return (
+      <div aria-hidden className="pointer-events-none absolute flex h-3 -translate-y-1/2 items-center justify-center border-x-2 border-bad" style={{ left, top, width }} data-spacing-mark="x">
+        <span className="h-0.5 w-full bg-bad" />
+        <span className="absolute -top-4 bg-bad px-1 font-mono text-[11px] leading-4 text-bg">{px}</span>
+      </div>
+    );
+  }
+  const top = ghost.origin.top + m.from * stepY - pad;
+  const height = (m.to - m.from) * stepY + pad;
+  const left = ghost.origin.left + m.cross * stepX;
+  return (
+    <div aria-hidden className="pointer-events-none absolute flex w-3 -translate-x-1/2 flex-col items-center justify-center border-y-2 border-bad" style={{ left, top, height }} data-spacing-mark="y">
+      <span className="h-full w-0.5 bg-bad" />
+      <span className="absolute left-4 bg-bad px-1 font-mono text-[11px] leading-4 text-bg">{Math.round(height)}</span>
+    </div>
+  );
+}
+
+/** F7: the gap in px from the dragged widget to its nearest neighbour, beside the drop ghost. */
+function GapReadout({ ghost }: { ghost: Ghost }) {
+  const g = ghost.gap!;
+  return (
+    <div aria-hidden className="pointer-events-none absolute bg-bad px-1.5 font-mono text-[11px] leading-5 text-bg" style={{ left: ghost.origin.left + ghost.rect.left, top: ghost.origin.top + ghost.rect.top + Math.max(8, ghost.rect.height - (ghost.box.cellPad ?? 0)) + 4 }} data-distance-readout={g.axis}>
+      {g.px} px
+    </div>
+  );
+}
+
+/** One alignment guide across the grid (F7: red, while snapping), at an edge or centre of the ghost's grid. */
 function GuideLine({ g, ghost }: { g: Guide; ghost: Ghost }) {
   const b = ghost.box;
   const colW = (b.width - (b.cols - 1) * b.colGap) / b.cols;
@@ -1863,10 +1969,10 @@ function GuideLine({ g, ghost }: { g: Guide; ghost: Ghost }) {
   const h = Math.max(ghost.rect.top + ghost.rect.height + 80, 200);
   if (g.axis === "x") {
     const left = ghost.origin.left + g.at * stepX - (g.kind === "end" ? b.colGap : g.kind === "centre" ? b.colGap / 2 : 0);
-    return <div aria-hidden className={`pointer-events-none absolute w-px ${g.page ? "bg-accent" : "bg-accent-ink"}`} style={{ left, top: ghost.origin.top, height: h }} data-guide="x" data-guide-at={g.at} data-guide-page={g.page ? "" : undefined} />;
+    return <div aria-hidden className="pointer-events-none absolute w-px bg-bad" style={{ left, top: ghost.origin.top, height: h }} data-guide="x" data-guide-at={g.at} data-guide-page={g.page ? "" : undefined} />;
   }
   const top = ghost.origin.top + g.at * stepY - (g.kind === "end" ? pad : g.kind === "centre" ? pad / 2 : 0);
-  return <div aria-hidden className="pointer-events-none absolute h-px bg-accent-ink" style={{ left: ghost.origin.left, top, width: b.width }} data-guide="y" data-guide-at={g.at} />;
+  return <div aria-hidden className="pointer-events-none absolute h-px bg-bad" style={{ left: ghost.origin.left, top, width: b.width }} data-guide="y" data-guide-at={g.at} />;
 }
 
 /** The publish check beside the app name: draws in with `pop` (appears at once with reduced motion). */

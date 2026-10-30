@@ -1,12 +1,15 @@
 import type { DataState } from "@/core/contracts";
 import type { CacheEntry, WidgetData } from "./types";
 
-/** fresh, stale (older than 2x refresh), failed (last attempt failed) or empty (never succeeded). */
+/**
+ * fresh, stale (older than 2x refresh), failed (last attempt failed) or empty (never succeeded). A source
+ * with refresh Off (0, A11.8) is read once per page open, so its value never counts as stale.
+ */
 export function dataState(entry: Pick<CacheEntry, "lastGood" | "lastAttempt"> | undefined, refreshSec: number, nowMs: number): DataState {
   if (!entry?.lastGood) return "empty";
   const attempt = entry.lastAttempt;
   if (attempt && !attempt.ok && Date.parse(attempt.fetchedAt) >= Date.parse(entry.lastGood.fetchedAt)) return "failed";
-  if (nowMs - Date.parse(entry.lastGood.fetchedAt) > 2 * refreshSec * 1000) return "stale";
+  if (refreshSec > 0 && nowMs - Date.parse(entry.lastGood.fetchedAt) > 2 * refreshSec * 1000) return "stale";
   return "fresh";
 }
 

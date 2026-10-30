@@ -7,7 +7,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { BUILT_IN_TYPES } from "../../../src/features/components/catalogue/schemas";
 import { fieldsFor } from "../../../src/features/components/inspector/fields";
-import { FIELD_WORDS } from "../../../src/features/components/inspector/labels";
+import { FIELD_WORDS, HIDDEN_FIELDS } from "../../../src/features/components/inspector/labels";
 import { FAKE_HA_TOKEN, fakeHa, type FakeHa } from "../app-builder/helpers";
 import { evidence, signIn, writeEvidence } from "./helpers";
 
@@ -116,7 +116,8 @@ test("criteria 9 and 10: every field of every built-in component has its written
     await select(page, k.id);
     await setFolds(page, false);
     // A service tile's integrationId is a builder reference, never shown or typed (A10.7).
-    const want = fieldsFor(type).map((f) => f.key).filter((k) => !(type === "service-tile" && k === "integrationId")).sort();
+    // Wave 2.10b F6: the icon's px Size and Fill are no longer shown either (labels.ts HIDDEN_FIELDS).
+    const want = fieldsFor(type).map((f) => f.key).filter((k) => !HIDDEN_FIELDS.has(`${type}.${k}`)).sort();
     const simpleWant = fieldsFor(type).filter((f) => f.simple).map((f) => f.key);
     const simple = await shownKeys(page);
     // Folded: the simple set only (html's Edit code stands for its html, css and js).
@@ -131,7 +132,11 @@ test("criteria 9 and 10: every field of every built-in component has its written
     for (const key of want) {
       if (type === "html" && ["css", "js"].includes(key)) continue; // edited in the code window behind Edit code
       expect(text, `${type}.${key} label`).toContain(words[key]!.label);
-      if (!(type === "html" && key === "html")) expect(text, `${type}.${key} hint`).toContain(words[key]!.hint);
+      // Wave 2.10b F4: a setting that cannot show its effect now shows its reason in place of the hint.
+      if (!(type === "html" && key === "html") && !text.includes(words[key]!.hint)) {
+        const reason = await inspector(page).locator(`[data-field="${key}"] [data-field-reason]`).count();
+        expect(reason, `${type}.${key}: its hint or a reason in its place`).toBeGreaterThan(0);
+      }
     }
     report[type] = { simple, all };
   }

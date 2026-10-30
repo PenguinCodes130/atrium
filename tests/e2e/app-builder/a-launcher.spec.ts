@@ -64,6 +64,8 @@ test("a taken, long or invalid slug is refused at the slug field and nothing is 
   for (const [slug, msg] of [["guest-room", /already taken/], ["a".repeat(41), /at most 40/], ["Bad_Slug", /lowercase letters, digits and hyphens/]] as const) {
     await page.locator("[data-new-app-tile]").click();
     await page.locator("[data-new-app-name]").fill("Another");
+    // Wave 2.10b F1: the start page is preselected once a service is connected; this test is about the slug.
+    await page.locator('[data-template-option="blank"]').click();
     await page.locator("[data-new-app-slug]").fill(slug);
     await page.locator("[data-create-app]").click();
     await expect(page.locator('[data-field="URL name"] [data-field-error]')).toHaveText(msg);

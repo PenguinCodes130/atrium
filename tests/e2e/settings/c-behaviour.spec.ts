@@ -113,6 +113,8 @@ test("Themes: built-ins Duplicate only; folded editor; contrast warning; field r
   await page.locator('[data-field="shape.radiusPx"]').fill("40");
   await expect(page.locator('[data-field-error="shape.radiusPx"]')).toHaveText("Radius (px) must be between 0 and 32.");
   await page.locator('[data-group-toggle="surfaces"]').click();
+  // Wave 2.10b F12: opacity and blur show only for Frosted glass, so pick it first.
+  await page.locator('[data-field="surface.material"] [role="radio"]', { hasText: /^Frosted glass$/ }).click();
   await page.locator('[data-field="surface.opacity"]').fill("0.2");
   await expect(page.locator('[data-field-error="surface.opacity"]')).toHaveText("Surface opacity must be between 0.3 and 1.");
   await page.locator('[data-group-toggle="type"]').click();

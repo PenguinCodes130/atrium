@@ -495,7 +495,8 @@ export function showsLine(def: DataSourceDef, template: string, opts: { readLabe
   const t = template.trim();
   const whole = new RegExp(String.raw`^\{\{\s*${def.name}(\.(rows|items|value))?\s*\}\}$`).test(t);
   const words = whole ? null : describeTemplate(t);
-  return { what, detail: whole ? null : words ?? "a custom template", value: opts.value ?? null, from: opts.integrationName ? `${opts.integrationName}, every ${def.refreshSec} s` : `every ${def.refreshSec} s` };
+  const every = def.refreshSec === 0 ? "loads with the page" : `every ${def.refreshSec} s`;
+  return { what, detail: whole ? null : words ?? "a custom template", value: opts.value ?? null, from: opts.integrationName ? `${opts.integrationName}, ${every}` : every };
 }
 
 // ---- Reads that fail their live check (A9.2, recipes spec 3.2) ----

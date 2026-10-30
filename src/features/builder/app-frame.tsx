@@ -3,7 +3,7 @@
 // app's own chrome and the page tree, inside app-shell's clipping Canvas with the page's theme. Used by
 // the viewer (/a/<slug>), the draft preview and the builder canvas, so all three render identically.
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { AppDocument, PageDoc, RenderContext, Theme } from "@/core/contracts";
 import { Canvas, EmptyRoom, ROOM_COPY } from "@/features/shell";
 import type { ScopedCss } from "@/features/shell/custom-css";
@@ -70,7 +70,7 @@ function pagePadding(page: PageDoc | null): React.CSSProperties | undefined {
   return { padding: page.padding === "none" ? 0 : Math.max(0, Math.min(64, page.padding)) };
 }
 
-export function AppFrame({ doc, page, ctx, theme, canvasCss, chromeCss, frameId, nodeCss, hrefFor, device = "auto", className, overlay, emptyAction }: FrameProps) {
+function AppFrameView({ doc, page, ctx, theme, canvasCss, chromeCss, frameId, nodeCss, hrefFor, device = "auto", className, overlay, emptyAction }: FrameProps) {
   const sidebar = doc.chrome.layout === "sidebar";
   const empty = page && (!page.root.children || page.root.children.length === 0);
   return (
@@ -103,3 +103,14 @@ export function AppFrame({ doc, page, ctx, theme, canvasCss, chromeCss, frameId,
     </Canvas>
   );
 }
+
+/**
+ * Wave 2.10b F7 (V7): the frame is drawn again only when what it shows changes. The builder re-renders on
+ * every pointer move of a drag (the ghost and guides); the page under it does not need to. `hrefFor` is
+ * passed inline by every caller and maps a page to its address the same way for the life of a frame, so
+ * it is not compared.
+ */
+export const AppFrame = memo(AppFrameView, (a, b) => {
+  for (const k of Object.keys({ ...a, ...b }) as (keyof FrameProps)[]) if (k !== "hrefFor" && a[k] !== b[k]) return false;
+  return true;
+});

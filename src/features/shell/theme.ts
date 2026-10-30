@@ -19,7 +19,12 @@ import type { Theme, ThemeTokens } from "@/core/contracts";
 
 export type { Theme, ThemeTokens };
 
-/** The ten built-in theme families (design v4 section 2), all self-hosted. */
+/**
+ * The built-in theme families (design v4 section 2, grown to 37 by Wave 2.10b F10 and A11.5), all served
+ * from this instance. The first ten come from next/font in src/app/layout.tsx; the other 27 are woff2
+ * files under public/fonts/ declared by src/features/themes/fonts/theme-fonts.css (loaded by the Canvas).
+ * A browser downloads a family's file only when text on screen uses it.
+ */
 export type ThemeFontFamily =
   | "Inter Tight"
   | "Inter"
@@ -30,14 +35,50 @@ export type ThemeFontFamily =
   | "Fraunces"
   | "Space Grotesk"
   | "JetBrains Mono"
-  | "Atkinson Hyperlegible";
+  | "Atkinson Hyperlegible"
+  | (typeof SELF_HOSTED)[number][0];
 /** @deprecated v3 name. */
 export type ThemeFontUi = ThemeFontFamily;
+
+/** The five kinds the font picker groups families by (F10). */
+export type ThemeFontKind = "sans" | "serif" | "mono" | "display" | "rounded";
+export const THEME_FONT_KIND_LABELS: Record<ThemeFontKind, string> = { sans: "Sans", serif: "Serif", mono: "Mono", display: "Display", rounded: "Rounded" };
 
 /** The canvas tone a theme renders in. `auto` follows the viewer's dark preference. */
 export type CanvasTone = "light" | "dark";
 
-/** Font stacks per built-in family. next/font sets the variables on <html> (src/app/layout.tsx). */
+const FALLBACK: Record<ThemeFontKind, string> = {
+  sans: "ui-sans-serif, system-ui, sans-serif",
+  display: "ui-sans-serif, system-ui, sans-serif",
+  rounded: "ui-rounded, ui-sans-serif, system-ui, sans-serif",
+  serif: "ui-serif, Georgia, serif",
+  mono: "ui-monospace, monospace",
+};
+// F10: the self-hosted families (public/fonts/, src/features/themes/fonts/fetch-fonts.mjs), by kind.
+const SELF_HOSTED = [
+  ["Manrope", "sans"], ["DM Sans", "sans"], ["Work Sans", "sans"], ["Public Sans", "sans"], ["Figtree", "sans"], ["Plus Jakarta Sans", "sans"],
+  ["Lora", "serif"], ["Source Serif 4", "serif"], ["Merriweather", "serif"], ["Playfair Display", "serif"], ["EB Garamond", "serif"], ["Libre Baskerville", "serif"], ["IBM Plex Serif", "serif"],
+  ["Fira Code", "mono"], ["Source Code Pro", "mono"], ["Space Mono", "mono"], ["Roboto Mono", "mono"],
+  ["Syne", "display"], ["Bricolage Grotesque", "display"], ["Unbounded", "display"], ["Bebas Neue", "display"], ["Archivo Black", "display"],
+  ["Nunito", "rounded"], ["Quicksand", "rounded"], ["Varela Round", "rounded"], ["Comfortaa", "rounded"], ["Fredoka", "rounded"],
+] as const satisfies readonly (readonly [string, ThemeFontKind])[];
+
+/** The kind of every built-in family (the picker's groups). */
+export const THEME_FONT_KINDS = {
+  "Inter Tight": "sans",
+  Inter: "sans",
+  Geist: "sans",
+  "IBM Plex Sans": "sans",
+  "Atkinson Hyperlegible": "sans",
+  Fraunces: "serif",
+  "Geist Mono": "mono",
+  "IBM Plex Mono": "mono",
+  "JetBrains Mono": "mono",
+  "Space Grotesk": "display",
+  ...Object.fromEntries(SELF_HOSTED.map(([f, k]) => [f, k])),
+} as Record<ThemeFontFamily, ThemeFontKind>;
+
+/** Font stacks per built-in family. next/font sets the first ten's variables on <html> (src/app/layout.tsx). */
 export const THEME_FONT_STACKS: Record<ThemeFontFamily, string> = {
   "Inter Tight": "var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif",
   Inter: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
@@ -49,9 +90,14 @@ export const THEME_FONT_STACKS: Record<ThemeFontFamily, string> = {
   "Space Grotesk": "var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif",
   "JetBrains Mono": "var(--font-jetbrains-mono), ui-monospace, monospace",
   "Atkinson Hyperlegible": "var(--font-atkinson), ui-sans-serif, system-ui, sans-serif",
-};
+  ...Object.fromEntries(SELF_HOSTED.map(([f, k]) => [f, `"${f}", ${FALLBACK[k]}`])),
+} as Record<ThemeFontFamily, string>;
 export const THEME_FONTS = Object.keys(THEME_FONT_STACKS) as ThemeFontFamily[];
-const MONO_FAMILIES = new Set<string>(["Geist Mono", "IBM Plex Mono", "JetBrains Mono"]);
+/** The self-hosted file slug of a family (public/fonts/<slug>-*.woff2), or null for a next/font one. */
+export function selfHostedFontSlug(family: string): string | null {
+  return SELF_HOSTED.some(([f]) => f === family) ? family.toLowerCase().replace(/ /g, "-") : null;
+}
+const MONO_FAMILIES = new Set<string>(THEME_FONTS.filter((f) => THEME_FONT_KINDS[f] === "mono"));
 
 // ---- Built-in themes (design v4 section 2 table) ----
 
@@ -402,6 +448,8 @@ export function tokenContrast(t: ThemeTokens, scheme: CanvasTone = "light"): Con
   const surface = colorToRgba(c.surface);
   const accent = colorToRgba(c.accent);
   const fills = surface ? backdropsFor(t).map((b) => over({ ...surface, a: t.surface.material === "glass" ? clamp(t.surface.opacity, 0.3, 1) : 1 }, b)) : [];
+  // F12: a gradient surface is read over both of its colours.
+  if (t.surface.material === "gradient") for (const g of t.surface.gradient ?? []) { const v = colorToRgba(g); if (v) fills.push(over(v, WHITE)); }
   const worst = (fg: string, grounds: Rgba[]) => {
     const f = colorToRgba(fg);
     if (!f || !grounds.length) return 0;
@@ -458,6 +506,11 @@ function wallpaperCss(w: ThemeTokens["wallpaper"]): string {
 }
 
 const col = (v: string, fallback: string) => (isThemeColor(v) ? v.trim() : fallback);
+/** F12: a material gradient, two validated colours at 135deg; without a valid pair, the base colour flat. */
+function gradientOf(pair: readonly [string, string] | undefined, base: string): string {
+  const [a, b] = pair ?? [];
+  return a && b && isThemeColor(a) && isThemeColor(b) ? `linear-gradient(135deg, ${a.trim()}, ${b.trim()})` : `linear-gradient(135deg, ${base}, ${base})`;
+}
 
 // Soft theme shadows, literal so they do not follow the shell's v4 elevation tokens.
 const SOFT_SHADOW = "0 12px 32px oklch(0.2 0.02 70 / 0.12), 0 2px 6px oklch(0.2 0.02 70 / 0.06)";
@@ -474,6 +527,8 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
   const surfaceText = col(c.surfaceText, fb.color.surfaceText);
   const glass = t.surface.material === "glass";
   const opacity = glass ? clamp(t.surface.opacity, 0.3, 1) : 1;
+  const chromeBg = col(t.chrome.background, fb.chrome.background);
+  const chromeMaterial = t.chrome.material === "glass" || t.chrome.material === "gradient" ? t.chrome.material : "solid";
   const borderW = ([0, 1, 2] as const).includes(t.surface.border.widthPx) ? t.surface.border.widthPx : 1;
   const offset = clamp(Math.round(t.surface.shadowOffsetPx), 0, 12);
   const accent = col(c.accent, fb.color.accent);
@@ -509,6 +564,8 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
     "--theme-surface-opacity": String(opacity),
     "--theme-surface-fill": glass ? mixAlpha(surface, opacity) : surface,
     "--theme-surface-blur": glass ? `${clamp(Math.round(t.surface.blurPx), 0, 48)}px` : "0px",
+    // F12: Gradient paints two colours at 135deg over the surface colour (design Note 2).
+    "--theme-surface-image": t.surface.material === "gradient" ? gradientOf(t.surface.gradient, surface) : "none",
     "--theme-border-width": `${borderW}px`,
     "--theme-border-color": col(t.surface.border.color, mixAlpha(surfaceText, 0.18)),
     "--theme-shadow-kind": t.surface.shadow === "hard" || t.surface.shadow === "soft" ? t.surface.shadow : "none",
@@ -532,7 +589,12 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
     "--theme-control-h": `${CONTROL_HEIGHT_PX[density]}px`,
     ...Object.fromEntries(Object.entries(densitySizes(density)).map(([name, px]) => [name, `${px}px`])),
     "--theme-motion-enter": ["none", "fade", "rise", "sweep"].includes(t.motion.enter) ? t.motion.enter : "none",
-    "--theme-chrome-bg": col(t.chrome.background, fb.chrome.background),
+    "--theme-chrome-bg": chromeBg,
+    // F12: the nav's own material, from the same control as the surfaces (A11.5).
+    "--theme-chrome-material": chromeMaterial,
+    "--theme-chrome-fill": chromeMaterial === "glass" ? mixAlpha(chromeBg, clamp(t.chrome.opacity ?? 0.6, 0.3, 1)) : chromeBg,
+    "--theme-chrome-blur": chromeMaterial === "glass" ? `${clamp(Math.round(t.chrome.blurPx ?? 16), 0, 48)}px` : "0px",
+    "--theme-chrome-image": chromeMaterial === "gradient" ? gradientOf(t.chrome.gradient, chromeBg) : "none",
     "--theme-chrome-text": col(t.chrome.text, fb.chrome.text),
     "--theme-chrome-active-fill": col(t.chrome.activeFill, fb.chrome.activeFill),
     "--theme-chrome-active-text": col(t.chrome.activeText, fb.chrome.activeText),
@@ -640,13 +702,14 @@ const ColorSchema = z.object({
   line: color,
 });
 const SurfaceSchema = z.object({
-  material: z.enum(["solid", "glass"]),
+  material: z.enum(["solid", "glass", "gradient"]),
   opacity: clamped(0.3, 1),
   blurPx: clamped(0, 48),
   border: z.object({ widthPx: nearest([0, 1, 2] as const), color }),
   shadow: z.enum(["none", "soft", "hard"]),
   shadowOffsetPx: clamped(0, 12),
   titleBars: z.boolean(),
+  gradient: z.tuple([color, color]).optional(),
 });
 const TypeSchema = z.object({
   display: family, body: family, mono: family,
@@ -658,7 +721,14 @@ const TypeSchema = z.object({
 const ShapeSchema = z.object({ radiusPx: clamped(0, 32), controlRadiusPx: z.number().finite().transform((n) => controlRadiusOf(n)) });
 const SpaceSchema = z.object({ gapPx: clamped(4, 40), padPx: clamped(8, 40), density: z.enum(["comfortable", "compact"]) });
 const MotionSchema = z.object({ enter: z.enum(["none", "fade", "rise", "sweep"]), lightDrift: z.boolean() });
-const ChromeSchema = z.object({ background: color, text: color, activeFill: color, activeText: color, style: z.enum(["bar", "boxed-tabs", "pills", "underline"]) });
+// F12 (A11.5): the nav chrome takes the surfaces' material control; absent material reads as solid.
+const ChromeSchema = z.object({
+  background: color, text: color, activeFill: color, activeText: color, style: z.enum(["bar", "boxed-tabs", "pills", "underline"]),
+  material: z.enum(["solid", "gradient", "glass"]).optional(),
+  opacity: clamped(0.3, 1).optional(),
+  blurPx: clamped(0, 48).optional(),
+  gradient: z.tuple([color, color]).optional(),
+});
 
 export const ThemeTokensSchema = z.object({
   wallpaper: WallpaperSchema,

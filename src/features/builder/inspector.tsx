@@ -216,7 +216,7 @@ function SourcesEditor({ doc, bindable, live, apply, onPick, onSelect }: { doc: 
               <span className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-fg-2">
                 {unmappedPackage(s.integrationId) ? <span className="text-warn" data-source-unmapped>not connected</span> : <span data-source-state={st?.state ?? "empty"}>{STATE_WORDS[st?.state ?? "empty"]}</span>}
                 {d ? <span data-source-value>{SHORT[d.kind]?.(d)}</span> : null}
-                <span>{s.refreshSec}s</span>
+                <span>{s.refreshSec === 0 ? "Off" : `${s.refreshSec}s`}</span>
               </span>
               <span className="flex flex-wrap items-center gap-x-1">
                 {users.length ? (
@@ -276,6 +276,18 @@ function DataTop({ node, doc, bindable, live, onPick, apply }: { node: Component
       <DataLine node={node} def={def} template={first.template} prop={first.prop} bindable={bindable} {...(live ? { live } : {})} apply={apply} onChange={(p) => onPick({ nodeId: node.id, prop: p, source: def.name })} />
     </div>
   );
+}
+
+/**
+ * Wave 2.10b F4: when the Data line is the first row and the widget shows a source whole, components' Data
+ * sentence ("Shows all of CPU in use, pve1") only repeats it, so it is not drawn. A custom template keeps its
+ * sentence and code, which say more than the line does.
+ */
+function repeatedSentence(node: ComponentNode, doc: AppDocument): string | null {
+  if (node.type === "chart" || node.type === "service-tile" || node.type === "resource-bar") return null;
+  const { first } = boundOf(node, doc);
+  if (!first) return null;
+  return new RegExp(String.raw`^\{\{\s*${first.src}(\.(rows|items|value))?\s*\}\}$`).test(first.template.trim()) ? first.prop : null;
 }
 
 /**
@@ -359,8 +371,12 @@ function RowHint({ node, doc, live }: { node: ComponentNode; doc: AppDocument; l
   );
 }
 
-/** A widget's own title and its "Show title bar" switch (A8.5). */
-function TitleFields({ node, apply }: { node: ComponentNode; apply(ops: DraftOp[]): void }) {
+/**
+ * A widget's own title and its "Show title bar" switch (A8.5). Wave 2.10b F4: each has a plain label and a
+ * one-line hint; when its effect cannot show right now it says why instead (no title bars in this theme, or
+ * the bar switched off).
+ */
+function TitleFields({ node, apply, titleBars }: { node: ComponentNode; apply(ops: DraftOp[]): void; titleBars?: boolean }) {
   const [draft, setDraft] = useState(node.title ?? "");
   useEffect(() => setDraft(node.title ?? ""), [node.id, node.title]);
   const save = () => {
@@ -368,14 +384,21 @@ function TitleFields({ node, apply }: { node: ComponentNode; apply(ops: DraftOp[
     if (t === (node.title ?? "")) return;
     apply([{ op: "node.update", nodeId: node.id, patch: { title: t || null } } as DraftOp]);
   };
+  const noBars = titleBars === false;
+  const titleWhy = noBars ? "Shows only with a theme that has title bars; this one has none" : node.showTitle === false ? "Needs Show title bar on" : null;
+  const barWhy = noBars ? "Shows only with a theme that has title bars; this one has none" : null;
   return (
     <div className="flex flex-col gap-2" data-title-fields>
-      <label className="flex flex-col gap-1 type-caption text-fg-2">
-        <span className="type-label text-fg-2">Title</span>
+      <label className="flex flex-col gap-1 type-caption text-fg-2" data-builder-setting="title">
+        <span className="type-label text-fg-2" data-field-label>Title</span>
         <input className={input} value={draft} placeholder="No title" maxLength={120} onChange={(e) => setDraft(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} data-node-title />
+        {titleWhy ? <span className="type-caption text-fg-2" data-field-reason>{titleWhy}</span> : <span className="type-caption text-fg-3" data-field-hint>The words in this widget&apos;s title bar. Never the app or data name.</span>}
       </label>
-      <Checkbox checked={node.showTitle !== false} onCheckedChange={(on) => apply([{ op: "node.update", nodeId: node.id, patch: { showTitle: on ? null : false } } as DraftOp])} label="Show title bar" data-node-show-title />
-      <p className="type-caption text-fg-3">Viewers see the title in the bar when the app&apos;s look has title bars. It is never the app or data name.</p>
+      <div data-builder-setting="show-title">
+        <Checkbox checked={node.showTitle !== false} onCheckedChange={(on) => apply([{ op: "node.update", nodeId: node.id, patch: { showTitle: on ? null : false } } as DraftOp])}
+          label={<span data-field-label>Show title bar</span>}
+          description={barWhy ? <span data-field-reason>{barWhy}</span> : <span className="text-fg-3" data-field-hint>Draws the bar across the top of this widget</span>} data-node-show-title />
+      </div>
     </div>
   );
 }
@@ -391,7 +414,8 @@ function overflowRows(nodeId: string): number {
 
 /**
  * Layout (spec 3.2): the simple set is "Fit to content" and width presets relative to the parent grid's
- * columns; Left, Top, Width and Height with their units sit under More settings.
+ * columns; Left, Top, Width and Height with their units sit in a fold titled with them (Wave 2.10b F4), each
+ * with a plain label and a one-line hint.
  */
 function LayoutFields({ node, doc, device, slot, setSlot, apply, onFit }: { node: ComponentNode; doc: AppDocument; device: Device; slot: ReturnType<typeof slotOn>; setSlot(p: Partial<NonNullable<ReturnType<typeof slotOn>>>): void; apply(ops: DraftOp[]): void; onFit?(nodeId: string): FitResult }) {
   const [fitNote, setFitNote] = useState<string | null>(null);
@@ -424,21 +448,21 @@ function LayoutFields({ node, doc, device, slot, setSlot, apply, onFit }: { node
     setFitNote(`Grown by ${rows * ROW} px. Anything below moved down. Undo with Ctrl+Z.`);
   };
   const num = (v: string) => Number(v.replace(",", "."));
-  const fields: { k: "x" | "y" | "w" | "h"; label: string; unit: string; value: number; set(v: number): void }[] = [
-    { k: "x", label: "Left", unit: "columns", value: slot.x, set: (v) => { const x = toEighth(v); if (Number.isFinite(v) && x >= 0) setSlot({ x }); } },
-    { k: "y", label: "Top", unit: "px", value: slot.y * ROW, set: (v) => { const y = Math.round(v / ROW); if (Number.isFinite(v) && y >= 0) setSlot({ y }); } },
-    { k: "w", label: "Width", unit: "columns", value: slot.w, set: (v) => { const w = toEighth(v); if (Number.isFinite(v) && w >= 0.125) setSlot({ w }); } },
-    { k: "h", label: "Height", unit: "px", value: slot.h * ROW, set: (v) => { const h = Math.round(v / ROW); if (Number.isFinite(v) && h >= 1) setSlot({ h }); } },
+  const fields: { k: "x" | "y" | "w" | "h"; key: string; label: string; unit: string; hint: string; value: number; set(v: number): void }[] = [
+    { k: "x", key: "left", label: "Left", unit: "columns", hint: "Columns from the left edge", value: slot.x, set: (v) => { const x = toEighth(v); if (Number.isFinite(v) && x >= 0) setSlot({ x }); } },
+    { k: "y", key: "top", label: "Top", unit: "px", hint: "Down from the top, in steps of 8", value: slot.y * ROW, set: (v) => { const y = Math.round(v / ROW); if (Number.isFinite(v) && y >= 0) setSlot({ y }); } },
+    { k: "w", key: "width", label: "Width", unit: "columns", hint: "Columns wide; eighths allowed", value: slot.w, set: (v) => { const w = toEighth(v); if (Number.isFinite(v) && w >= 0.125) setSlot({ w }); } },
+    { k: "h", key: "height", label: "Height", unit: "px", hint: "Tall, in steps of 8", value: slot.h * ROW, set: (v) => { const h = Math.round(v / ROW); if (Number.isFinite(v) && h >= 1) setSlot({ h }); } },
   ];
   return (
     <div className="flex flex-col gap-3" data-layout-simple>
-      <div className="flex flex-col gap-1">
-        <Button variant="secondary" onClick={fit} data-layout-fit>Fit to content</Button>
-        <p className="type-caption text-fg-3">Grows the box so everything inside shows</p>
+      <div className="flex flex-col gap-1" data-builder-setting="fit">
+        <Button variant="secondary" onClick={fit} data-layout-fit data-field-label>Fit to content</Button>
+        <p className="type-caption text-fg-3" data-field-hint>Grows the box so everything inside shows</p>
         {fitNote ? <p role="status" className="type-caption text-fg-2" data-layout-fit-note>{fitNote}</p> : null}
       </div>
-      <div className="flex flex-col gap-1">
-        <span className="type-label text-fg-2" id={`lw-${node.id}`}>Width</span>
+      <div className="flex flex-col gap-1" data-builder-setting="width-preset">
+        <span className="type-label text-fg-2" id={`lw-${node.id}`} data-field-label>Width</span>
         <div role="radiogroup" aria-labelledby={`lw-${node.id}`} className="flex flex-wrap gap-1" data-layout-presets>
           {presets.map((p) => {
             const w = p.w;
@@ -450,24 +474,24 @@ function LayoutFields({ node, doc, device, slot, setSlot, apply, onFit }: { node
             );
           })}
         </div>
-        <p className="type-caption text-fg-3">Of the {cols} columns it sits in{device === "mobile" ? " on phones" : ""}</p>
+        <p className="type-caption text-fg-3" data-field-hint>Of the {cols} columns it sits in{device === "mobile" ? " on phones" : ""}</p>
       </div>
-      <MoreFold group="layout" count={0}>
+      <MoreFold group="layout" count={0} holds={fields.map((f) => f.label)}>
         <div className="grid grid-cols-2 gap-2" data-layout-fields>
           {fields.map((f) => (
-            <label key={`${node.id}-${f.k}-${f.value}`} className="flex flex-col gap-1 type-caption text-fg-2">
-              <span className="type-label text-fg-2">{f.label} <span className="font-mono text-[11px] text-fg-3">{f.unit}</span></span>
+            <label key={`${node.id}-${f.k}-${f.value}`} className="flex flex-col gap-1 type-caption text-fg-2" data-builder-setting={f.key}>
+              <span className="type-label text-fg-2" data-field-label>{f.label} <span className="font-mono text-[11px] text-fg-3">{f.unit}</span></span>
               <input className={input} inputMode="decimal" defaultValue={f.value} aria-label={`${f.label} in ${f.unit}`} onBlur={(e) => num(e.target.value) !== f.value && f.set(num(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} data-layout-field={f.k} />
+              <span className="type-caption text-fg-3" data-field-hint>{f.hint}</span>
             </label>
           ))}
         </div>
-        <p className="type-caption text-fg-3">Left and Width count the grid&apos;s columns (eighths allowed); Top and Height are in px, in steps of 8.</p>
       </MoreFold>
     </div>
   );
 }
 
-export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect, onFit }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[]): void; /** Wave 2.10 B2: the builder's Fit (rows grown, 0 when it fits). */ onFit?(nodeId: string): FitResult; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
+export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect, onFit, titleBars }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[]): void; /** F4: whether the app's theme draws title bars (Title says why when it does not). */ titleBars?: boolean; /** Wave 2.10 B2: the builder's Fit (rows grown, 0 when it fits). */ onFit?(nodeId: string): FitResult; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
   const commands = useJson<{ commands: CommandListing[] }>("/api/integrations/commands")?.commands ?? [];
   const bindable = useJson<{ integrations: Bindable[] }>("/api/integrations/bindable")?.integrations ?? [];
   const [editingControl, setEditingControl] = useState<ControlDef | "new" | null>(null);
@@ -538,6 +562,11 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
       <InspectorHeader node={node} library={(ctx.values as { $library?: Record<string, LibraryComponent> }).$library} />
       <RowHint node={node} doc={doc} live={live} />
       {onPick && !readOnly && <DataTop node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} />}
+      {onPick && !readOnly && (() => {
+        const prop = repeatedSentence(node, doc);
+        // Node ids and prop names are plain identifiers; anything else is left alone.
+        return prop && /^[A-Za-z0-9_-]+$/.test(node.id) && /^[A-Za-z0-9_.]+$/.test(prop) ? <style data-hide-repeated-sentence>{`[data-inspector="${node.id}"] [data-data-sentence="${prop}"]{display:none}`}</style> : null;
+      })()}
       <fieldset ref={groupsRef} disabled={readOnly} className={`flex min-w-0 flex-col touch:[&_[data-inspector-group]>h3>button]:min-h-11 ${compact ? "[&_[data-inspector-group=style]]:hidden [&_[data-inspector-group=advanced]]:hidden [&_[data-inspector-group=control]]:hidden" : ""} [&_[data-inspector]]:contents [&_[data-inspector-group=content]]:order-1 [&_[data-inspector-group=data]]:order-2 [&_[data-inspector-group=control]]:order-3 [&_[data-inspector-group=style]]:order-5 [&_[data-inspector-group=advanced]]:order-6`} data-inspector-groups>
         <InspectorPanels node={node} doc={doc} ctx={ctx} describe={describe} onChange={(patch: Partial<Omit<ComponentNode, "id" | "children">>) => {
           // A grid's column count rescales its children in the same batch, so nothing moves (A7.4).
@@ -557,13 +586,15 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
         {!compact && layoutSlot && createPortal(<Group id="layout" title="Layout" order={4}>
           <LayoutFields node={node} doc={doc} device={device} slot={slot} setSlot={setSlot} apply={apply} {...(onFit ? { onFit } : {})} />
           {device === "mobile" && (
-            <Checkbox checked={!!node.responsive?.mobile?.hidden} onCheckedChange={(on) => apply([{ op: "node.update", nodeId: node.id, patch: { responsive: { mobile: { hidden: on } } } }])} label="Hide on phones" data-mobile-hidden />
+            <div data-builder-setting="hide-on-phones">
+              <Checkbox checked={!!node.responsive?.mobile?.hidden} onCheckedChange={(on) => apply([{ op: "node.update", nodeId: node.id, patch: { responsive: { mobile: { hidden: on } } } }])} label={<span data-field-label>Hide on phones</span>} description={<span className="text-fg-3" data-field-hint>Phones only. The desktop layout keeps it</span>} data-mobile-hidden />
+            </div>
           )}
           <p className="type-caption text-fg-2">{device === "mobile" ? "Editing the phone layout. The desktop layout is not changed." : "Editing the desktop layout."}</p>
         </Group>, layoutSlot)}
         {!compact && node.type !== "grid" && (
           <Group id="title" title="Title bar" order={4}>
-            <TitleFields node={node} apply={apply} />
+            <TitleFields node={node} apply={apply} {...(titleBars !== undefined ? { titleBars } : {})} />
           </Group>
         )}
         <p className="order-7 mt-1 border-t border-line-strong px-3 pt-3 pb-1 type-caption text-fg-2" data-app-level-rule>For the whole app</p>

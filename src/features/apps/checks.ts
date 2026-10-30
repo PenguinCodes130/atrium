@@ -51,7 +51,8 @@ export function checkSource(s: DataSourceDef, p: Principal | null): Problem[] {
   const ep = endpointsOf(row).find((e) => e.id === s.endpointId);
   if (!ep) return [err("source.unknown_endpoint", `${row.name} has no endpoint "${s.endpointId}".`, { field: "endpointId" })];
   const min = Math.max(ep.minRefreshSec, ATRIUM_REFRESH_FLOOR);
-  if (s.refreshSec < min) return [err("source.refresh_below_min", `The refresh interval must be at least ${min} seconds for ${ep.label}.`, { field: "refreshSec" }, `Set it to ${min} seconds or more.`)];
+  // A11.8: 0 is Off, read once per page open; the read's minimum still spaces those reads.
+  if (s.refreshSec !== 0 && s.refreshSec < min) return [err("source.refresh_below_min", `The refresh interval must be at least ${min} seconds for ${ep.label}.`, { field: "refreshSec" }, `Set it to ${min} seconds or more.`)];
   return [];
 }
 

@@ -9,6 +9,8 @@ import { timed, useReducedMotion } from "@/features/shell";
 import { text as textOf } from "../bindings";
 import { useNodeEnv } from "./context";
 import { ICON_PATHS } from "./icons";
+import { iconSize, iconSizeVars } from "./icon-scale";
+import { iconRefKind } from "./tiles-logic";
 
 type P = { node: ComponentNode; resolved: Record<string, unknown>; ctx: RenderContext };
 const str = (v: unknown) => textOf(v);
@@ -365,20 +367,25 @@ function Lightbox({ name, onClose, children }: { name: string; onClose(): void; 
 }
 
 export function IconView({ resolved }: P) {
-  const name = str(resolved.name);
-  const size = typeof resolved.size === "number" ? resolved.size : 24;
+  const ref = str(resolved.name);
   const label = str(resolved.label);
-  const d = ICON_PATHS[name] ?? ICON_PATHS.info!;
-  // B8 (A11.2 scale): a filling icon draws at half its box's shorter side (components.css), so it grows
-  // and shrinks with the box; the px size still applies outside a grid cell and when fill is off.
-  const fill = resolved.fill === true;
+  const k = iconRefKind(ref);
+  // F6 (A11.2 scale): the icon fills its box keeping its shape, at Scale (25 to 100%) of the box's shorter
+  // side (components.css .atr-icon); an older icon with a stored px size keeps that size (icon-scale.ts).
+  const size = iconSize(resolved);
+  const vars = iconSizeVars(size) as CSSProperties;
+  const d = k.kind === "builtin" ? ICON_PATHS[k.name]! : ICON_PATHS.info!;
   return (
-    <span data-slot="root" className="atr-icon" data-fill={fill ? "" : undefined} role={label ? "img" : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
-      <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        {d.map((p, i) => (
-          <path key={i} d={p} />
-        ))}
-      </svg>
+    <span data-slot="root" className="atr-icon" data-fill="" data-scale={size.kind === "scale" ? size.scale : undefined} data-px={size.kind === "px" ? size.px : undefined} style={vars} role={label ? "img" : undefined} aria-label={label || undefined} aria-hidden={label ? undefined : true}>
+      {k.kind === "upload" ? (
+        <img src={k.path} alt="" className="atr-icon-img" decoding="async" />
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" data-icon={k.kind === "builtin" ? k.name : "unknown"}>
+          {d.map((p, i) => (
+            <path key={i} d={p} />
+          ))}
+        </svg>
+      )}
     </span>
   );
 }

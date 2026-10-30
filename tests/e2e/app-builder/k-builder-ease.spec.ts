@@ -281,7 +281,9 @@ test("criteria 15 to 19: the layer row's eye, arrows and menu (rename, duplicate
 });
 
 // ---------------------------------------------------------------------------------------------------
-test("criteria 20 and 21: Snap off places on 48ths with alignment guides; Ctrl flips snapping for one move; arrows step finely", async ({ browser }) => {
+// Wave 2.10b F7 (A11.7) changed this test: Snap on now means smart guides, Snap off is free placement with
+// no pull, Alt held turns the pull off for one move, and Ctrl no longer flips anything.
+test("criteria 20 and 21: Snap off places on 48ths with no pull; Snap on pulls with guides; Alt places freely for one move; arrows step finely", async ({ browser }) => {
   const a = stat("Anchor", { x: 4, y: 0, w: 3, h: 16 });
   const b = stat("Mover", { x: 0, y: 30, w: 2, h: 12 });
   const app = await newApp(`ease-snap-${RUN}`, [a, b]);
@@ -310,12 +312,11 @@ test("criteria 20 and 21: Snap off places on 48ths with alignment guides; Ctrl f
   await expect(page.locator("[data-grid-cells]")).toHaveCount(0); // cells hidden while snap is off
   const ghostFine = await page.locator("[data-drop-ghost]").getAttribute("data-ghost-slot");
   expect(Number(ghostFine!.split(",")[0])).toBe(2.625);
-  // Near the anchor's left edge (4 columns): the guide appears and pulls the edge into line within 6px.
+  // Near the anchor's left edge with Snap off: nothing pulls and no guide shows (F7: free placement).
   const near = toLeft(4) + 4;
   for (let i = 1; i <= 6; i++) await page.mouse.move(toLeft(2.625) + ((near - toLeft(2.625)) * i) / 6, start.y + 40);
-  await expect(page.locator('[data-guide="x"][data-guide-at="4"]')).toHaveCount(1);
-  expect((await page.locator("[data-drop-ghost]").getAttribute("data-ghost-slot"))!.split(",")[0]).toBe("4");
-  await page.screenshot({ path: shot("snap-off-guide-light") });
+  await expect(page.locator("[data-guide]")).toHaveCount(0);
+  await page.screenshot({ path: shot("snap-off-no-guide-light") });
   // Back to a free spot and drop there.
   for (let i = 1; i <= 6; i++) await page.mouse.move(near + ((toLeft(8.375) - near) * i) / 6, start.y + 40);
   await page.mouse.up();
@@ -331,7 +332,8 @@ test("criteria 20 and 21: Snap off places on 48ths with alignment guides; Ctrl f
   d = await untilDraft(app.id, (x) => find(x, b.id)?.slot?.x === 8.25);
   expect(find(d, b.id)?.slot?.x).toBe(8.25);
 
-  // 21: snap on, Ctrl held while dragging places freely; releasing Ctrl mid-drag snaps again.
+  // 21 (F7): snap on, Alt held while dragging places freely; releasing Alt mid-drag pulls again, onto the
+  // anchor's left edge with a guide.
   await page.locator("[data-snap]").click();
   await expect(page.locator("[data-snap]")).toHaveAttribute("data-snap", "on");
   await page.keyboard.press("ArrowRight");
@@ -340,27 +342,31 @@ test("criteria 20 and 21: Snap off places on 48ths with alignment guides; Ctrl f
   const hb2 = (await handle.boundingBox())!;
   await page.mouse.move(hb2.x + 4, hb2.y + 4);
   await page.mouse.down();
-  await page.keyboard.down("Control");
-  const freeX = g.left + 1.375 * g.step + 6;
+  await page.keyboard.down("Alt");
+  const grab2 = hb2.x + 4 - (await box(page, `[data-canvas-root] [data-node="${b.id}"]`)).x;
+  const freeX = g.left + 1.375 * g.step + grab2 + 1;
   for (let i = 1; i <= 8; i++) await page.mouse.move(hb2.x + 4 + ((freeX - hb2.x - 4) * i) / 8, hb2.y + 4 + 60 * (i / 8));
-  const ctrlSlot = Number((await page.locator("[data-drop-ghost]").getAttribute("data-ghost-slot"))!.split(",")[0]);
-  expect(Number.isInteger(ctrlSlot)).toBe(false);
-  await page.keyboard.up("Control");
-  await page.mouse.move(freeX + 1, hb2.y + 64);
+  const altSlot = Number((await page.locator("[data-drop-ghost]").getAttribute("data-ghost-slot"))!.split(",")[0]);
+  expect(Number.isInteger(altSlot)).toBe(false);
+  await expect(page.locator("[data-guide]")).toHaveCount(0);
+  await page.keyboard.up("Alt");
+  const nearA = g.left + 4 * g.step + grab2 + 4;
+  for (let i = 1; i <= 6; i++) await page.mouse.move(freeX + ((nearA - freeX) * i) / 6, hb2.y + 64);
   const snapped = Number((await page.locator("[data-drop-ghost]").getAttribute("data-ghost-slot"))!.split(",")[0]);
-  expect(Number.isInteger(snapped)).toBe(true);
+  expect(snapped).toBe(4);
+  await expect(page.locator('[data-guide="x"][data-guide-at="4"]')).toHaveCount(1);
   await expect(page.locator("[data-grid-cells]")).toHaveCount(1);
+  await page.screenshot({ path: shot("snap-on-guide-light") });
   await page.mouse.up();
-  d = await untilDraft(app.id, (x) => Number.isInteger(find(x, b.id)?.slot?.x));
-  expect(Number.isInteger(find(d, b.id)!.slot!.x)).toBe(true);
-  log("snap", { ctrlSlot, snapped, final: find(d, b.id)!.slot });
+  d = await untilDraft(app.id, (x) => find(x, b.id)?.slot?.x === 4);
+  expect(find(d, b.id)!.slot!.x).toBe(4);
+  log("snap", { altSlot, snapped, final: find(d, b.id)!.slot });
 
-  // V4: snap-off guides in the three app themes.
-  await page.locator("[data-snap]").click();
+  // V4: the guides (snap on, F7) in the three app themes.
   for (const theme of APP_THEMES) {
     await ops(app.id, [{ op: "theme.set", theme: { themeId: theme } }, { op: "node.move", nodeId: b.id, parentId: app.root, slot: { x: 0, y: 30, w: 2, h: 12 } }]);
     await page.reload();
-    await expect(page.locator("[data-snap]")).toHaveAttribute("data-snap", "off");
+    await expect(page.locator("[data-snap]")).toHaveAttribute("data-snap", "on");
     await page.locator(`[data-canvas-root] [data-node="${b.id}"]`).click();
     const h = (await handle.boundingBox())!;
     const gg = await gridGeom(page);
@@ -369,7 +375,7 @@ test("criteria 20 and 21: Snap off places on 48ths with alignment guides; Ctrl f
     await page.mouse.down();
     for (let i = 1; i <= 8; i++) await page.mouse.move(h.x + 4 + ((target - h.x - 4) * i) / 8, h.y + 4 + 30 * (i / 8));
     await expect(page.locator('[data-guide="x"]').first()).toBeVisible();
-    await page.screenshot({ path: shot(`snap-off-guides-${theme}`) });
+    await page.screenshot({ path: shot(`snap-on-guides-${theme}`) });
     await page.mouse.up();
   }
   await ctx.close();
@@ -382,7 +388,8 @@ test("V7: dragging with guides on a page of 30 widgets keeps frames under 16.7 m
   const ctx = await contextFor(browser, OWNER, { variant: LIGHT });
   const page = await ctx.newPage();
   await open(page, app.slug);
-  if ((await page.locator("[data-snap]").getAttribute("data-snap")) === "on") await page.locator("[data-snap]").click();
+  // F7: guides show with Snap on (the default).
+  if ((await page.locator("[data-snap]").getAttribute("data-snap")) === "off") await page.locator("[data-snap]").click();
   const mover = many[29]!;
   await page.locator(`[data-canvas-root] [data-node="${mover.id}"]`).click();
   const hb = (await page.locator("[data-drag-handle]").boundingBox())!;

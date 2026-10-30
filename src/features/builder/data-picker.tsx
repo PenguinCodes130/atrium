@@ -15,6 +15,7 @@ import { isBinding } from "@/features/components/bindings";
 import { formatParts } from "@/features/components/render/format";
 import type { SourceData } from "@/features/data/types";
 import { PICK_RETURN_KEY } from "@/features/integrations/ui/return-to-builder";
+import { foldTitle } from "@/features/components/inspector/more";
 import {
   cardForEachOps, copyForOne, describeTemplate, sameRead, EVERY, everyWords, findReusable, isSourceName, keyColumn, mainColumns, manyValueOffers, missingParams, otherUsers, paramDefaults, paramFields, renameInTemplate, renameOps,
   repeatAround, rowFields, rowTemplate, SHAPE_WORDS, showChoices, sourceLabelFor, sourceNameFromLabel, switchTypeOp, templateFor, unusedAdded, usersOf, wholeFit, wholeProp, wordsFor, type Agg, type ParamField, type Pick, type ShowAs,
@@ -188,7 +189,8 @@ export function DataPicker({ appId, target, doc, bindable, data, states, apply, 
   const missing = missingParams(fields, params);
   const minRefresh = ep ? Math.max(5, ep.minRefreshSec) : 5;
   const refreshNum = Number(refresh);
-  const refreshError = refresh !== "" && (!Number.isInteger(refreshNum) || refreshNum < minRefresh) ? `Refresh at least every ${minRefresh} s.` : null;
+  // A11.8: 0 is Off (the value loads with the page).
+  const refreshError = refresh !== "" && (!Number.isInteger(refreshNum) || (refreshNum !== 0 && refreshNum < minRefresh)) ? `Refresh at least every ${minRefresh} s, or 0 for Off.` : null;
   const shape = (ep?.shape ?? null) as DataShapeKind | null;
   // The last sample seen per name, so a rename never blanks the sample while the stream catches up
   // (the Use button stays under the pointer: criterion 7).
@@ -660,8 +662,8 @@ export function DataPicker({ appId, target, doc, bindable, data, states, apply, 
                 <details className="group/more border border-line" open={moreOpen || !!refreshError || jsonMode} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)} data-pick-more-settings>
                   <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 px-3 type-label touch:min-h-11 [&::-webkit-details-marker]:hidden" data-pick-more-settings-toggle>
                     <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden className="flex-none transition-transform duration-150 group-open/more:rotate-90 motion-reduce:transition-none"><path d="M4 2.5 7.5 6 4 9.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="square" /></svg>
-                    More settings
-                    <span className="type-caption ml-auto text-fg-2">{[fields.some((f) => !f.required || f.kind === "thing") ? "filters" : "", "refresh", name ? "name" : ""].filter(Boolean).join(", ")}</span>
+                    {/* Wave 2.10b F4: titled with what it holds, never a bare "More settings". */}
+                    <span data-fold-title>{foldTitle([fields.some((f) => !f.required || f.kind === "thing") ? "Filters" : "", "Refresh", fields.length ? "Settings as JSON" : "", name ? "Name used in templates" : ""])}</span>
                   </summary>
                   <div className="flex flex-col gap-3 px-3 pt-1 pb-3">
                     {!jsonMode && fields.filter((f) => !f.required || f.kind === "thing").map((f) => <ParamInput key={f.key} field={f.kind === "thing" ? { ...f, kind: "text", label: `${f.label} (typed)` } : f} value={params[f.key]} onChange={(v) => setParams((p) => ({ ...p, [f.key]: v }))} />)}
@@ -677,7 +679,7 @@ export function DataPicker({ appId, target, doc, bindable, data, states, apply, 
                         setJsonMode(false);
                       }} label="Edit as JSON" /></div>
                     )}
-                    <label className="flex flex-col gap-1 type-caption">Refresh every (seconds, at least {minRefresh})
+                    <label className="flex flex-col gap-1 type-caption">Refresh every (seconds, at least {minRefresh}; 0 is Off, loads with the page)
                       <input className={input} inputMode="numeric" value={refresh} onChange={(e) => setRefresh(e.target.value)} aria-invalid={!!refreshError || undefined} data-pick-refresh />
                     </label>
                     {refreshError && <p className="type-caption m-0 text-bad" role="alert" data-pick-refresh-error>{refreshError}</p>}

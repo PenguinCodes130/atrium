@@ -1,6 +1,9 @@
 // The refresh scheduler (architecture v2 section 10). Every second it starts the reads that are
 // due. A key is active while a page stream subscribes to it, and for 10 minutes after the last
 // subscriber leaves. One fetch per key per interval, however many widgets read it.
+// A11.8 (Wave 2.10b F5 Off): a subscription with refreshSec 0 asks for one read when it starts (unless the
+// cache already holds one younger than the read's minimum) and adds nothing to the interval, so a key that
+// only Off subscriptions hold is read once per page open and never again.
 import type { ReadResult } from "@/core/contracts";
 import type { ReadCache } from "./cache";
 import { cacheKey, type SourceRef } from "./keys";
@@ -29,6 +32,8 @@ type KeyState = {
   again: boolean;
   failures: number;
   lastStartedAt: number | null;
+  /** A11.8: the latest subscription was Off. When the key empties then, it lingers without reading. */
+  lastSubOff: boolean;
 };
 
 export type SchedulerOptions = {
@@ -61,10 +66,19 @@ export class Scheduler {
     this.random = opts.random ?? Math.random;
   }
 
-  /** Interval for a key: the smallest subscriber refresh, floored by the endpoint minimum and 5 s. */
+  /**
+   * Interval for a key: the smallest non-zero subscriber refresh, floored by the endpoint minimum and 5 s.
+   * Off subscriptions (0, A11.8) do not count; with none left the key is not read again (Infinity).
+   */
   static interval(subscriberSecs: number[], minRefreshSec: number): number {
-    const smallest = subscriberSecs.length ? Math.min(...subscriberSecs) : Infinity;
+    const live = subscriberSecs.filter((s) => s > 0);
+    const smallest = live.length ? Math.min(...live) : Infinity;
     return Math.max(smallest, minRefreshSec, ATRIUM_FLOOR_SEC) * 1000;
+  }
+
+  /** The shortest gap between two reads of a key: the endpoint minimum, never below the 5 s floor. */
+  static floorMs(minRefreshSec: number): number {
+    return Math.max(minRefreshSec, ATRIUM_FLOOR_SEC) * 1000;
   }
 
   /** Wait after `failures` consecutive failures: doubling, jittered down by at most 10%, capped at 10 minutes. */
@@ -84,19 +98,24 @@ export class Scheduler {
     return this.keys.has(key);
   }
 
-  subscribe(source: SourceRef, refreshSec: number, listener?: Listener): { key: string; unsubscribe: () => void } {
+  /**
+   * Subscribes to a key at `refreshSec` (0 is Off, A11.8). For an Off subscription `pending` says whether a
+   * read was asked for (false when the cache already holds a value younger than the read's minimum): the
+   * page stream then knows whether one more value is on its way.
+   */
+  subscribe(source: SourceRef, refreshSec: number, listener?: Listener): { key: string; unsubscribe: () => void; pending: boolean } {
     const key = cacheKey(source);
     let k = this.keys.get(key);
     const now = this.now();
+    const entry = this.opts.cache.get(key);
+    const lastOk = entry?.lastAttempt?.ok ? Date.parse(entry.lastAttempt.fetchedAt) : NaN;
     if (!k) {
       const minRefreshSec = this.opts.minRefreshSec(source);
-      const entry = this.opts.cache.get(key);
       const interval = Scheduler.interval([refreshSec], minRefreshSec);
-      const last = entry?.lastAttempt ? Date.parse(entry.lastAttempt.fetchedAt) : NaN;
       k = {
         key, source, minRefreshSec, subs: new Map(), listeners: new Map(), lastIntervalMs: interval, leftAt: null,
-        nextDueAt: Number.isFinite(last) && entry?.lastAttempt?.ok ? Math.min(last + interval, now + interval) : now,
-        inFlight: false, again: false, failures: 0, lastStartedAt: null,
+        nextDueAt: Number.isFinite(interval) ? (Number.isFinite(lastOk) ? Math.min(lastOk + interval, now + interval) : now) : Infinity,
+        inFlight: false, again: false, failures: 0, lastStartedAt: null, lastSubOff: false,
       };
       this.keys.set(key, k);
     }
@@ -104,13 +123,34 @@ export class Scheduler {
     k.subs.set(id, refreshSec);
     if (listener) k.listeners.set(id, listener);
     k.leftAt = null;
+    k.lastSubOff = !(refreshSec > 0);
     const interval = Scheduler.interval([...k.subs.values()], k.minRefreshSec);
     k.lastIntervalMs = interval;
-    // A faster subscriber pulls the next fetch forward.
-    if (k.lastStartedAt !== null && !k.inFlight && k.failures === 0) k.nextDueAt = Math.min(k.nextDueAt, k.lastStartedAt + interval);
+    let pending = false;
+    if (refreshSec > 0) {
+      // A faster subscriber pulls the next fetch forward; one joining a key nothing reads on a timer starts it.
+      if (!k.inFlight && k.failures === 0) {
+        if (k.lastStartedAt !== null) k.nextDueAt = Math.min(k.nextDueAt, k.lastStartedAt + interval);
+        if (!Number.isFinite(k.nextDueAt)) k.nextDueAt = Number.isFinite(lastOk) ? Math.min(lastOk + interval, now + interval) : now;
+      }
+    } else if (k.inFlight) {
+      pending = true;
+    } else {
+      // Off: one read on page open, unless the cache already holds one younger than the read's minimum.
+      const floor = Scheduler.floorMs(k.minRefreshSec);
+      const lastAt = Math.max(Number.isFinite(lastOk) ? lastOk : -Infinity, k.lastStartedAt ?? -Infinity);
+      if (!(Number.isFinite(lastOk) && now - lastOk < floor)) {
+        pending = true;
+        k.nextDueAt = Math.min(k.nextDueAt, Math.max(now, Number.isFinite(lastAt) ? lastAt + floor : now));
+      } else if (!Number.isFinite(interval)) {
+        // Only Off subscriptions, and the cache's value serves this page open: nothing is due.
+        k.nextDueAt = Infinity;
+      }
+    }
     let done = false;
     return {
       key,
+      pending,
       unsubscribe: () => {
         if (done) return;
         done = true;
@@ -118,7 +158,15 @@ export class Scheduler {
         if (!s) return;
         s.subs.delete(id);
         s.listeners.delete(id);
-        if (s.subs.size === 0) s.leftAt = this.now();
+        if (s.subs.size) s.lastIntervalMs = Scheduler.interval([...s.subs.values()], s.minRefreshSec);
+        if (s.subs.size === 0) {
+          s.leftAt = this.now();
+          // A11.8: the last page to open this key read it Off: it lingers (cached) but is not read again.
+          if (s.lastSubOff) {
+            s.lastIntervalMs = Infinity;
+            if (!s.inFlight) s.nextDueAt = Infinity;
+          }
+        }
       },
     };
   }
@@ -175,6 +223,10 @@ export class Scheduler {
     } else if (result.ok) {
       k.failures = 0;
       k.nextDueAt = k.lastStartedAt + interval;
+    } else if (!Number.isFinite(interval)) {
+      // Only Off subscriptions (A11.8): a failed page-open read is shown as failed, not retried.
+      k.failures++;
+      k.nextDueAt = Infinity;
     } else {
       k.failures++;
       k.nextDueAt = this.now() + Scheduler.backoff(interval, k.failures, this.random(), result.error.retryAfterSec);
@@ -204,6 +256,8 @@ export class Scheduler {
     let n = 0;
     for (const k of this.keys.values()) {
       if (k.source.integrationId !== integrationId) continue;
+      // A11.8: a key only Off widgets read is never read again until a page opens.
+      if (!Number.isFinite(this.intervalMs(k.key) ?? Infinity)) continue;
       n++;
       k.failures = 0;
       if (k.inFlight) k.again = true;

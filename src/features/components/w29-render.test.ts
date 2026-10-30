@@ -160,7 +160,8 @@ describe("inspector list editors", () => {
     const m = panel(tile({ stats: [{ label: "Running", value: 3 }], integrationId: "i_x" }));
     expect(m).toContain("data-stats-editor");
     expect(m).toContain('data-pick-button="stats.0.value"');
-    expect(m).toContain('data-icon-select="icon"');
+    // Wave 2.10b F6: the icon field is the visual grid picker's button (it was a menu of names).
+    expect(m).toContain('data-icon-pick="icon"');
     expect(m).toContain("data-connect-data");
     expect(m).not.toContain('data-field="integrationId"');
     expect(m).toContain("Add a number");

@@ -97,6 +97,13 @@ async function closeSheets(page: Page) {
     await expect(sheet).toHaveCount(0);
   }
 }
+/** Wave 2.10b F6: opens an icon field's visual grid picker, searches and picks one icon. */
+async function pickIcon(page: Page, path: string, name: string) {
+  await insp(page).locator(`[data-icon-pick="${path}"]`).click();
+  await page.locator("[data-icon-picker] [data-icon-search]").fill(name);
+  await page.locator(`[data-icon-picker] [data-icon-grid] [data-icon-choice="${name}"]`).click();
+  await expect(page.locator("[data-icon-picker]")).toHaveCount(0);
+}
 /** Opens a "by hand" fold of the inspector when the builder shows its own data summary above it. */
 async function byHand(page: Page, list: "lines" | "stats" | "items") {
   const t = page.locator(`[data-inspector] [data-more-settings-toggle="${list}-by-hand"]`);
@@ -148,7 +155,8 @@ test("Insert each new component and edit it in the inspector: service tile, grou
   await fill(page, '[data-inspector] [data-field="name"] input', "Portainer");
   await fill(page, '[data-inspector] [data-field="description"] textarea', "Docker management");
   await fill(page, '[data-inspector] [data-field="href"] input', "https://portainer.example.test");
-  await insp(page).locator('[data-icon-select="icon"]').selectOption("docker");
+  // Wave 2.10b F6: icons are picked in the visual grid picker (it was a menu of names).
+  await pickIcon(page, "icon", "docker");
   await byHand(page, "stats");
   await insp(page).locator("[data-add-stat]").click();
   await insp(page).locator("[data-add-stat]").click();
@@ -207,7 +215,7 @@ test("Insert each new component and edit it in the inspector: service tile, grou
   await byHand(page, "items");
   await insp(page).locator("[data-add-reading]").click();
   await fill(page, '[data-list-text="items.0.label"]', "Disk");
-  await insp(page).locator('[data-icon-select="items.0.icon"]').selectOption("disk");
+  await pickIcon(page, "items.0.icon", "disk");
   await fill(page, '[data-list-literal="items.0.value"]', "61");
   await fill(page, '[data-list-literal="items.0.percent"]', "61");
   await insp(page).locator('[data-list-format="items.0.format"]').selectOption("percent");

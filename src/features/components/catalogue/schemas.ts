@@ -3,6 +3,7 @@
 // binding ({ $bind: "{{ ... }}" }), except where a literal is required (control ids, html code).
 import { z } from "zod";
 import { MAX_TEMPLATE_BYTES } from "../bindings/parse";
+import { ICON_PATHS } from "../render/icons";
 
 export const bindingSchema = z
   .strictObject({ $bind: z.string().max(MAX_TEMPLATE_BYTES).describe("A binding template, for example {{ cpu.value | round(1) }}%") })
@@ -23,16 +24,9 @@ const controlId = z.string().regex(/^k_[a-z2-7]{10}$/, "a control id like k_abcd
 const controlField = (desc: string) => lit(z.union([controlId, bindingSchema]), desc);
 const paint = z.string().max(200);
 
-export const ICON_NAMES = [
-  "home", "server", "cpu", "memory", "disk", "network", "wifi", "light", "power", "thermometer", "droplet", "sun", "moon",
-  "lock", "unlock", "bell", "play", "pause", "plug", "chart", "clock", "check", "warning", "info", "star", "heart", "door", "camera", "film", "music",
-  // Wave 2.9 (A10.7): service icons, and the official packages' own glyphs by package id.
-  "shield", "cloud", "database", "globe", "download", "upload", "search", "box", "terminal", "mail", "calendar", "book", "tv", "photo", "code", "folder",
-  "link", "gauge", "activity", "router", "printer", "gamepad", "users", "bookmark", "rss", "key", "settings", "note", "phone", "speaker", "bolt", "battery",
-  "fan", "cart", "git", "robot", "list", "grid", "container",
-  "prometheus", "npm", "pfsense", "proxmox", "docker", "uptime-kuma", "home-assistant", "custom-api", "atrium",
-] as const;
-export type IconName = (typeof ICON_NAMES)[number];
+/** Every built-in icon name (render/icons.ts; Wave 2.10b F6 grew the set past 200). */
+export const ICON_NAMES: readonly string[] = Object.keys(ICON_PATHS);
+export type IconName = string;
 
 /** A10.7: a built-in icon name, a package id written "pkg:<id>", or an uploaded picture (/uploads/...). */
 export const UPLOAD_PATH = /^\/uploads\/[A-Za-z0-9_][A-Za-z0-9._/-]*$/;
@@ -249,9 +243,10 @@ export const propsSchemas = {
     startAt: lit(z.number().min(0).max(36000), "Start playing this many seconds in."),
   }),
   icon: z.strictObject({
-    name: b(z.enum(ICON_NAMES), `A built-in icon: ${ICON_NAMES.join(", ")}.`),
-    size: lit(z.number().int().min(12).max(128), "Icon size in px, used when fill is off."),
-    fill: lit(z.boolean(), "Fill the box (A11.2 scale): the icon grows and shrinks with its box, keeping its shape. New icons fill; off uses size in px."),
+    name: b(iconRef, `A built-in icon name (${ICON_NAMES.length} of them, for example server, cpu, router, film, light, globe), pkg:<package id> for a package's own glyph, or an uploaded picture (/uploads/...).`),
+    scale: lit(z.number().int().min(25).max(100), "How much of its box the icon fills, 25 to 100 percent of the box's shorter side, keeping its shape (F6). Empty: 50."),
+    size: lit(z.number().int().min(12).max(128), "Older icons only: a size in px from before Scale. It still draws that size until Scale is set, which replaces it. Do not set it on new icons."),
+    fill: lit(z.boolean(), "Older icons only: whether the icon filled its box before Scale existed. Every icon fills its box now; this is ignored once Scale is set."),
     label: b(z.string().max(120), "What the icon means, read aloud by screen readers. Empty marks it decorative."),
   }),
   link: z.strictObject({

@@ -7,16 +7,15 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import type { AppDocument, ComponentNode, DraftOp, PropValue } from "@/core/contracts";
 import { Button } from "@/features/shell";
 import { isBinding, resolveValue, type PropError } from "../bindings";
-import { ICON_NAMES, MAX_BAR_ITEMS, MAX_BOOKMARKS, MAX_CHART_LINES, MAX_TILE_STATS, SERIES_COLORS } from "../catalogue/schemas";
-import { ICON_PATHS } from "../render/icons";
+import { MAX_BAR_ITEMS, MAX_BOOKMARKS, MAX_CHART_LINES, MAX_TILE_STATS, SERIES_COLORS } from "../catalogue/schemas";
 import { planLines, thirdUnitSentence, type LineInput } from "../render/lines";
-import { domainOf, iconRefKind } from "../render/tiles-logic";
+import { domainOf } from "../render/tiles-logic";
+import { IconGlyph, IconPickField } from "./icon-picker";
 import { newId } from "../ids";
 import { wordsFor } from "./labels";
 import type { PageScope } from "../render/resolve";
 import type { BindingDescriber } from "./binding-words";
 import { BindingField, DataChip, chipFits } from "./inspector";
-import { MediaField } from "@/features/uploads/client";
 
 const inputCls = "w-full border border-line-strong bg-bg-hi px-2 py-1.5 type-body text-fg placeholder:text-fg-3 min-h-9 touch:min-h-11 disabled:opacity-40";
 const labelCls = "type-label text-fg-2";
@@ -160,64 +159,15 @@ const move = <T,>(list: T[], i: number, d: number): T[] => {
   return out;
 };
 
-// ---------- icon picker ----------
-
-const ICON_GROUPS: { title: string; names: readonly string[] }[] = [
-  { title: "Services", names: ["docker", "proxmox", "prometheus", "npm", "pfsense", "uptime-kuma", "home-assistant", "custom-api", "rss", "atrium"] },
-  { title: "Things", names: ICON_NAMES.filter((n) => !["docker", "proxmox", "prometheus", "npm", "pfsense", "uptime-kuma", "home-assistant", "custom-api", "rss", "atrium"].includes(n)) },
-];
+// ---------- icon fields (F6: one visual grid picker, icon-picker.tsx) ----------
 
 export function IconPreview({ icon, size = 20 }: { icon: string; size?: number }) {
-  const k = iconRefKind(icon);
-  if (k.kind === "upload") return <img src={k.path} alt="" width={size} height={size} className="object-contain" />;
-  const d = k.kind === "builtin" ? ICON_PATHS[k.name]! : ICON_PATHS.server!;
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      {d.map((p, i) => (
-        <path key={i} d={p} />
-      ))}
-    </svg>
-  );
+  return <IconGlyph icon={icon} size={size} />;
 }
 
-/** Pick a built-in icon (the service's own glyph first), or upload a picture. Optional: with "none" for letters. */
+/** Pick a built-in icon (the service's own glyph among them), or upload a picture. Optional: "none" draws two letters. */
 export function IconField({ label, value, onSet, path, optional, hint }: { label: string; value: unknown; onSet(v: PropValue | null): void; path: string; optional?: boolean; hint?: string }) {
-  const id = useId();
-  const icon = typeof value === "string" ? value : "";
-  const k = iconRefKind(icon);
-  const name = k.kind === "builtin" ? (icon.startsWith("pkg:") ? icon : k.name) : "";
-  return (
-    <div className="flex flex-col gap-1" data-icon-field={path}>
-      <label htmlFor={id} className={labelCls}>
-        {label}
-      </label>
-      <span className="flex items-center gap-2">
-        <span className="flex h-9 w-9 flex-none items-center justify-center border border-line-strong text-fg touch:h-11 touch:w-11" data-icon-preview={icon}>
-          {icon ? <IconPreview icon={icon} /> : <span className="type-caption text-fg-3">Aa</span>}
-        </span>
-        <select id={id} className={inputCls} value={k.kind === "upload" ? "__upload" : name} onChange={(e) => (e.target.value === "__upload" ? null : onSet(e.target.value || null))} data-icon-select={path}>
-          {optional ? <option value="">Two letters from the name</option> : null}
-          {k.kind === "upload" ? <option value="__upload">Your picture</option> : null}
-          {k.kind === "unknown" && icon ? <option value={icon}>{icon} (unknown)</option> : null}
-          {icon.startsWith("pkg:") && k.kind === "builtin" ? <option value={icon}>{k.name} (service)</option> : null}
-          {ICON_GROUPS.map((g) => (
-            <optgroup key={g.title} label={g.title}>
-              {g.names.map((n) => (
-                <option key={n} value={n}>
-                  {n.replace(/-/g, " ")}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-      </span>
-      {hint ? <p className="type-caption m-0 text-fg-3">{hint}</p> : null}
-      <details className="type-caption text-fg-2" data-icon-upload={path}>
-        <summary className="min-h-8 cursor-pointer touch:min-h-11">Use your own picture</summary>
-        <MediaField value={k.kind === "upload" ? icon : undefined} accept="image" label="Picture" hint="A small square picture works best" onChange={(p) => onSet(p)} />
-      </details>
-    </div>
-  );
+  return <IconPickField label={label} value={value} onSet={(v) => onSet(v)} path={path} {...(optional ? { optional } : {})} {...(hint ? { hint } : {})} />;
 }
 
 // ---------- a service tile's numbers ----------
@@ -228,8 +178,8 @@ export function StatsEditor({ env }: { env: ListEnv }) {
   const setAt = (i: number, k: string, v: PropValue | null) => set(rows.map((r, j) => (j === i ? withKey(r, k, v) : r)));
   return (
     <div className="flex flex-col gap-2" data-field="stats" data-stats-editor>
-      <span className={labelCls}>{wordsFor("service-tile", "stats")?.label}</span>
-      <p className="type-caption m-0 text-fg-3">{wordsFor("service-tile", "stats")?.hint}</p>
+      <span className={labelCls} data-field-label>{wordsFor("service-tile", "stats")?.label}</span>
+      <p className="type-caption m-0 text-fg-3" data-field-hint>{wordsFor("service-tile", "stats")?.hint}</p>
       {rows.map((r, i) => (
         <div key={i} className={rowCls} data-stat-row={i}>
           <RowHead title={`Number ${i + 1}`} removeLabel={`number ${i + 1}`} onRemove={() => set(rows.filter((_, j) => j !== i))} {...(i > 0 ? { up: () => set(move(rows, i, -1)) } : {})} />
@@ -273,8 +223,8 @@ export function BarItemsEditor({ env }: { env: ListEnv }) {
   const setAt = (i: number, k: string, v: PropValue | null) => set(rows.map((r, j) => (j === i ? withKey(r, k, v) : r)));
   return (
     <div className="flex flex-col gap-2" data-field="items" data-bar-editor>
-      <span className={labelCls}>{wordsFor("resource-bar", "items")?.label}</span>
-      <p className="type-caption m-0 text-fg-3">{wordsFor("resource-bar", "items")?.hint}</p>
+      <span className={labelCls} data-field-label>{wordsFor("resource-bar", "items")?.label}</span>
+      <p className="type-caption m-0 text-fg-3" data-field-hint>{wordsFor("resource-bar", "items")?.hint}</p>
       <p className="type-caption m-0 text-fg-3">CPU, memory free, disk free, temperature, uptime, network. A percent draws the small bar.</p>
       {rows.map((r, i) => (
         <div key={i} className={rowCls} data-bar-row={i}>
@@ -301,8 +251,8 @@ export function BookmarksEditor({ env }: { env: ListEnv }) {
   const setAt = (i: number, k: string, v: PropValue | null) => set(rows.map((r, j) => (j === i ? withKey(r, k, v) : r)));
   return (
     <div className="flex flex-col gap-2" data-field="items" data-bookmarks-editor>
-      <span className={labelCls}>{wordsFor("bookmarks", "items")?.label}</span>
-      <p className="type-caption m-0 text-fg-3">{wordsFor("bookmarks", "items")?.hint}</p>
+      <span className={labelCls} data-field-label>{wordsFor("bookmarks", "items")?.label}</span>
+      <p className="type-caption m-0 text-fg-3" data-field-hint>{wordsFor("bookmarks", "items")?.hint}</p>
       {rows.map((r, i) => {
         const href = typeof r.href === "string" ? r.href : "";
         const bad = href.trim() !== "" && !domainOf(href);
@@ -382,8 +332,8 @@ export function LinesEditor({ env, doc, onOps }: { env: ListEnv; doc: AppDocumen
   };
   return (
     <div className="flex flex-col gap-2" data-field="lines" data-lines-editor>
-      <span className={labelCls}>{wordsFor("chart", "lines")?.label}</span>
-      <p className="type-caption m-0 text-fg-3">{wordsFor("chart", "lines")?.hint}</p>
+      <span className={labelCls} data-field-label>{wordsFor("chart", "lines")?.label}</span>
+      <p className="type-caption m-0 text-fg-3" data-field-hint>{wordsFor("chart", "lines")?.hint}</p>
       <p className="type-caption m-0 text-fg-3">Lines in a second unit use the right-hand axis.</p>
       {rows.map((r, i) => {
         const refused = plan.plan.refused.includes(i);
