@@ -7,6 +7,7 @@ import { evaluateTemplate, isBinding, resolveValue, templatesIn, type BindingFai
 import { pathsOf, rootsOf } from "../bindings/parse";
 import { derivedId } from "../ids";
 import { metaFor } from "../catalogue/meta";
+import { COPY_OVERRIDES, COPY_TYPES } from "./copy-overrides";
 
 export type SourceState = { state?: "fresh" | "stale" | "failed" | "empty"; sourceTimestamp?: string; fetchedAt?: string; refreshSec?: number; error?: { code: string; message: string; hint?: string } };
 
@@ -80,6 +81,11 @@ export function resolveProps(node: ComponentNode, scope: PageScope): Resolved {
   const errors: PropError[] = [];
   const props: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(withDefaults(node))) {
+    // R1: a repeat's per-copy changes are resolved inside each copy, with that row's $item, never here.
+    if (k === COPY_OVERRIDES && COPY_TYPES.has(node.type)) {
+      props[k] = v;
+      continue;
+    }
     // The html block's data map resolves entry by entry; its code is never evaluated.
     props[k] = resolveValue(v, scope, k, errors);
   }
@@ -99,7 +105,8 @@ export function nodeVisible(node: ComponentNode, scope: PageScope): { visible: b
 /** Data source names a node's props read (visibility excluded), through $param when inside an instance. */
 export function nodeSources(node: ComponentNode, scope?: PageScope): string[] {
   const out = new Set<string>();
-  for (const { template } of templatesIn(node.props as PropValue, "props")) {
+  for (const { path, template } of templatesIn(node.props as PropValue, "props")) {
+    if (COPY_TYPES.has(node.type) && path.startsWith(`props.${COPY_OVERRIDES}`)) continue; // the copies' own reads
     for (const r of rootsOf(template)) if (!r.startsWith("$")) out.add(r);
     if (scope?.$paramSources) {
       for (const p of pathsOf(template)) {

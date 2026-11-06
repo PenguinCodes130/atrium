@@ -15,7 +15,7 @@ import { compileNodeStylesAction } from "../actions";
 import { fieldsFor, type FieldSpec } from "./fields";
 import { FIELD_WORDS, HIDDEN_FIELDS } from "./labels";
 import { fieldReason, type ReasonEnv } from "./reasons";
-import { IconPickField } from "./icon-picker";
+import { IconPickField, siteUrlOf } from "./icon-picker";
 import { ScaleField } from "./scale-field";
 import { DATA_NOTICE } from "../render/html-block";
 import { detachInstance, libraryDiff } from "../library-instance";
@@ -24,6 +24,9 @@ import { SaveToLibrary } from "./save-to-library";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "../render/render-node";
 import { createPortal } from "react-dom";
 import { repeatItems, type PageScope } from "../render/resolve";
+import { repeatsTemplate } from "../render/copy-overrides";
+import { ROULETTE_MAX } from "../render/roulette";
+import { RouletteAdvanceField, RouletteTimerField, RouletteTooMany } from "./roulette-panel";
 import { Chevron, MoreFold } from "./more";
 import { chipFrom, chipLine, chipValue, chipWords, dataSentence, fieldAfterRoot, isGeneratedSourceName, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber, type SourceWords } from "./binding-words";
 import { MediaField } from "@/features/uploads/client";
@@ -198,7 +201,7 @@ export function sourceLabel(d: { name: string; label?: string }, describe?: Bind
 function repeatAround(n: ComponentNode, id: string, around: ComponentNode | null = null): ComponentNode | null | undefined {
   if (n.id === id) return around;
   for (const k of n.children ?? []) {
-    const r = repeatAround(k, id, n.type === "repeat" ? n : around);
+    const r = repeatAround(k, id, repeatsTemplate(n) ? n : around);
     if (r !== undefined) return r;
   }
   return undefined;
@@ -1578,7 +1581,8 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
     "resource-bar.items": () => byHand("items", "Readings by hand: icon, label, value, bar, format", <BarItemsEditor key="items" env={listEnv} />),
     "bookmarks.items": () => <BookmarksEditor key="items" env={listEnv} />,
     "chart.lines": () => byHand("lines", "Lines by hand: name, colour, data, hide", <LinesEditor key="lines" env={listEnv} doc={doc} {...(onOps ? { onOps } : {})} />),
-    "service-tile.icon": () => <div key="icon" data-field="icon"><IconField label="Icon" path="icon" value={node.props.icon} onSet={(v) => setProp("icon", v ?? "server")} hint="A built-in icon, the service's own, or an uploaded picture" /></div>,
+    // N4: a tile with a typed address offers that service's own icon first in the picker.
+    "service-tile.icon": () => { const site = siteUrlOf(node.props.href); return <div key="icon" data-field="icon"><IconField label="Icon" path="icon" value={node.props.icon} onSet={(v) => setProp("icon", v ?? "server")} hint="A built-in icon, the service's own, or an uploaded picture" {...(site ? { siteUrl: site } : {})} /></div>; },
     // F4: a link's page is picked from this app's pages (typing a name that is no page was refused silently).
     "link.page": () => {
       const f = fields.find((x) => x.key === "page")!;
@@ -1606,6 +1610,20 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
         <IconPickField label={fields.find((x) => x.key === "name")?.label ?? "Icon"} path="name" value={isBinding(node.props.name) ? "" : node.props.name} onSet={(v) => setProp("name", v ?? "server")} hint={fields.find((x) => x.key === "name")?.hint ?? ""} />
       </div>
     ),
+    // N3: the roulette's timer menu, its three ways to turn, and a list or table offered past 50 rows.
+    "roulette.timerSec": () => { const f = fields.find((x) => x.key === "timerSec")!; return <RouletteTimerField key="timerSec" node={node} label={f.label} hint={f.hint} reason={reasonFor("timerSec")} setProp={setProp} />; },
+    "roulette.advance": () => { const f = fields.find((x) => x.key === "advance")!; return <RouletteAdvanceField key="advance" node={node} label={f.label} hint={f.hint} reason={reasonFor("advance")} setProp={setProp} />; },
+    "roulette.items": () => {
+      const f = fields.find((x) => x.key === "items")!;
+      let count = 0;
+      try { count = repeatItems(resolveValue(node.props.items as PropValue | undefined, scope, "items", []), ROULETTE_MAX + 1).length; } catch { count = 0; }
+      return (
+        <div key="items" className="flex flex-col gap-2">
+          <PropField key={`${node.id}:items`} spec={f} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={false} reason={reasonFor("items")} {...pick} />
+          {node.props.mode === "repeat" ? <RouletteTooMany node={node} rows={count} pages={doc.pages} {...(onOps ? { onOps } : {})} /> : null}
+        </div>
+      );
+    },
     "icon.scale": () => <ScaleField key="scale" node={node} hint={fields.find((x) => x.key === "scale")?.hint ?? ""} onScale={(v) => onChange({ props: { ...node.props, scale: v, size: null, fill: null } } as unknown as Patch)} />,
   };
   const field = (f: FieldSpec) => {

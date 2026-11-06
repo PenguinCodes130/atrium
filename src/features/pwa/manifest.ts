@@ -116,14 +116,28 @@ const snapshot = (u) => {
       : forget());
   }).catch(() => null);
 };
+// Wave 2.10c (lead round, service worker stall): a newer version of this worker is on its way (installing or
+// waiting) while this one still controls the app. This worker is about to be stopped, and a fetch event it
+// is handling when that happens can be left without an answer, so the navigation never loads. From now on
+// it takes no new work: navigations and files go straight to the network (no respondWith), and cache work
+// is left to the new worker.
+const replaced = () => !!(self.registration && (self.registration.installing || self.registration.waiting));
+// Old versions' caches: deleted after activation, never inside it (navigations wait for "activated").
+const tidy = () => caches.keys().then((keys) => Promise.all(keys.filter((k) => own(k) && k !== CACHE).map((k) => caches.delete(k)))).catch(() => null);
 self.addEventListener("install", () => { self.skipWaiting(); });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => own(k) && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  // Only claiming is part of activation, so the new version answers navigations at once; the old caches
+  // are removed right after (and again by the first cache message, if this was cut short).
+  e.waitUntil(self.clients.claim());
+  tidy();
 });
 self.addEventListener("message", (e) => {
   const d = e.data || {};
   if (d.type === "atrium-forget") { e.waitUntil(forget()); return; }
   if (d.type !== "atrium-cache" || !Array.isArray(d.urls)) return;
+  // Waking an outgoing worker for cache work only delays the new version (it waits for this one's work).
+  if (replaced()) return;
+  e.waitUntil(tidy());
   e.waitUntil(caches.open(CACHE).then((c) => Promise.all(d.urls.slice(0, 200).map((raw) => {
     let u; try { u = new URL(raw, self.location.origin); } catch { return null; }
     if (u.origin !== self.location.origin || u.pathname.endsWith("/sw.js")) return null;
@@ -141,6 +155,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+  // An outgoing worker answers nothing (see replaced): the browser fetches it itself.
+  if (replaced()) return;
   if (req.mode === "navigate") {
     if (!inApp(url.pathname) || special(url)) return;
     e.respondWith(fetch(req).then((res) => {

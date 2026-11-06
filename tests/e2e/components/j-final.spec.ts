@@ -404,6 +404,11 @@ test.describe("desktop", () => {
       await page.goto("/a/r4-final");
       await expect(page.locator(`[data-node="${PLAIN}"]`)).toBeVisible({ timeout: 15_000 });
       await page.evaluate(() => document.fonts.ready);
+      // Wave 2.10c lead round: the baseline was sometimes taken while a widget was still drawing in (the
+      // viewer's Entrance, F11, and Motion's settle), so every variant then differed from it on that
+      // sibling (c_r4styledaa "99.73% changed"). Wait until no animation is running before any screenshot.
+      await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"), undefined, { timeout: 10_000 }).catch(() => {});
+      await expect(page.locator(`[data-node="${STYLED}"]`).first()).toHaveCSS("opacity", "1", { timeout: 10_000 }).catch(() => {});
       await page.waitForTimeout(500);
     };
     await setVariant(req, appId, rootId, "baseline", null);
@@ -542,6 +547,14 @@ test.describe("desktop", () => {
     writeEvidence("final/inspector-refusals.json", { removed: await removedList.count(), layoutNote: await page.locator("[data-layout-style-note]").textContent() });
   });
 
+  // Wave 2.10c lead round: item 4 publishes four themes in a row and opens the viewer after each. Each
+  // publish gives the app a new service worker (`/a/<slug>/sw.js` carries the version), and when that worker
+  // installed while the previous viewer page was open, the next `page.goto` was handed to it and never
+  // reached "load" (240 s, reproduced in `evidence/components/w210c-r1/logs/jfinal-probe.log`: a second
+  // worker appears just before the hang; with service workers blocked the same run passes,
+  // `jfinal-probe-swblock.log`). Word gaps are not about the offline worker, so this test runs without it.
+  test.describe("without the app service worker", () => {
+    test.use({ serviceWorkers: "block" });
   test("item 4: canvas text keeps whole word gaps on the Homelab template in Control Room, light and dark (and the other built-in themes)", async ({ page }) => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -604,5 +617,6 @@ test.describe("desktop", () => {
     await publish(req, appId, "theme back");
     writeEvidence("final/word-gaps.json", { failures, results: out });
     expect(failures, failures.join("\n")).toEqual([]);
+  });
   });
 });

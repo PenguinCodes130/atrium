@@ -54,12 +54,14 @@ export function expandIpv6(ip: string): number[] | null {
 
 export type AddressVerdict = { blocked: false } | { blocked: true; reason: string };
 
-/** True for 169.254.0.0/16, fe80::/10 and fd00:ec2::/64, including IPv4-mapped and IPv4-compatible forms. */
+/** True for 169.254.0.0/16, 100.100.100.200, fe80::/10 and fd00:ec2::/64, including IPv4-mapped and IPv4-compatible forms. */
 export function checkAddress(ip: string): AddressVerdict {
   const family = isIP(ip.replace(/^\[|\]$/g, "").split("%")[0] ?? "");
   if (family === 4) {
     const n = ipv4ToInt(ip)!;
     if (n >>> 16 === ((169 << 8) | 254)) return { blocked: true, reason: "link-local or metadata address (169.254.0.0/16)" };
+    // 100.100.100.200: Alibaba Cloud instance metadata (outside 169.254.0.0/16).
+    if (n === ((100 << 24) | (100 << 16) | (100 << 8) | 200) >>> 0) return { blocked: true, reason: "cloud metadata address (100.100.100.200)" };
     return { blocked: false };
   }
   if (family === 6) {

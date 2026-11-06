@@ -33,3 +33,6 @@ export type { TableOverflow } from "./render/measure";
 export { ICON_NAMES, SERIES_COLORS, MAX_CHART_LINES, MAX_TILE_STATS, MAX_BAR_ITEMS, MAX_BOOKMARKS, DEFAULT_SEARCH_URL } from "./catalogue/schemas";
 export type { IconName } from "./catalogue/schemas";
 export { lineDataKey } from "./page";
+// Wave 2.10c R1: per-copy changes inside a Repeat (row keys and the override shape the builder writes).
+export { rowKeys, rowName, copyOverridesOf, applyCopyOverride, hasCopyChange, repeatsTemplate, COPY_OVERRIDES, ROW_NAME_FIELDS } from "./render/copy-overrides";
+export type { CopyOverride, CopyOverrides } from "./render/copy-overrides";

@@ -4,6 +4,8 @@
 //   signDataImageUrl / dataImageSigner  the same for URLs from integration data (public or own host only)
 //   checkFile / storeChecked  the upload sanitiser, for the app file importer (architecture 4.10); accept
 //     "media" (picture or video) or "any" to take MP4 and WebM videos too (A7.1, 25 MB)
+//   fetchFavicon(principal, url)  a website's icon, fetched on the server and stored as an image upload
+//     (A11.6); FaviconRefused carries the sentence. Route: POST /api/settings/uploads/favicon
 //   listUploads(principal, kind?)  the builder's "Your uploads" (A7.7, owners and members only)
 import "server-only";
 export { UploadField } from "./ui/upload-field";
@@ -16,3 +18,6 @@ export { sanitiseSvg } from "./svg";
 export { sniff, sniffVideo, NOT_ALLOWED } from "./sniff";
 export type { UploadKind, UploadAccept } from "./sniff";
 export { parseRange } from "./range";
+export { fetchFavicon, FaviconRefused } from "./favicon/fetch";
+export type { FaviconResult } from "./favicon/fetch";
+export { FAVICON_MESSAGES } from "./favicon/messages";

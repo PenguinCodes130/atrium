@@ -4,6 +4,7 @@ import type { AppDocument, BindingScope, ComponentNode, DataSourceDef, LibraryCo
 import { isBinding, templatesIn } from "./bindings";
 import { rootsOf } from "./bindings/parse";
 import { expandInstance } from "./library-instance";
+import { applyCopyOverride, copyOverridesOf, COPY_OVERRIDES, COPY_TYPES, repeatsTemplate, rowKeys } from "./render/copy-overrides";
 import {
   instanceComponent,
   instanceScope,
@@ -105,6 +106,7 @@ export function resolveGuestValues(doc: AppDocument, pageId: string, sources: Re
           });
           continue;
         }
+        if (k === COPY_OVERRIDES && COPY_TYPES.has(raw.type)) continue; // R1: resolved inside each copy below
         if (templatesIn(v as PropValue, k).length) out[valueKey(raw.id, `${k}${suffix}`, path)] = props[k];
       }
       if (device === "desktop") {
@@ -113,12 +115,23 @@ export function resolveGuestValues(doc: AppDocument, pageId: string, sources: Re
         if (st.kind !== "none") out[valueKey(raw.id, "$status", path)] = st;
       }
     }
-    if (raw.type === "repeat") {
+    if (repeatsTemplate(raw)) {
       const { props } = resolveProps(raw, scope);
-      const items = repeatItems(props.items, typeof props.max === "number" ? props.max : 50);
+      // A roulette (A11.4) turns through at most 50 rows and refuses more; it is told the count only.
+      const roulette = raw.type === "roulette";
+      const all = repeatItems(props.items, roulette ? 51 : typeof props.max === "number" ? props.max : 50);
+      const items = roulette && all.length > 50 ? [] : all;
+      if (roulette && all.length > 50) {
+        out[valueKey(raw.id, "$count", path)] = all.length;
+        return;
+      }
       out[valueKey(raw.id, "$count", path)] = items.length;
+      // R1: the rows' stable keys, so a guest's copies take their own changes (copyOverrides) too.
+      const keys = rowKeys(items);
+      out[valueKey(raw.id, "$keys", path)] = keys;
+      const overrides = copyOverridesOf(raw);
       const child = raw.children?.[0];
-      if (child) items.forEach((item, i) => visit(child, { ...scope, $item: item, $index: i } as PageScope, path ? `${path}.${i}` : String(i)));
+      if (child) items.forEach((item, i) => visit(applyCopyOverride(child, keys[i]!, overrides[keys[i]!]), { ...scope, $item: item, $index: i } as PageScope, path ? `${path}.${i}` : String(i)));
       return;
     }
     if (raw.type.startsWith("lib:")) {

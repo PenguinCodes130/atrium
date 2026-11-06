@@ -10,6 +10,14 @@ import { columnFormats, ITEM_FORMATS } from "./format";
 import { NodeTitleBar } from "./titlebar";
 import { rollupStatus } from "./rollup";
 import { sizingOf } from "../catalogue/meta";
+import { applyCopyOverride, copyOverridesOf, hasCopyChange, rowKeys } from "./copy-overrides";
+
+/** A guest's row keys for a repeat (the server sends them as "$keys"), when they match the row count. */
+export function guestKeys(guest: Record<string, unknown> | undefined, nodeId: string, path: string, count: number): string[] | undefined {
+  if (!guest) return undefined;
+  const k = guest[valueKey(nodeId, "$keys", path)];
+  return Array.isArray(k) && k.length === count && k.every((x) => typeof x === "string") ? (k as string[]) : undefined;
+}
 
 type P = { node: ComponentNode; resolved: Record<string, unknown>; ctx: RenderContext };
 const str = (v: unknown) => textOf(v);
@@ -258,13 +266,23 @@ export function RepeatView({ node, resolved }: P) {
   const formats = src ? columnFormats(env.scope.$data?.[src]) : {};
   if (!child) return <div data-slot="root" className="atr-repeat atr-muted">{env.ctx.mode === "edit" ? "Drop one component here to repeat it." : null}</div>;
   if (!items.length) return <p data-slot="root" className="atr-repeat atr-muted">{str(resolved.empty) || "Nothing to show"}</p>;
+  // R1: each copy has a stable key (the row's name, render/copy-overrides.ts rowKeys); a copy with its own
+  // changes (copyOverrides) draws the template with them merged in, for that row only. Guests get the keys
+  // from the server ("$keys"), as they never receive the rows themselves.
+  const keys = guestKeys(guest, node.id, env.path, items.length) ?? rowKeys(items);
+  const overrides = copyOverridesOf(node);
   return (
     <div data-slot="root" className="atr-repeat" data-count={items.length} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: typeof resolved.gap === "number" ? resolved.gap : undefined }}>
-      {items.map((item, i) => (
-        <div key={i} data-slot="item" data-index={i}>
-          {env.renderChild(child, { scope: guest ? {} : { $item: item, $index: i, [ITEM_FORMATS]: formats }, path: env.path ? `${env.path}.${i}` : String(i) })}
-        </div>
-      ))}
+      {items.map((item, i) => {
+        const key = keys[i]!;
+        const row = overrides[key];
+        const changed = hasCopyChange(child, row);
+        return (
+          <div key={key} data-slot="item" data-index={i} data-row-key={key} data-copy-changed={changed ? "" : undefined}>
+            {env.renderChild(changed ? applyCopyOverride(child, key, row) : child, { key: child.id, scope: guest ? {} : { $item: item, $index: i, [ITEM_FORMATS]: formats }, path: env.path ? `${env.path}.${i}` : String(i) })}
+          </div>
+        );
+      })}
     </div>
   );
 }

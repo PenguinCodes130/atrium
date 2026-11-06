@@ -105,7 +105,8 @@ test("build a lights dashboard: create, connect data, compose, pages, fit, publi
     const col = await page.locator("[data-pick-col]").first().getAttribute("data-pick-col");
     await page.locator(`[data-pick-col="${col}"]`).click();
     await page.locator('[data-pick-agg="count"]').click();
-    await expect(page.locator(`[data-canvas-root] [data-node="${text.id}"]`)).toHaveText("48", { timeout: 3000 });
+    // Wave 2.10c: read the widget's own root; the box also holds the edit-mode "Content is cut · Fit" badge (hidden unless cut).
+    await expect(page.locator(`[data-canvas-root] [data-node="${text.id}"] [data-slot="root"]`).first()).toHaveText("48", { timeout: 3000 });
     await page.locator("[data-pick-done]").click();
     // Then a light touch in the template: add the word "lamps" (Wave 2.6: behind "Edit as template" under the data chip).
     await page.locator('[data-edit-template="text"]').click();

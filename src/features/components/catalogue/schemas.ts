@@ -23,6 +23,9 @@ const showUpdated = lit(z.boolean(), "Show a small \"Last updated\" badge with t
 const controlId = z.string().regex(/^k_[a-z2-7]{10}$/, "a control id like k_abcdefghij");
 const controlField = (desc: string) => lit(z.union([controlId, bindingSchema]), desc);
 const paint = z.string().max(200);
+/** A11.3 (Wave 2.10c N1): how a scrolling kind takes the wheel. */
+export const FOCUS_SCROLL_MODES = ["click", "hover", "off"] as const;
+const focusScroll = lit(z.enum(FOCUS_SCROLL_MODES), "When the wheel and touch scroll this list instead of the page: click (default: after you click or tab into it; Esc or a click outside lets go), hover (while the pointer is over it), or off (always). Arrow and Page keys scroll it whenever it has focus.");
 
 /** Every built-in icon name (render/icons.ts; Wave 2.10b F6 grew the set past 200). */
 export const ICON_NAMES: readonly string[] = Object.keys(ICON_PATHS);
@@ -92,6 +95,20 @@ const mediaLook = {
   }), "What a click does: nothing, open a page of this app, open an address in a new tab, or enlarge to full screen."),
 };
 
+/**
+ * Wave 2.10c R1: per-copy changes inside a Repeat. Row key (the row's name, such as a machine's) to node id
+ * of the template to the changes for that copy only. Rows that no longer exist are kept and ignored.
+ */
+export const copyOverrideSchema = z.strictObject({
+  props: z.record(z.string().max(64), z.unknown()).optional().describe("Props of this node for this copy only, over the template's."),
+  style: z.record(z.string().max(40), z.unknown()).optional().describe("Style panel changes for this copy only, by part (root, value, ...)."),
+  hidden: z.boolean().optional().describe("Hide this node in this copy only."),
+});
+export const copyOverridesField = lit(
+  z.record(z.string().min(1).max(200), z.record(z.string().max(64), copyOverrideSchema)).refine((v) => Object.keys(v).length <= 200, "at most 200 changed copies"),
+  "Changes for single copies, by row key (the row's name, like a machine's) and then by node id of the template: { props, style, hidden }. Each copy without an entry draws the template as it is. Set by the builder's \"This copy only\".",
+);
+
 export const propsSchemas = {
   // ---- layout ----
   grid: z.strictObject({
@@ -119,11 +136,23 @@ export const propsSchemas = {
     description: b(text, "A sentence under the heading."),
   }),
   repeat: z.strictObject({
+    copyOverrides: copyOverridesField,
     items: b(z.array(z.unknown()), "What to repeat over: bind a table or status source (its rows or items), or any list. The child is drawn once per item, with $item and $index."),
     columns: lit(z.number().int().min(1).max(6), "How many items per row on desktop (always 1 on phones)."),
     gap: lit(z.number().min(0).max(64), "Space between items in px."),
     max: lit(z.number().int().min(1).max(200), "Draw at most this many items."),
     empty: b(text, "Text shown when there are no items."),
+    focusScroll,
+  }),
+  // Wave 2.10c N3 (A11.4): one child at a time, turning like a revolver cylinder.
+  roulette: z.strictObject({
+    mode: lit(z.enum(["slots", "repeat"]), "slots (default): each child is one slot, 2 to 50. repeat: its one child is drawn once per row of Items, with $item and $index, like a Repeat."),
+    items: b(z.array(z.unknown()), "Repeat mode: what to turn through, a bound table or status source (its rows or items) or any list. At most 50 rows: more is refused, with a list or a table offered instead."),
+    timerSec: lit(z.number().int().min(3).max(3600), "Turn to the next slot on its own every this many seconds, 3 to 3600. Empty (default): off. Pauses while the pointer is over it or it has focus."),
+    advance: lit(z.strictObject({ scroll: z.boolean().optional(), arrows: z.boolean().optional(), dots: z.boolean().optional() }), "How people turn it: scroll (the wheel, after a click on it), arrows (buttons and arrow keys) and dots (one per slot). Each is on unless set to false."),
+    startAt: lit(z.number().int().min(0).max(49), "The slot shown first, counting from 0."),
+    empty: b(text, "Repeat mode: text shown when there are no rows."),
+    copyOverrides: copyOverridesField,
   }),
   // ---- data ----
   stat: z.strictObject({
@@ -150,6 +179,7 @@ export const propsSchemas = {
     columns: lit(z.array(z.string().max(64)).max(24), "Which columns to show, by key, in order. Empty shows every column."),
     maxRows: lit(z.number().int().min(1).max(500), "Show at most this many rows."),
     showUpdated,
+    focusScroll,
   }),
   list: z.strictObject({
     items: b(z.unknown(), "A list to show: bind a table or status source, or any list, for example {{ hosts.rows }}."),
@@ -157,6 +187,7 @@ export const propsSchemas = {
     detailKey: lit(z.string().max(64), "A column shown at the right of each line."),
     maxItems: lit(z.number().int().min(1).max(200), "Show at most this many lines."),
     showUpdated,
+    focusScroll,
   }),
   status: z.strictObject({
     data: b(z.unknown(), "A status source, for example {{ services }}. Each item shows its state by shape and word as well as colour."),

@@ -5,6 +5,7 @@
 // its sources). A data component bound to a source of the wrong shape says so in plain words instead of
 // drawing an empty "live" window.
 import type { ComponentNode } from "@/core/contracts";
+import { repeatsTemplate } from "./copy-overrides";
 import { expandInstance } from "../library-instance";
 import { notConnected } from "../catalogue/samples";
 import { instanceComponent, instanceScope, nodeStatus, valueKey, type NodeStatus, type PageScope } from "./resolve";
@@ -25,7 +26,7 @@ export function rollupStatus(children: readonly ComponentNode[], scope: PageScop
     // An unconnected data component shows samples while editing and the empty state elsewhere.
     if (notConnected(n)) st = opts.edit ? { kind: "none" } : { kind: "empty" };
     if (RANK[st.kind] > RANK[worst.kind]) worst = st;
-    if (n.type !== "repeat") for (const c of n.children ?? []) visit(c, sc, depth + 1);
+    if (!repeatsTemplate(n)) for (const c of n.children ?? []) visit(c, sc, depth + 1);
   };
   for (const c of children) visit(c, scope, 0);
   return worst;

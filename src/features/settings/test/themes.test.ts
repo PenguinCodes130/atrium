@@ -287,7 +287,7 @@ describe("theme drafts and tools (AC 30, 31)", () => {
     const events = m.db().select().from(m.audit.auditLog).all().map((r) => r.event);
     expect(events).toEqual(expect.arrayContaining(["draft.created", "draft.published", "draft.discarded"]));
     const names = m.tools.settingsTools.map((t) => t.name);
-    expect(names).toEqual(["themes.list", "themes.get", "themes.create", "themes.update", "themes.apply"]);
+    expect(names).toEqual(["themes.list", "themes.get", "themes.create", "themes.update", "themes.apply", "uploads.favicon"]);
     expect(names.some((n) => /delete|publish/.test(n))).toBe(false);
   });
 

@@ -25,6 +25,14 @@ import type { BindingDescriber } from "@/features/components/inspector/binding-w
 import type { BindableIntegration, PickTarget } from "./data-picker";
 
 import { isBinding, sourcesInTemplate } from "@/features/components/bindings";
+import { copyChanged, copyEditOps, overrideFor, resetCopyOps, withOverride } from "./copy-overrides";
+import { kindWord } from "./history-label";
+
+/**
+ * Wave 2.10c R1: the copy of a Repeat the person clicked on the canvas, and whether inspector edits go to
+ * every copy (the default) or to this copy only (stored in the repeat's `copyOverrides`).
+ */
+export type CopyScope = { repeatId: string; rowKey: string; mode: "all" | "one"; setMode(m: "all" | "one"): void };
 import type { SourceData } from "@/features/data/types";
 
 const CONTROL_TYPES = new Set(["button", "toggle", "slider", "select", "html"]);
@@ -358,17 +366,48 @@ export function readableSource(def: DataSourceDef, bindable: readonly Bindable[]
  * Round 2 item 11: inside a repeat (Card for each), each copy reads its own row as `$item`. Said once at the
  * top of the inspector with a real field, so a guess like {{ row.name }} has the right form beside it.
  */
-function RowHint({ node, doc, live }: { node: ComponentNode; doc: AppDocument; live?: Live }) {
+function RowHint({ node, doc, live, copy }: { node: ComponentNode; doc: AppDocument; live?: Live; copy?: CopyScope }) {
   const around = repeatAround(doc, node.id);
   if (!around) return null;
   const repeat = findNode(doc, around.repeatId)?.node;
   const fields = around.source ? rowFields(live?.data[around.source]) : [];
   const key = fields.find((f) => /^(name|label|host|title)$/i.test(f.key))?.key ?? fields[0]?.key ?? "name";
+  const one = copy?.mode === "one" && copy.repeatId === around.repeatId;
   return (
-    <p className="m-0 border-b border-line px-3 py-2 type-caption text-fg-2" data-row-hint={around.repeatId}>
-      <strong className="block font-medium text-fg" data-row-hint-all>{repeat ? nodeLabel(repeat) : "A repeat"} draws this once for each row, so a change here changes every copy.</strong>
+    <p className="m-0 border-b border-line px-3 py-2 type-caption text-fg-2" data-row-hint={around.repeatId} data-row-hint-mode={one ? "one" : "all"}>
+      {/* Wave 2.10c R1: the sentence says which mode is on. */}
+      {one
+        ? <strong className="block font-medium text-fg" data-row-hint-one>This copy only: content and style changes here change only the {copy.rowKey} copy. Data, layout and title still change every copy.</strong>
+        : <strong className="block font-medium text-fg" data-row-hint-all>{repeat ? nodeLabel(repeat) : "A repeat"} draws this once for each row, so a change here changes every copy.{copy ? " To change one copy, choose This copy only." : ""}</strong>}
       Inside {repeat ? nodeLabel(repeat) : "a repeat"}: each copy shows its own row. Use <code className="font-mono text-fg">{`{{ $item.${key} }}`}</code> for this row&apos;s {fields.find((f) => f.key === key)?.label.toLowerCase() ?? key}, or Pick data, This row.
     </p>
+  );
+}
+
+/**
+ * Wave 2.10c R1: "Every copy" or "This copy only" for the copy selected on the canvas, the copy's Changed tag,
+ * Hide in this copy, and Reset this copy (one undoable step each).
+ */
+function CopyScopeBar({ node, doc, copy, apply }: { node: ComponentNode; doc: AppDocument; copy: CopyScope; apply(ops: DraftOp[], opts?: { label?: string }): void }) {
+  const changed = copyChanged(doc, copy.repeatId, copy.rowKey);
+  const hidden = overrideFor(doc, copy.repeatId, copy.rowKey, node.id)?.hidden === true;
+  const seg = (on: boolean) => `h-8 flex-1 border border-line-strong px-2 type-label touch:h-11 ${on ? "bg-fg text-bg" : "text-fg-2 hover:bg-bg-sunk"}`;
+  return (
+    <div className="flex flex-col gap-2 border-b border-line px-3 py-2" data-copy-scope={copy.rowKey}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="type-caption text-fg-2">Change <span className="font-medium text-fg">{copy.rowKey}</span> in</span>
+        {changed && <span className="border border-line-strong px-1 font-mono text-[11px] leading-4 text-fg" data-copy-changed-tag>Changed</span>}
+      </div>
+      <div role="group" aria-label="Which copies change" className="flex">
+        <button type="button" aria-pressed={copy.mode === "all"} className={seg(copy.mode === "all")} onClick={() => copy.setMode("all")} data-copy-mode="all">Every copy</button>
+        <button type="button" aria-pressed={copy.mode === "one"} className={`${seg(copy.mode === "one")} -ml-px`} onClick={() => copy.setMode("one")} data-copy-mode="one">This copy only</button>
+      </div>
+      {copy.mode === "one" && (
+        <Checkbox checked={hidden} onCheckedChange={(on) => { const r = copyEditOps(doc, copy.repeatId, copy.rowKey, node.id, { hidden: on === true }); if (r.ops.length) apply(r.ops, { label: `${on ? "Hide" : "Show"} ${kindWord(node)} in this copy` }); }}
+          label={<span data-field-label>Hide in this copy</span>} description={<span className="text-fg-3" data-field-hint>Only the {copy.rowKey} copy. The others keep showing it</span>} data-copy-hide />
+      )}
+      {changed && <Button variant="secondary" onClick={() => { const ops = resetCopyOps(doc, copy.repeatId, copy.rowKey); if (ops.length) apply(ops, { label: "Reset this copy" }); }} data-copy-reset>Reset this copy</Button>}
+    </div>
   );
 }
 
@@ -492,7 +531,7 @@ function LayoutFields({ node, doc, device, slot, setSlot, apply, onFit }: { node
   );
 }
 
-export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect, onFit, titleBars }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[]): void; /** F4: whether the app's theme draws title bars (Title says why when it does not). */ titleBars?: boolean; /** Wave 2.10 B2: the builder's Fit (rows grown, 0 when it fits). */ onFit?(nodeId: string): FitResult; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
+export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, compact, live, onPick, onSelect, onFit, titleBars, copy }: { node: ComponentNode | null; doc: AppDocument; ctx: RenderContext; device: Device; problems: Problem[]; apply(ops: DraftOp[], opts?: { label?: string }): void; /** Wave 2.10c R1: the Repeat copy selected on the canvas. */ copy?: CopyScope; /** F4: whether the app's theme draws title bars (Title says why when it does not). */ titleBars?: boolean; /** Wave 2.10 B2: the builder's Fit (rows grown, 0 when it fits). */ onFit?(nodeId: string): FitResult; applyAndWait?: ApplyAndWait; readOnly?: boolean; /** Under 900px: Content and Data only (gauntlet w2-r1 item 11). */ compact?: boolean; /** Wave 2.5: live source values for the sources list and summaries. */ live?: Live; /** Wave 2.5: opens the data picker. */ onPick?(t: PickTarget): void; /** Selects a component (sources list "used by"). */ onSelect?(nodeId: string): void }) {
   const commands = useJson<{ commands: CommandListing[] }>("/api/integrations/commands")?.commands ?? [];
   const bindable = useJson<{ integrations: Bindable[] }>("/api/integrations/bindable")?.integrations ?? [];
   const [editingControl, setEditingControl] = useState<ControlDef | "new" | null>(null);
@@ -552,6 +591,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
       </div>
     );
   }
+  const oneCopy = copy && copy.mode === "one" && !readOnly ? copy : null;
   const setSlot = (patch: Partial<NonNullable<typeof slot>>) => {
     const base = slot ?? { x: 0, y: 0, w: 3, h: 16 };
     const op = slotOp(doc, node.id, { ...base, ...patch }, device);
@@ -561,7 +601,8 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
     <div className="flex flex-col" data-inspector={node.id} aria-label={`Inspector for ${nodeLabel(node)}`}>
       {/* components' header (SFR-1 from components round 2): the name, a mono type tag, the library name for instances. */}
       <InspectorHeader node={node} library={(ctx.values as { $library?: Record<string, LibraryComponent> }).$library} />
-      <RowHint node={node} doc={doc} live={live} />
+      <RowHint node={node} doc={doc} live={live} {...(copy ? { copy } : {})} />
+      {copy && !readOnly && <CopyScopeBar node={node} doc={doc} copy={copy} apply={apply} />}
       {onPick && !readOnly && <DataTop node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} />}
       {onPick && !readOnly && (() => {
         const prop = repeatedSentence(node, doc);
@@ -569,7 +610,15 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
         return prop && /^[A-Za-z0-9_-]+$/.test(node.id) && /^[A-Za-z0-9_.]+$/.test(prop) ? <style data-hide-repeated-sentence>{`[data-inspector="${node.id}"] [data-data-sentence="${prop}"]{display:none}`}</style> : null;
       })()}
       <fieldset ref={groupsRef} disabled={readOnly} className={`flex min-w-0 flex-col touch:[&_[data-inspector-group]>h3>button]:min-h-11 ${compact ? "[&_[data-inspector-group=style]]:hidden [&_[data-inspector-group=advanced]]:hidden [&_[data-inspector-group=control]]:hidden" : ""} [&_[data-inspector]]:contents [&_[data-inspector-group=content]]:order-1 [&_[data-inspector-group=data]]:order-2 [&_[data-inspector-group=control]]:order-3 [&_[data-inspector-group=style]]:order-5 [&_[data-inspector-group=advanced]]:order-6`} data-inspector-groups>
-        <InspectorPanels node={node} doc={doc} ctx={ctx} describe={describe} onChange={(patch: Partial<Omit<ComponentNode, "id" | "children">>) => {
+        <InspectorPanels node={oneCopy ? withOverride(node, overrideFor(doc, oneCopy.repeatId, oneCopy.rowKey, node.id)) : node} doc={doc} ctx={ctx} describe={describe} onChange={(patch: Partial<Omit<ComponentNode, "id" | "children">>) => {
+          // Wave 2.10c R1: This copy only keeps content and style in the repeat's copyOverrides (one step);
+          // anything a copy cannot keep goes to every copy in the same step.
+          if (oneCopy) {
+            const r = copyEditOps(doc, oneCopy.repeatId, oneCopy.rowKey, node.id, patch);
+            const ops = [...r.ops, ...(r.rest ? [{ op: "node.update", nodeId: node.id, patch: r.rest } as DraftOp] : [])];
+            if (ops.length) apply(ops, { label: `Change ${kindWord(node)} in this copy` });
+            return;
+          }
           // A grid's column count rescales its children in the same batch, so nothing moves (A7.4).
           const cols = (patch.props as Record<string, unknown> | undefined)?.columns;
           if (node.type === "grid" && patch.props && cols !== node.props.columns) {

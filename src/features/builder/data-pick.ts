@@ -344,7 +344,8 @@ export function repeatAround(doc: AppDocument, nodeId: string): { repeatId: stri
     if (!hit) continue;
     for (let i = hit.length - 1; i >= 0; i--) {
       const a = hit[i]!;
-      if (a.type !== "repeat") continue;
+      // Wave 2.10c R1: a roulette in repeat mode draws its template once per row too (A11.4).
+      if (a.type !== "repeat" && !(a.type === "roulette" && a.props.mode === "repeat")) continue;
       const items = a.props.items;
       const src = isBinding(items) ? sourcesInTemplate(items.$bind)[0] ?? null : null;
       return { repeatId: a.id, source: src };

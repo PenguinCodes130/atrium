@@ -299,8 +299,9 @@ test("the app's own nav lists exactly the in-nav pages; a hidden page opens by l
 test("hostile chrome CSS leaves every pixel outside the app canvas unchanged, in the viewer and the builder (criterion 36)", async ({ browser }) => {
   let n = 0;
   // The draft status text (rev and change count) changes with every edit; give its mask box a fixed size.
+  // Wave 2.10c N2: Undo and Redo are masked too (opening the page may add a growth step, which enables Undo).
   const pin = (page: Page) => page.evaluate(async () => { await document.fonts.ready; await new Promise((r) => setTimeout(r, 300)); const el = document.querySelector<HTMLElement>("[data-draft-status]"); if (el) { el.style.width = "420px"; el.style.flex = "none"; } });
-  const hash = async (page: Page) => (await pin(page), createHash)("sha256").update(await page.screenshot({ path: ev("screens", `containment-masked-${++n}.png`), animations: "disabled", mask: [page.locator("[data-atrium-canvas-frame]"), page.locator("[data-draft-status]"), page.locator("[data-clock]"), page.locator("[data-draft-preview-bar] .msg")], maskColor: "#ff00ff" })).digest("hex");
+  const hash = async (page: Page) => (await pin(page), createHash)("sha256").update(await page.screenshot({ path: ev("screens", `containment-masked-${++n}.png`), animations: "disabled", mask: [page.locator("[data-atrium-canvas-frame]"), page.locator("[data-draft-status]"), page.locator("[data-clock]"), page.locator("[data-draft-preview-bar] .msg"), page.locator("[data-history]")], maskColor: "#ff00ff" })).digest("hex");
   const hostile = ":scope nav, [data-canvas-nav] { position: absolute; top: -600px; left: -50vw; width: 200vw; height: 1200px; background: rgb(255, 0, 0); z-index: 2147483647; box-shadow: 0 0 0 4000px red; } :scope { margin: -400px; outline: 999px solid red; }";
   const shots: Record<string, string> = {};
   for (const where of ["viewer", "builder"] as const) {

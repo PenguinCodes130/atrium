@@ -10,6 +10,7 @@ import { ClockView, DividerView, HeadingView, IconView, ImageView, LinkView, Spa
 import { ButtonView, SelectView, SliderView, ToggleView } from "../render/controls";
 import { HtmlBlockView } from "../render/html-block";
 import { VideoView } from "../render/video";
+import { RouletteView } from "../render/roulette";
 import { BookmarksView, GroupView, ResourceBarView, ServiceTileView } from "../render/tiles";
 
 const VIEWS: Record<BuiltInType, ComponentDef["Component"]> = {
@@ -19,6 +20,7 @@ const VIEWS: Record<BuiltInType, ComponentDef["Component"]> = {
   button: ButtonView, toggle: ToggleView, slider: SliderView, select: SelectView,
   html: HtmlBlockView,
   "service-tile": ServiceTileView, group: GroupView, "resource-bar": ResourceBarView, bookmarks: BookmarksView,
+  roulette: RouletteView,
 };
 
 function toDef(m: ComponentMeta): ComponentDef {

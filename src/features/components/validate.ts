@@ -12,6 +12,7 @@ import { isLayoutType, LAYOUT_CSS_REFUSAL } from "./style/node-css-policy";
 import { libKey } from "./render/resolve";
 import { planLines, thirdUnitSentence } from "./render/lines";
 import { iconRefKind } from "./render/tiles-logic";
+import { copyOverridesOf, COPY_OVERRIDES, repeatsTemplate } from "./render/copy-overrides";
 
 export type ValidateOptions = {
   /** Current data per source: when given, binding paths are checked against it. */
@@ -73,6 +74,32 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
     }
   };
 
+  /** R1: each copy's changes, checked against the node they change as that copy draws it. Unknown rows and nodes are kept. */
+  const checkCopies = (n: ComponentNode, template: ComponentNode, where: (field?: string) => Problem["where"]) => {
+    const byId = new Map<string, ComponentNode>();
+    const walk = (m: ComponentNode) => {
+      byId.set(m.id, m);
+      for (const k of m.children ?? []) walk(k);
+    };
+    walk(template);
+    for (const [rowKey, row] of Object.entries(copyOverridesOf(n))) {
+      for (const [id, ov] of Object.entries(row)) {
+        const target = byId.get(id);
+        if (!target) continue;
+        const field = `${COPY_OVERRIDES}.${rowKey}.${id}`;
+        const tm = metaFor(target.type);
+        if (ov.props && tm) {
+          const r = propsSchemas[tm.type].safeParse({ ...target.props, ...ov.props });
+          if (!r.success) for (const issue of r.error.issues) problems.push({ severity: "error", code: "props.invalid", where: where(field), message: `In the copy "${rowKey}", ${issuePath(issue.path) || "props"}: ${issue.message}` });
+        }
+        if (ov.style) {
+          const { refused } = compileStyle(ov.style, { slots: tm?.styleSlots ?? ["root"], states: tm?.states, layout: isLayoutType(target.type) });
+          for (const r of refused) problems.push({ severity: "warning", code: "style.refused", where: where(`${field}.style.${r.slot}.${r.prop}`), message: `In the copy "${rowKey}": ${refusalText(r)}` });
+        }
+      }
+    }
+  };
+
   const visit = (n: ComponentNode, page: PageDoc, parent: ComponentNode | null, ctx: { inRepeat: boolean; inLibrary: boolean }) => {
     const where = (field?: string): Problem["where"] => ({ pageId: page.id, nodeId: n.id, ...(field ? { field } : {}) });
     if (!ID_RE.node.test(n.id) && !ctx.inLibrary) problems.push({ severity: "error", code: "node.bad_id", where: where(), message: `"${n.id}" is not a valid node id (c_ and 10 letters or digits 2 to 7).` });
@@ -99,7 +126,12 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
     }
     // bindings
     const allProps = { ...n.props, ...(n.responsive?.mobile?.props ?? {}) };
-    for (const { path, template } of templatesIn(allProps as PropValue, "")) checkTemplate(template, where(path.replace(/^\./, "")), ctx);
+    for (const { path, template } of templatesIn(allProps as PropValue, "")) {
+      // R1: a copy's own changes are drawn inside the copy, where $item and $index are this row.
+      const inCopy = repeatsTemplate(n) && path.startsWith(`.${COPY_OVERRIDES}`);
+      checkTemplate(template, where(path.replace(/^\./, "")), inCopy ? { ...ctx, inRepeat: true } : ctx);
+    }
+    if (repeatsTemplate(n) && n.children?.[0]) checkCopies(n, n.children[0], where);
     if (n.visibleWhen) {
       if (isBinding(n.visibleWhen)) checkTemplate(n.visibleWhen.$bind, where("visibleWhen"), ctx);
       else problems.push({ severity: "error", code: "binding.invalid", where: where("visibleWhen"), message: "The visibility rule must be a binding." });
@@ -165,8 +197,13 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
     // containers
     if (n.children?.length) {
       if (meta && !meta.container) problems.push({ severity: "error", code: "node.not_container", where: where(), message: `A ${meta.title.toLowerCase()} cannot hold other components.` });
-      if (meta?.maxChildren !== undefined && n.children.length > meta.maxChildren) problems.push({ severity: "error", code: "repeat.children", where: where(), message: "A repeat draws exactly one child; wrap several in a stack or card." });
+      if (n.type === "roulette") {
+        if (repeatsTemplate(n) && n.children.length > 1) problems.push({ severity: "warning", code: "roulette.template", where: where(), message: "A roulette that repeats for each row draws only its first child; the others are kept but not shown.", fix: "Switch Turns through to its slots, or keep one widget." });
+        else if (n.children.length > 50) problems.push({ severity: "error", code: "roulette.children", where: where(), message: "A roulette turns through at most 50 slots.", fix: "Use a list or a table for more." });
+      } else if (meta?.maxChildren !== undefined && n.children.length > meta.maxChildren) problems.push({ severity: "error", code: "repeat.children", where: where(), message: "A repeat draws exactly one child; wrap several in a stack or card." });
     }
+    if (n.type === "roulette" && !repeatsTemplate(n) && (n.children?.length ?? 0) === 1) problems.push({ severity: "warning", code: "roulette.one_slot", where: where(), message: "This roulette has one slot, so it never turns.", fix: "Drop a second widget into it, or repeat one for each row." });
+    if (n.type === "roulette" && !n.children?.length) problems.push({ severity: "warning", code: "roulette.empty", where: where(), message: "This roulette has nothing to turn through yet.", fix: "Drop widgets into it, or repeat one for each row." });
     if (n.type === "repeat" && !n.children?.length) problems.push({ severity: "warning", code: "repeat.empty", where: where(), message: "This repeat has nothing to repeat yet.", fix: "Drop one component into it." });
     // library instances
     if (n.type.startsWith("lib:")) {
@@ -181,7 +218,7 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
     }
     if (n.css && n.css.length > 65536) problems.push({ severity: "error", code: "css.too_long", where: where("css"), message: "Node CSS is limited to 64 KB." });
     if (n.css && n.css.trim() && isLayoutType(n.type)) problems.push({ severity: "warning", code: "css.layout_ignored", where: where("css"), message: `This ${meta?.title ?? n.type}'s CSS is ignored: ${LAYOUT_CSS_REFUSAL}`, fix: "Open Advanced and remove the ignored CSS." });
-    for (const c of n.children ?? []) visit(c, page, n, { inRepeat: ctx.inRepeat || n.type === "repeat", inLibrary: ctx.inLibrary });
+    for (const c of n.children ?? []) visit(c, page, n, { inRepeat: ctx.inRepeat || repeatsTemplate(n), inLibrary: ctx.inLibrary });
     void parent;
   };
 

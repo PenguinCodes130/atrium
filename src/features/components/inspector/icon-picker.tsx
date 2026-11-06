@@ -1,11 +1,14 @@
 "use client";
 // Wave 2.10b F6: the one visual icon picker every icon field opens (icon, service tile, bookmarks,
 // resource bar items). Search, categories, Recent, every built-in icon drawn as itself, and Upload.
-// "From website" is N4 (Wave 2.10c): it goes in the `extraEntries` slot beside Upload, nothing else moves.
+// Wave 2.10c N4 (A11.6): "From website" beside Upload takes an address, asks THIS Atrium to fetch that site's
+// icon (POST /api/settings/uploads/favicon; the browser never contacts the site), shows the stored icon before
+// Use, and says why in words when it cannot, with the grid still there. A service tile with a known address
+// (`siteUrl`) offers that service's own icon first, at the top.
 // The field shows the current icon drawn (F10 sweep: show, don't name) with its name in words.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, Sheet, useReducedMotion } from "@/features/shell";
-import { MediaField } from "@/features/uploads/client";
+import { fetchFavicon, MediaField } from "@/features/uploads/client";
 import { ICON_PATHS } from "../render/icons";
 import { iconRefKind } from "../render/tiles-logic";
 import { iconWords, PICKER_CATEGORIES, PICKER_ICONS, readRecentIcons, rememberIcon, searchIcons } from "../render/icon-catalogue";
@@ -35,6 +38,176 @@ export function iconRefWords(icon: string): string {
 const chipCls = (on: boolean) => `inline-flex min-h-8 items-center border px-2 type-caption touch:min-h-11 ${on ? "border-fg bg-fg text-bg" : "border-line-strong text-fg hover:bg-bg-sunk"}`;
 const cellCls = (on: boolean) => `flex h-10 w-10 items-center justify-center border text-fg touch:h-11 touch:w-11 ${on ? "border-accent-ink bg-bg-sunk outline outline-1 outline-accent-ink" : "border-transparent hover:border-line-strong hover:bg-bg-sunk"} focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-ink`;
 
+/** The browser gives up on a favicon answer after this (the server stops at 5 s). */
+export const FAVICON_ABORT_MS = 8000;
+const NO_ANSWER = "Atrium could not fetch that icon. Try again.";
+
+type FetchState = { kind: "idle" } | { kind: "loading"; url: string } | { kind: "ready"; url: string; path: string; name: string } | { kind: "failed"; url: string; message: string };
+
+/** Asks this Atrium for a site's icon; the newest request wins, and closing aborts it. */
+function useFavicon() {
+  const [state, setState] = useState<FetchState>({ kind: "idle" });
+  const ctl = useRef<AbortController | null>(null);
+  useEffect(() => () => ctl.current?.abort(), []);
+  const run = async (raw: string) => {
+    const url = raw.trim();
+    ctl.current?.abort();
+    if (!url) {
+      setState({ kind: "failed", url, message: "Type a website address, such as https://example.com." });
+      return;
+    }
+    const c = new AbortController();
+    ctl.current = c;
+    const timer = setTimeout(() => c.abort(), FAVICON_ABORT_MS);
+    setState({ kind: "loading", url });
+    try {
+      const r = await fetchFavicon(url, { signal: c.signal });
+      if (ctl.current === c) setState({ kind: "ready", url, path: r.path, name: r.name });
+    } catch (e) {
+      if (ctl.current !== c) return;
+      const aborted = (e as { name?: string })?.name === "AbortError";
+      setState({ kind: "failed", url, message: aborted ? "That website did not answer within 5 seconds." : e instanceof Error && e.message ? e.message : NO_ANSWER });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const reset = () => {
+    ctl.current?.abort();
+    ctl.current = null;
+    setState({ kind: "idle" });
+  };
+  return { state, run, reset };
+}
+
+/** The preview square: a spinner while the server fetches, then the stored icon (from /uploads/, never the site). */
+function FaviconSquare({ state }: { state: FetchState }) {
+  return (
+    <span className="flex h-12 w-12 flex-none items-center justify-center border border-line bg-bg-hi text-fg" data-favicon-preview={state.kind}>
+      {state.kind === "loading" ? (
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-line-strong border-t-accent-ink motion-reduce:animate-none" role="status" aria-label="Fetching the icon" data-favicon-spinner />
+      ) : state.kind === "ready" ? (
+        <img src={state.path} alt="" width={32} height={32} className="h-8 w-8 object-contain" data-favicon-img={state.path} />
+      ) : (
+        <IconGlyph icon="globe" size={22} />
+      )}
+    </span>
+  );
+}
+
+/** N4: "From website": an address field, Get icon, the icon shown before Use, or the reason in words. */
+export function FromWebsite({ onUse, initialUrl }: { onUse(path: string): void; initialUrl?: string }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState(initialUrl ?? "");
+  const { state, run, reset } = useFavicon();
+  const id = useMemo(() => `fw-${Math.random().toString(36).slice(2, 8)}`, []);
+  if (!open) {
+    return (
+      <Button variant="secondary" onClick={() => setOpen(true)} data-icon-from-website>
+        From website
+      </Button>
+    );
+  }
+  return (
+    <form
+      className="flex w-full flex-col gap-2 border border-line-strong p-2"
+      data-from-website
+      onSubmit={(e) => {
+        e.preventDefault();
+        void run(url);
+      }}
+    >
+      <label htmlFor={id} className="type-label text-fg-2">
+        Website address
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={id}
+          type="text"
+          inputMode="url"
+          autoComplete="url"
+          spellCheck={false}
+          placeholder="https://plex.example"
+          className="min-h-9 min-w-0 flex-1 border border-line-strong bg-bg-hi px-2 py-1.5 type-body text-fg placeholder:text-fg-3 touch:min-h-11"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          aria-describedby={`${id}-msg`}
+          aria-invalid={state.kind === "failed" ? true : undefined}
+          data-website-url
+        />
+        <Button type="submit" variant="secondary" disabled={state.kind === "loading"} data-website-fetch>
+          Get icon
+        </Button>
+      </div>
+      <div className="flex items-center gap-3">
+        <FaviconSquare state={state} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1" id={`${id}-msg`} aria-live="polite">
+          {state.kind === "idle" ? <p className="type-caption m-0 text-fg-3">Atrium fetches the site&apos;s own icon and keeps a copy. Your browser never visits the site.</p> : null}
+          {state.kind === "loading" ? <p className="type-caption m-0 text-fg-2">Fetching the icon, at most 5 seconds.</p> : null}
+          {state.kind === "ready" ? <p className="type-body m-0 truncate text-fg" data-favicon-name>{state.name}</p> : null}
+          {state.kind === "failed" ? (
+            <p className="type-caption m-0 text-[color:var(--bad)]" role="alert" data-favicon-error>
+              {state.message} The icons below still work.
+            </p>
+          ) : null}
+        </div>
+        {state.kind === "ready" ? (
+          <Button onClick={() => onUse(state.path)} data-favicon-use>
+            Use
+          </Button>
+        ) : null}
+        <Button
+          variant="quiet"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          data-favicon-cancel
+        >
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** N4: a service tile with a known address offers that service's own icon first. */
+function SiteIcon({ siteUrl, onUse }: { siteUrl: string; onUse(path: string): void }) {
+  const { state, run } = useFavicon();
+  useEffect(() => {
+    void run(siteUrl);
+    // Fetch once per address the picker opens with (the server answers a repeat from its 7 day store).
+  }, [siteUrl]);
+  return (
+    <section className="flex items-center gap-3 border border-line p-2" data-site-icon={state.kind}>
+      <FaviconSquare state={state} />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5" aria-live="polite">
+        <h4 className="m-0 type-label text-fg-2">This service&apos;s own icon</h4>
+        {state.kind === "loading" ? <p className="type-caption m-0 text-fg-3">Fetching it from {hostOf(siteUrl)}...</p> : null}
+        {state.kind === "ready" ? <p className="type-caption m-0 truncate text-fg-2">{state.name}</p> : null}
+        {state.kind === "failed" ? <p className="type-caption m-0 text-fg-2" data-site-icon-error>{state.message}</p> : null}
+      </div>
+      {state.kind === "ready" ? (
+        <Button onClick={() => onUse(state.path)} data-site-icon-use>
+          Use
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+function hostOf(u: string): string {
+  try {
+    return new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).host || u;
+  } catch {
+    return u;
+  }
+}
+
+/** The tile's address when it is one Atrium can ask about (a typed http or https address). */
+export function siteUrlOf(v: unknown): string | undefined {
+  return typeof v === "string" && /^https?:\/\/[^\s/]+/i.test(v.trim()) ? v.trim() : undefined;
+}
+
 export type IconPickerProps = {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -43,11 +216,13 @@ export type IconPickerProps = {
   /** Offer "No icon" (the field draws two letters from the name instead). */
   noneLabel?: string;
   onNone?(): void;
-  /** N4 hook: "From website" goes here, beside Upload. */
+  /** More entries beside Upload and From website. */
   extraEntries?: ReactNode;
+  /** N4: the service's own address (a tile's), whose icon is offered first. */
+  siteUrl?: string;
 };
 
-export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNone, extraEntries }: IconPickerProps) {
+export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNone, extraEntries, siteUrl }: IconPickerProps) {
   const reduced = useReducedMotion();
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<string>("all");
@@ -97,10 +272,12 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
             </button>
           ))}
         </div>
+        {open && siteUrl ? <SiteIcon siteUrl={siteUrl} onUse={(p) => pick(p)} /> : null}
         <div className="flex flex-wrap items-start gap-2" data-icon-entries>
           <div className="min-w-0 flex-1" data-icon-upload-entry>
             <MediaField accept="image" label="Upload your own" hint="A small square picture works best" value={current.kind === "upload" ? current.path : undefined} onChange={(p) => pick(p)} />
           </div>
+          <FromWebsite key={open ? "open" : "closed"} onUse={(p) => pick(p)} {...(siteUrl ? { initialUrl: siteUrl } : {})} />
           {extraEntries}
           {onNone ? (
             <Button
@@ -141,7 +318,7 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
             </div>
           ) : (
             <p className="type-body m-0 text-fg-2" data-icon-empty>
-              No icon called &apos;{query.trim()}&apos;. Try another word, or upload your own picture.
+              No icon called &apos;{query.trim()}&apos;. Try From website or Upload.
             </p>
           )}
         </section>
@@ -154,7 +331,7 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
  * The icon field itself: the current icon drawn with its name, opening the picker. `optional` fields can
  * be emptied (bookmarks then draw two letters from the name).
  */
-export function IconPickField({ label, value, onSet, path, optional, hint, reason }: { label: string; value: unknown; onSet(v: string | null): void; path: string; optional?: boolean; hint?: string; reason?: string | null }) {
+export function IconPickField({ label, value, onSet, path, optional, hint, reason, siteUrl }: { label: string; value: unknown; onSet(v: string | null): void; path: string; optional?: boolean; hint?: string; reason?: string | null; /** N4: a tile's own address, whose icon is offered first. */ siteUrl?: string }) {
   const [open, setOpen] = useState(false);
   const icon = typeof value === "string" ? value : "";
   return (
@@ -178,7 +355,7 @@ export function IconPickField({ label, value, onSet, path, optional, hint, reaso
           {hint}
         </p>
       ) : null}
-      <IconPicker open={open} onOpenChange={setOpen} value={icon} onPick={(r) => onSet(r)} {...(optional ? { onNone: () => onSet(null), noneLabel: "No icon: two letters" } : {})} />
+      <IconPicker open={open} onOpenChange={setOpen} value={icon} onPick={(r) => onSet(r)} {...(siteUrl ? { siteUrl } : {})} {...(optional ? { onNone: () => onSet(null), noneLabel: "No icon: two letters" } : {})} />
     </div>
   );
 }

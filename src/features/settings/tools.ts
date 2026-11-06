@@ -1,6 +1,7 @@
 // settings' agent tools (architecture 9b.1; settings spec 3.8): themes.list and themes.get (read),
 // themes.create and themes.update (edit, theme draft) and themes.apply (edit, app draft through
-// app-builder's applyOps). No tool deletes a theme or publishes a theme draft. The registry imports
+// app-builder's applyOps), plus uploads.favicon (edit, Wave 2.10c A11.6: a website's icon fetched on the
+// server and stored as an image upload, the same call as POST /api/settings/uploads/favicon). No tool deletes a theme or publishes a theme draft. The registry imports
 // `settingsTools` through src/features/registry/manifest.ts (shared file request to command-palette).
 import "server-only";
 import { z } from "zod";
@@ -11,6 +12,7 @@ import { contrastReport } from "@/features/shell";
 import { appPort } from "./app-port";
 import { proposeThemeDraft } from "@/features/themes/drafts";
 import { builtInThemes, listSavedThemes, themeById } from "@/features/themes/store";
+import { fetchFavicon } from "@/features/uploads/favicon/fetch";
 
 const read = { scope: "atrium:read" as const, effect: "none" as const, surfaces: ["palette", "builtin-agent", "mcp"] as ("palette" | "builtin-agent" | "mcp")[], minRole: "viewer" as const };
 const edit = { scope: "atrium:edit" as const, surfaces: ["builtin-agent", "mcp"] as ("palette" | "builtin-agent" | "mcp")[], minRole: "member" as const };
@@ -104,6 +106,16 @@ export const settingsTools: ToolDef<any, any>[] = [
     output: z.object({ rev: z.number(), changed: z.array(z.string()) }),
     async handler({ principal }, i: { appId: string; pageId?: string; themeId: string; expectRev?: number }) {
       return applyTheme(principal, i);
+    },
+  },
+  {
+    name: "uploads.favicon", title: "Fetch a website's icon", ...edit, effect: "none",
+    description: "Fetches a website's icon on the server (link rel icon, apple-touch-icon, manifest icons, then /favicon.ico; the best raster at most 256 px or a sanitised SVG, at most 1 MB) and stores it as an image upload. Returns its /uploads/ path for an icon prop. The same origin within 7 days answers from the store without fetching. Link-local and cloud metadata addresses are refused.",
+    input: z.object({ url: z.string().max(2048) }),
+    output: z.object({ path: z.string(), name: z.string() }),
+    async handler({ principal }, i: { url: string }) {
+      const r = await fetchFavicon(principal, i.url);
+      return { path: r.path, name: r.name };
     },
   },
 ];

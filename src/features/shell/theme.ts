@@ -587,6 +587,8 @@ export function tokensToCssVars(t: ThemeTokens, tone: CanvasTone, uploadedFamili
     "--theme-density": density,
     "--theme-density-k": String(k),
     "--theme-control-h": `${CONTROL_HEIGHT_PX[density]}px`,
+    // A11.3, A11.5: the scroll kinds' drawn thumb; absent, components.css falls back to canvas text at 35%, 6 px.
+    ...(t.scrollbar ? { "--theme-scrollbar-thumb": col(t.scrollbar.thumb, "transparent"), "--theme-scrollbar-width": `${[4, 6, 8].includes(t.scrollbar.widthPx) ? t.scrollbar.widthPx : 6}px` } : {}),
     ...Object.fromEntries(Object.entries(densitySizes(density)).map(([name, px]) => [name, `${px}px`])),
     "--theme-motion-enter": ["none", "fade", "rise", "sweep"].includes(t.motion.enter) ? t.motion.enter : "none",
     "--theme-chrome-bg": chromeBg,

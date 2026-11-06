@@ -436,7 +436,10 @@ test("B2: in boxes too small for their content, no component that is not a scrol
   await open(page, slug);
   const table = await canvas(page, "c_b2tablebaa").locator('[data-slot="root"]').first().evaluate((e) => ({ overY: getComputedStyle(e).overflowY, sh: e.scrollHeight, ch: e.clientHeight }));
   out.table = table;
-  expect(table.overY).toBe("auto");
+  // Wave 2.10c N1 (A11.3): until it is clicked, a table with Focus to scroll (the default) holds its root at
+  // overflow hidden so the wheel scrolls the page; it is still the scrolling kind and its rows still overflow.
+  expect(["auto", "hidden"]).toContain(table.overY);
+  await expect(canvas(page, "c_b2tablebaa")).toHaveAttribute("data-focus-scroll", "click");
   expect(table.sh).toBeGreaterThan(table.ch);
   // 390px phone: the published app, nothing scrolls sideways and no component scrolls.
   await publish(page.request, app.id);

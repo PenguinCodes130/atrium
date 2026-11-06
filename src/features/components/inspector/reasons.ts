@@ -117,6 +117,15 @@ export function fieldReason(type: string, key: string, props: Record<string, unk
       return rows(props.items) > 0 || props.items === undefined ? "Shows only while the list is empty" : null;
     case "tabs.initial":
       return "Takes effect when the app opens; here you can click any tab";
+    // N3: a roulette's settings that do nothing yet.
+    case "roulette.items":
+    case "roulette.empty":
+      return props.mode !== "repeat" ? "Needs Turns through set to One widget for each row" : key === "empty" && (rows(props.items) > 0 || props.items === undefined) ? "Shows only while the list is empty" : null;
+    case "roulette.timerSec":
+    case "roulette.advance":
+      return props.mode !== "repeat" && env.children < 2 ? "Turns once it holds two or more widgets" : null;
+    case "roulette.startAt":
+      return "Takes effect when the app opens; here the arrows turn it";
     default:
       return null;
   }

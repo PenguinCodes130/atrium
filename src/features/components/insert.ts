@@ -58,6 +58,8 @@ export const NEW_SIZE: Partial<Record<keyof typeof META, { slot: { w: number; h:
   // canvas widths and gaps change a column's px; hugSlot gives the exact slot for a measured canvas.
   // F6: new icons carry a Scale (50% of the box) instead of a px size.
   icon: { slot: { w: 1.375, h: 10 }, props: { scale: 50 } },
+  // Wave 2.10c N3: a roulette holds one stat-sized slot plus its arrows and dots.
+  roulette: { slot: { w: 3, h: 28 } },
 };
 
 /** The square an inserted icon's box hugs (B8): the 24px icon at half the box, so 12px around it. */

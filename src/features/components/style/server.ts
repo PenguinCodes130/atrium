@@ -6,6 +6,7 @@ import { scopeCustomCssWithReport, type ScopedCss } from "@/features/shell/serve
 import { metaFor } from "../catalogue/meta";
 import { compileStyle, NODE_BOX, refusalText } from "./compile";
 import { expandInstance } from "../library-instance";
+import { applyCopyOverride, copyCssId, copyOrigin, copyOverridesOf, repeatsTemplate } from "../render/copy-overrides";
 import { enforceNodeCssPolicy, isLayoutType, LAYOUT_CSS_IGNORED } from "./node-css-policy";
 
 export type NodeCss = { css: ScopedCss | ""; removed: string[] };
@@ -93,6 +94,20 @@ export function compileDocumentCss(doc: AppDocument, pageId?: string, library: R
       if (css) out[n.id] = css;
     }
     for (const c of n.children ?? []) visit(c, depth);
+    // R1: a Repeat copy with its own style gets its own CSS scope (render/copy-overrides.ts copyCssId).
+    if (repeatsTemplate(n) && n.children?.length) {
+      for (const [rowKey, row] of Object.entries(copyOverridesOf(n))) {
+        const drawn = applyCopyOverride(n.children[0]!, rowKey, row);
+        const each = (m: ComponentNode) => {
+          if (copyOrigin(m)?.styled) {
+            const { css } = compileNodeCss({ ...m, id: copyCssId(m.id, rowKey) });
+            if (css) out[copyCssId(m.id, rowKey)] = css;
+          }
+          for (const k of m.children ?? []) each(k);
+        };
+        each(drawn);
+      }
+    }
     // An instance renders its pinned version's subtree; nesting is bounded in case of a cycle.
     const lib = n.libraryRef ? library[`${n.libraryRef.componentId}@${n.libraryRef.version}`] : undefined;
     if (lib && depth < 8) visit(expandInstance(n, lib), depth + 1);

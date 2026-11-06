@@ -15,6 +15,8 @@ export type FieldWords = {
 type PropsOf<T extends BuiltInType> = keyof z.infer<(typeof propsSchemas)[T]>;
 export type TypeWords<T extends BuiltInType> = { simple: readonly PropsOf<T>[]; fields: { [K in PropsOf<T>]-?: FieldWords } };
 
+/** A11.3 (N1): Focus to scroll, for the scrolling kinds. */
+const FOCUS_SCROLL = { label: "Scroll with the wheel", hint: "Until you click it, the wheel scrolls the page; Esc or a click outside lets go", options: { click: "After a click (default)", hover: "While the pointer is over it", off: "Always" } };
 const FIT = { cover: "Fill and crop", contain: "Show whole" };
 const LINK = { none: "Nothing", page: "Open a page of this app", url: "Open an address", enlarge: "Enlarge" };
 /** The Picture panel's words (media layout spec 3.1, Amendment 8 A8.7), shared by Image and Video. */
@@ -84,6 +86,20 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
       gap: { label: "Space between", hint: "Gap between items in px" },
       max: { label: "Most items", hint: "Show at most this many" },
       empty: { label: "When there is nothing", hint: "Text shown when the list is empty" },
+      focusScroll: FOCUS_SCROLL,
+      copyOverrides: { label: "Changed copies", hint: "Changes made with This copy only; each copy without one draws as every copy" },
+    },
+  },
+  roulette: {
+    simple: ["mode", "items", "timerSec", "advance"],
+    fields: {
+      mode: { label: "Turns through", hint: "Its own slots, or one widget repeated for each row of a list", options: { slots: "Its slots, one widget each", repeat: "One widget for each row" } },
+      items: { label: "One slot for each row of", hint: "A list or table, at most 50 rows; the widget inside shows once per row" },
+      timerSec: { label: "Turn on its own", hint: "Off, or every few seconds up to an hour; it waits while the pointer is over it" },
+      advance: { label: "Turn by", hint: "The wheel after a click on it, the arrow buttons and keys, the dots" },
+      startAt: { label: "Shows first", hint: "The slot shown when the page opens, counting from 0" },
+      empty: { label: "When there is nothing", hint: "Text shown when the list is empty" },
+      copyOverrides: { label: "Changed copies", hint: "Changes made with This copy only; each copy without one draws as every copy" },
     },
   },
   stat: {
@@ -157,6 +173,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
       columns: { label: "Columns", hint: "Which columns to show, in order: type their headers as the table shows them, with commas between. Empty shows all" },
       maxRows: { label: "Rows per page", hint: "Show at most this many rows" },
       showUpdated: updated,
+      focusScroll: FOCUS_SCROLL,
     },
   },
   list: {
@@ -167,6 +184,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
       detailKey: { label: "Detail on the right", hint: "A column shown at the right of each line" },
       maxItems: { label: "Most lines", hint: "Show at most this many lines" },
       showUpdated: updated,
+      focusScroll: FOCUS_SCROLL,
     },
   },
   status: {
@@ -338,7 +356,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
  * Props kept in the schema (stored documents stay valid) but never shown in the inspector: the icon's px
  * size and fill switch (F6, spec section 9: replaced by Scale) and a tile's builder reference (A10.7).
  */
-export const HIDDEN_FIELDS: ReadonlySet<string> = new Set(["icon.size", "icon.fill", "service-tile.integrationId"]);
+export const HIDDEN_FIELDS: ReadonlySet<string> = new Set(["icon.size", "icon.fill", "service-tile.integrationId", "repeat.copyOverrides", "roulette.copyOverrides"]);
 
 /** The written words for one field, or null for a prop no table names (package and library props). */
 export function wordsFor(type: string, key: string): FieldWords | null {

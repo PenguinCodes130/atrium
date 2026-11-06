@@ -4,6 +4,8 @@
 //     when it is over its limit; resolves { path, name, mime, kind }, rejects with the server's message
 //   <MediaField accept="image" | "video" value onChange label? hint?>{paste-an-address field}</MediaField>
 //   <UploadField> the plain upload button (logo, wallpaper, fonts)
+//   fetchFavicon(url, { signal? })  the server fetches a website's icon and stores it (A11.6); resolves
+//     { path, name }, rejects with the server's sentence. FAVICON_MESSAGES holds every sentence
 export { UploadField } from "./ui/upload-field";
 export type { UploadFieldProps } from "./ui/upload-field";
 export { uploadFile, precheck, guessKind } from "./ui/upload-file";
@@ -11,3 +13,6 @@ export type { UploadedFile, UploadAcceptClient } from "./ui/upload-file";
 export { MediaField, EMPTY_UPLOADS, GIF_NOTE } from "./ui/media-field";
 export type { MediaFieldProps, UploadItem } from "./ui/media-field";
 export { MAX_UPLOAD_BYTES, MAX_VIDEO_BYTES, tooLargeMessage } from "./limits";
+export { fetchFavicon } from "./ui/fetch-favicon";
+export type { FetchedFavicon } from "./ui/fetch-favicon";
+export { FAVICON_MESSAGES, FAVICON_TIMEOUT_MS } from "./favicon/messages";

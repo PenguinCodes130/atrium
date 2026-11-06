@@ -108,11 +108,13 @@ test("criteria 1, 4, 7 to 10, 13: a text shows the number of lights in 5 clicks,
   await expect(page.locator("[data-pick-more]")).toHaveText("and 43 more rows");
   await page.screenshot({ path: shot("step4-sample-light") });
   // Count of rows from a column header: the canvas shows 48 (criterion 1: at most 6 clicks, no typing).
+  // Wave 2.10c: read from the widget's own root, not the box (the edit-mode "Content is cut · Fit" badge,
+  // components N1, can sit beside it for a moment before the box grows).
   const firstCol = await page.locator("[data-pick-col]").first().getAttribute("data-pick-col");
   await click(`[data-pick-col="${firstCol}"]`);
   await click('[data-pick-agg="count"]');
   const t1 = Date.now();
-  await expect(page.locator('[data-canvas-root] [data-node="c_pktextaaaa"]')).toHaveText("48", { timeout: 1000 + 500 });
+  await expect(page.locator('[data-canvas-root] [data-node="c_pktextaaaa"] [data-slot="root"]').first()).toHaveText("48", { timeout: 1000 + 500 });
   log("bind to canvas ms", Date.now() - t1);
   expect(clicks).toBeLessThanOrEqual(6);
   // Criterion 13: the words match the template written.
@@ -122,7 +124,7 @@ test("criteria 1, 4, 7 to 10, 13: a text shows the number of lights in 5 clicks,
   const cell = page.locator('[data-pick-cell="2:state"]');
   const want = (await cell.textContent())!.trim();
   await cell.click();
-  await expect(page.locator('[data-canvas-root] [data-node="c_pktextaaaa"]')).toHaveText(want, { timeout: 1500 });
+  await expect(page.locator('[data-canvas-root] [data-node="c_pktextaaaa"] [data-slot="root"]').first()).toHaveText(want, { timeout: 1500 });
   await expect(page.locator("[data-pick-bound-words]")).toContainText("of the row where");
   await page.locator("[data-pick-done]").click();
   await expect(picker(page)).toHaveCount(0);
@@ -240,7 +242,7 @@ test("criteria 12, 14, 15, 16: stat with a table offers summaries; Cancel undoes
   expect(renamed.doc.dataSources.map((s) => s.name)).toEqual(["lamps"]);
   expect(JSON.stringify(nodeIn(renamed, "c_pkusedaaaa").props)).toContain("{{ lamps.rows | count }}");
   await page.locator("[data-pick-done]").click();
-  await expect(page.locator('[data-canvas-root] [data-node="c_pkusedaaaa"]')).toHaveText("48");
+  await expect(page.locator('[data-canvas-root] [data-node="c_pkusedaaaa"] [data-slot="root"]').first()).toHaveText("48");
   expect(await page.locator("[data-canvas-root]").getByText(/no data source named/i).count()).toBe(0);
   await ctx.close();
 });

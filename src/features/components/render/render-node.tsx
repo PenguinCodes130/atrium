@@ -22,6 +22,8 @@ import { getComponentDef } from "../catalogue/defs";
 import { NOT_CONNECTED, sampleProps } from "../catalogue/samples";
 import { expandInstance } from "../library-instance";
 import { lineDataKey } from "../page";
+import { CutBadge, focusScrollOf, ScrollChrome } from "./scroll-area";
+import { COPY_OVERRIDES, copyCssId, copyOrigin, copyScopedCss } from "./copy-overrides";
 import { compileNodeStylesAction } from "../actions";
 import { isLayoutType } from "../style/node-css-policy";
 import { DeviceContext, EditContext, NodeContext, NodeCssContext, RootContext, ScopeContext, type NodeEnv, type RootEnv } from "./context";
@@ -159,6 +161,7 @@ function guestProps(node: ComponentNode, eff: ComponentNode, scope: PageScope, p
   const mobileProps = device === "mobile" ? node.responsive?.mobile?.props ?? {} : {};
   for (const [k, v] of Object.entries(eff.props)) {
     if (k === "data" && node.type === "html") continue;
+    if (k === COPY_OVERRIDES) continue; // R1: kept as written; each copy applies its own
     if (!templatesIn(v as PropValue, k).length) continue;
     // A10.2: a chart line's data comes under its own key; its name, colour and hidden flag are literals.
     if (k === "lines" && node.type === "chart" && Array.isArray(v)) {
@@ -186,15 +189,19 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
   const edit = ctx.mode === "edit";
   const guest = !!scope.$guest;
 
-  // CSS: the server map, or a live compile when this node changed since the page loaded.
+  // CSS: the server map, or a live compile when this node changed since the page loaded. R1: a Repeat copy
+  // with its own style has a CSS scope of its own (copyCssId), pointed at that copy only (copyScopedCss).
   const styled = isStyled(node);
-  const local = sigs?.current?.[node.id];
+  const origin = copyOrigin(node);
+  const cssKey = origin?.styled ? copyCssId(node.id, origin.rowKey) : node.id;
+  const local = sigs?.current?.[cssKey];
   const sig = styled ? styleSig(node) : "";
-  const stale = styled && (local ? local.sig !== sig : !root.css[node.id] && ctx.principal.kind === "user");
+  const stale = styled && (local ? local.sig !== sig : !root.css[cssKey] && ctx.principal.kind === "user");
   useEffect(() => {
-    if (stale) root.requestCss(node);
+    if (stale) root.requestCss(cssKey === node.id ? node : { ...node, id: cssKey });
   });
-  const css = styled ? (local && local.sig === sig ? local.css : local ? "" : root.css[node.id] ?? "") : "";
+  const rawCss = styled ? (local && local.sig === sig ? local.css : local ? "" : root.css[cssKey] ?? "") : "";
+  const css = cssKey === node.id ? rawCss : copyScopedCss(rawCss, node.id, cssKey);
 
   const vis = guest ? (node.visibleWhen ? { visible: scope.$guest![valueKey(node.id, "$visible", path)] !== false } : { visible: true }) : nodeVisible(node, scope);
   const offDevice = hiddenOnDevice(node, device);
@@ -229,6 +236,7 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
   const failedSources = failingReads && Object.keys(failingReads).length ? readFailures(node, failingReads) : [];
 
   const def = getComponentDef(node.type);
+  const sizing = sizingOf(eff);
   const env: NodeEnv = {
     node: eff,
     scope,
@@ -246,8 +254,9 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
   return (
     <motion.div
       data-node={node.id}
+      data-copy-css={cssKey !== node.id ? cssKey : undefined}
       data-type={node.type}
-      data-sizing={sizingOf(eff)}
+      data-sizing={sizing}
       className="atr-node"
       data-node-styled={styled ? "" : undefined}
       data-node-has-css={node.css && !isLayoutType(node.type) ? "" : undefined}
@@ -289,6 +298,7 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
           {Comp ? <WidgetBoundary nodeId={node.id} resetKey={JSON.stringify(eff.props)}><Comp node={eff} resolved={resolved} ctx={ctx} /></WidgetBoundary> : <div data-slot="root" className="atr-unknown canvas-surface">This component type is not installed: {node.type}</div>}
         </NodeContext.Provider>
       </ScopeContext.Provider>
+      {sizing === "scroll" ? <ScrollChrome mode={focusScrollOf(resolved.focusScroll)} label={node.title || node.name || def?.title} /> : edit ? <CutBadge nodeId={node.id} /> : null}
       {sample && edit ? (
         <span className="atr-sample-bar" data-sample-bar>
           <span className="atr-sample-tag" data-sample-tag>Sample data</span>

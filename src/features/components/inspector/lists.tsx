@@ -166,8 +166,8 @@ export function IconPreview({ icon, size = 20 }: { icon: string; size?: number }
 }
 
 /** Pick a built-in icon (the service's own glyph among them), or upload a picture. Optional: "none" draws two letters. */
-export function IconField({ label, value, onSet, path, optional, hint }: { label: string; value: unknown; onSet(v: PropValue | null): void; path: string; optional?: boolean; hint?: string }) {
-  return <IconPickField label={label} value={value} onSet={(v) => onSet(v)} path={path} {...(optional ? { optional } : {})} {...(hint ? { hint } : {})} />;
+export function IconField({ label, value, onSet, path, optional, hint, siteUrl }: { label: string; value: unknown; onSet(v: PropValue | null): void; path: string; optional?: boolean; hint?: string; siteUrl?: string }) {
+  return <IconPickField label={label} value={value} onSet={(v) => onSet(v)} path={path} {...(optional ? { optional } : {})} {...(hint ? { hint } : {})} {...(siteUrl ? { siteUrl } : {})} />;
 }
 
 // ---------- a service tile's numbers ----------

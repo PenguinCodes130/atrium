@@ -29,12 +29,30 @@ import { AppLookSheet } from "./app-look";
 import { ThemePanel } from "./theme-panel";
 import { SelectMenu } from "@/features/settings/ui/controls";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "@/features/components/render/render-node";
+import { FIT_EVENT } from "@/features/components/render/scroll-area";
 import { failingSources, repeatAround, wholeProp } from "./data-pick";
 import { DataPicker, type BindableIntegration, type PickTarget } from "./data-picker";
 import { ShowPicker, type ShowTarget } from "./show-picker";
 import { MachineChooser, ServiceChooser, StartPageSheet } from "./service-sheets";
 import { normaliseOps } from "@/features/apps/managed";
 import { timingOf } from "./data-line";
+import { fieldKey } from "./history-label";
+import { overridesOf, repeatSource, rowKeyOf } from "./copy-overrides";
+import { repeatItems } from "@/features/components/render/resolve";
+
+/** Wave 2.10c N2: a field the person types in (its own undo wins there), as opposed to a button or a checkbox. */
+const TEXT_TYPES = new Set(["text", "search", "url", "email", "tel", "password", "number", ""]);
+function isTextEntry(el: Element | null): boolean {
+  if (!el || !(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  if (el instanceof HTMLTextAreaElement) return !el.readOnly;
+  if (el instanceof HTMLInputElement) return TEXT_TYPES.has(el.type) && !el.readOnly;
+  return false;
+}
+/** A11.1: typing in one field, or scrubbing one slider, joins one history step. */
+function isFieldGesture(el: Element | null): boolean {
+  return isTextEntry(el) || (el instanceof HTMLInputElement && el.type === "range");
+}
 
 export type BuilderProps = {
   app: { id: string; slug: string; name: string; publishedVersion: number | null };
@@ -192,6 +210,9 @@ export function BuilderScreen(props: BuilderProps) {
   // Try-out 2.10b: a widget inside a Repeat is drawn once per row; these say WHICH copy was clicked or is
   // under the pointer, so its outline sits on that copy instead of always on the first one.
   const [selCopy, setSelCopy] = useState<{ id: string; nth: number } | null>(null);
+  // Wave 2.10c R1: the Repeat copy clicked on the canvas (its row key), and where inspector edits go.
+  const [selRow, setSelRow] = useState<{ nodeId: string; repeatId: string; rowKey: string } | null>(null);
+  const [copyMode, setCopyMode] = useState<"all" | "one">("all");
   const [hovCopy, setHovCopy] = useState<{ id: string; nth: number } | null>(null);
   const [device, setDevice] = useState<Device>("desktop");
   const [editMode, setEditMode] = useState(true);
@@ -329,6 +350,16 @@ export function BuilderScreen(props: BuilderProps) {
   }
   const pageIdRef = useRef(pageId);
   pageIdRef.current = pageId;
+  // Wave 2.10c N2: when the page in view goes away (Undo of Add a page, Redo of a remove), the builder shows
+  // the first page and its address follows, so a reload opens a page that exists.
+  useEffect(() => {
+    if (findPage(doc, pageId)) return;
+    const first = orderedPages(doc)[0];
+    if (!first) return;
+    setPageId(first.id);
+    window.history.replaceState(null, "", `/build/${app.slug}/${first.slug}`);
+    void refreshRender(first.id);
+  }, [doc, pageId, app.slug, refreshRender]);
 
   // Wave 2.10 B1 (A11.2): components an edit changed, watched for a while so a fit one grows to its content.
   const growWatch = useRef(new Map<string, { until: number; entry: number; grown: number; force?: boolean; last?: Record<string, number>; /** Passes in a row that did not shrink the overflow. */ strikes?: number; /** Round 2 item 1: watched because the page opened. */ open?: boolean }>());
@@ -345,13 +376,23 @@ export function BuilderScreen(props: BuilderProps) {
     for (const ms of [60, 300, 900, 2000, WATCH_MS - 200]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
   }, []);
 
-  const apply = useCallback((ops: DraftOp[], opts: { announce?: string; select?: string; /** Join this undo entry (B1). */ into?: number } = {}) => {
+  /** A toast's Undo: takes back its own step only while it is still the newest (never a later edit). */
+  const undoStep = useCallback((entry: number) => {
+    growWatch.current.clear();
+    const label = client.current!.undoLabel;
+    if (client.current!.undoEntry(entry)) setAnnounce(`Undone: ${label ?? ""}`.trim());
+    else toast({ kind: "info", title: "That is no longer the last step", description: "Use Undo on the builder bar to step back through the later changes first." });
+  }, []);
+  const apply = useCallback((ops: DraftOp[], opts: { announce?: string; select?: string; /** Join this undo entry (B1). */ into?: number; /** N2: the step's words, when the ops alone do not say it. */ label?: string; /** N2: the delete toast's extra words, or false for none. */ deleteToast?: string | false } = {}) => {
     setProblems([]);
     const docBefore = client.current!.doc;
+    // Wave 2.10c N2 (A11.1): typing in one field (or scrubbing one slider) is one step until blur or 1 s idle.
+    const coalesce = !opts.into && typeof document !== "undefined" && isFieldGesture(document.activeElement) ? fieldKey(docBefore, ops) ?? undefined : undefined;
+    const entryBefore = client.current!.lastEntryId;
     if (ops.some((o) => o.op === "theme.set" || o.op === "chrome.update" || (o.op === "page.update" && "theme" in o.patch) || (o.op === "node.update" && ("style" in o.patch || "css" in o.patch || "overrideTheme" in o.patch || ("props" in o.patch && /https?:\/\//i.test(JSON.stringify(o.patch.props))))) || o.op === "node.add" || o.op === "source.set" || o.op === "source.remove" || (o.op === "node.update" && JSON.stringify(o.patch).includes("{{")))) needsRender.current = true;
     // Gauntlet w2-r2 item 16: removing a component also closes the band it leaves in its grid.
     const sourcesBefore = JSON.stringify(client.current!.doc.dataSources);
-    const p = client.current!.edit(withGapsClosed(client.current!.doc, ops), opts.into ? { history: "merge", into: opts.into } : {});
+    const p = client.current!.edit(withGapsClosed(client.current!.doc, ops), opts.into ? { history: "merge", into: opts.into } : { ...(opts.label ? { label: opts.label } : {}), ...(coalesce ? { coalesce } : {}) });
     // A10.1: an edit that moved a managed source (added, removed, a new interval) restarts the live data.
     if (!p && JSON.stringify(client.current!.doc.dataSources) !== sourcesBefore) needsRender.current = true;
     if (p) {
@@ -362,7 +403,25 @@ export function BuilderScreen(props: BuilderProps) {
     watchGrowth(docBefore, ops);
     if (opts.announce) setAnnounce(opts.announce);
     if (opts.select !== undefined) setSelectedId(opts.select);
-  }, [watchGrowth]);
+    // N2: every delete says what went, with Undo one click away ("Deleted Stat · Undo").
+    const entry = client.current!.lastEntryId;
+    const label = client.current!.undoLabel;
+    if (opts.deleteToast !== false && entry !== entryBefore && label?.startsWith("Delete ")) {
+      toast({
+        kind: "info", title: label.replace(/^Delete /, "Deleted "), description: opts.deleteToast ?? "Undo with Ctrl+Z.",
+        action: { label: "Undo", onClick: () => undoStep(entry) },
+      });
+    }
+  }, [watchGrowth, undoStep]);
+
+  /** Wave 2.10c N2: one Undo or Redo step (the bar's buttons, the shortcuts), said in words. */
+  const historyStep = useCallback((dir: "undo" | "redo") => {
+    growWatch.current.clear();
+    const label = dir === "undo" ? client.current!.undo() : client.current!.redo();
+    if (label) setAnnounce(`${dir === "undo" ? "Undone" : "Redone"}: ${label}`);
+  }, []);
+  const historyStepRef = useRef(historyStep);
+  historyStepRef.current = historyStep;
 
   /**
    * Applies an edit and waits until the server accepted or refused it (gauntlet w2-r1 item 15): the
@@ -520,6 +579,14 @@ export function BuilderScreen(props: BuilderProps) {
       // Shortcuts work when focus is in the builder, on the page, or on the shell's main landmark around it.
       if (a && a !== document.body && rootRef.current && !rootRef.current.contains(a) && !a.contains(rootRef.current)) return;
       const t = e.target as HTMLElement | null;
+      // Wave 2.10c N2 (A11.1): Undo and Redo work everywhere in the builder, the inspector included, except
+      // inside a text field being typed in (the field keeps its own undo) and inside a sheet.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[zy]$/i.test(e.key) && !(t && (isTextEntry(t) || t.closest("[role=dialog]")))) {
+        e.preventDefault();
+        if (e.key.toLowerCase() === "y" || e.shiftKey) historyStepRef.current("redo");
+        else historyStepRef.current("undo");
+        return;
+      }
       if (t && (t.closest("input, textarea, select, [contenteditable=true], [role=dialog]") || t.isContentEditable)) return;
       // Menus, choice groups and the inspector keep their own keys (round 3: Escape closing a menu must not
       // also select the parent, and arrows in a choice group must not move the component).
@@ -551,8 +618,8 @@ export function BuilderScreen(props: BuilderProps) {
       if (!act) return;
       e.preventDefault();
       // An undone or redone step is put back exactly as it was: nothing grows on top of it (B1).
-      if (act.kind === "undo") { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); }
-      else if (act.kind === "redo") { growWatch.current.clear(); client.current!.redo(); setAnnounce("Redone"); }
+      if (act.kind === "undo") historyStepRef.current("undo");
+      else if (act.kind === "redo") historyStepRef.current("redo");
       else if (act.kind === "select") { setSelectedId(act.nodeId); setAnnounce(act.announce); }
       else {
         apply(act.ops, { announce: act.announce, ...(act.select ? { select: act.select } : {}) });
@@ -620,6 +687,35 @@ export function BuilderScreen(props: BuilderProps) {
     const all = [...canvasRef.current.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)];
     const nth = el ? all.indexOf(el) : -1;
     return all.length > 1 && nth > 0 ? { id, nth } : null;
+  };
+  /**
+   * Wave 2.10c R1: the row key of the Repeat copy an event hit. The canvas's `data-row-key` (components) wins;
+   * else the row at the copy's index, keyed by its name (rowKeyOf).
+   */
+  const rowAt = (target: EventTarget | null, id: string): { nodeId: string; repeatId: string; rowKey: string } | null => {
+    const around = repeatAround(client.current!.doc, id);
+    if (!around || !(target instanceof Element)) return null;
+    const el = target.closest(`[data-node="${CSS.escape(id)}"]`);
+    const item = el?.closest('[data-slot="item"]');
+    if (!item || !item.closest(`[data-node="${CSS.escape(around.repeatId)}"]`)) return null;
+    const drawn = item.getAttribute("data-row-key");
+    if (drawn) return { nodeId: id, repeatId: around.repeatId, rowKey: drawn };
+    const index = Number(item.getAttribute("data-index") ?? -1);
+    if (!(index >= 0)) return null;
+    const rows = around.source ? repeatItems(shownData[around.source], 200) : [];
+    return { nodeId: id, repeatId: around.repeatId, rowKey: rowKeyOf(rows, index) };
+  };
+  /** The drawn copy for one row of a repeat (by `data-row-key`, else by the row's index). */
+  const copyElement = (repeatId: string, rowKey: string, source: string | null): Element | null => {
+    const root = canvasRef.current?.querySelector(`[data-node="${CSS.escape(repeatId)}"]`);
+    if (!root) return null;
+    const items = [...root.querySelectorAll('[data-slot="item"]')].filter((x) => x.parentElement?.closest("[data-node]") === root);
+    const byAttr = items.find((x) => x.getAttribute("data-row-key") === rowKey);
+    if (byAttr) return byAttr;
+    if (items.some((x) => x.hasAttribute("data-row-key"))) return null;
+    const rows = source ? repeatItems(shownData[source], 200) : [];
+    const index = rows.findIndex((_, i) => rowKeyOf(rows, i) === rowKey);
+    return index >= 0 ? items.find((x) => x.getAttribute("data-index") === String(index)) ?? null : null;
   };
   const rectOf = (id: string | null, copy?: { id: string; nth: number } | null) => {
     if (!id || !canvasRef.current) return null;
@@ -988,6 +1084,16 @@ export function BuilderScreen(props: BuilderProps) {
    * its box) widen it to the whole row when that row has room; then its height fits as before. The result
    * says what happened, so the inspector never says "fits" while columns are hidden.
    */
+  // Wave 2.10c N1: the canvas's "Content is cut · Fit" badge (components) asks for a Fit through FIT_EVENT.
+  const fitOneRef = useRef<(id: string) => FitResult>(() => ({ rows: 0, widened: false, hiddenX: 0 }));
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
+      if (id && findNode(client.current!.doc, id)) fitOneRef.current(id);
+    };
+    window.addEventListener(FIT_EVENT, on);
+    return () => window.removeEventListener(FIT_EVENT, on);
+  }, []);
   const fitOne = (id: string): FitResult => {
     const el = canvasRef.current?.querySelector(`[data-node="${CSS.escape(id)}"]`);
     // A table says what it hides (components' measureTableOverflow); anything else is measured here.
@@ -1016,6 +1122,7 @@ export function BuilderScreen(props: BuilderProps) {
     }
     return { rows: fitToContent(id, { quiet: true }), widened: false, hiddenX };
   };
+  fitOneRef.current = fitOne;
   /**
    * Wave 2.10 B1 (A11.2): a watched fit component directly in a fixed-row grid whose content outgrew its box
    * grows to hold it, pushing siblings down, in the same undo step as the edit that changed it (a later
@@ -1402,8 +1509,7 @@ export function BuilderScreen(props: BuilderProps) {
     // Round 2 item 12: no browser confirm (it never showed in some browsers, so Delete looked dead). The
     // delete happens at once and says what went with it, with Undo one click away.
     const what = kids > 0 ? `${nodeLabel(at.node)} and the ${kids} ${kids === 1 ? "component" : "components"} inside it` : nodeLabel(at.node);
-    apply([{ op: "node.remove", nodeId: id }], { announce: `Removed ${what}. Undo with Ctrl+Z.`, select: at.parent.id });
-    toast({ kind: "info", title: `Deleted ${what}`, description: "Undo with Ctrl+Z.", action: { label: "Undo", onClick: () => { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); } } });
+    apply([{ op: "node.remove", nodeId: id }], { announce: `Removed ${what}. Undo with Ctrl+Z.`, select: at.parent.id, deleteToast: kids > 0 ? `With the ${kids} ${kids === 1 ? "component" : "components"} inside it. Undo with Ctrl+Z.` : "Undo with Ctrl+Z." });
   };
 
   // Settings' "Use on an app" links to ?review=1 and "Used by" to ?look=1: open that sheet once, then
@@ -1478,7 +1584,8 @@ export function BuilderScreen(props: BuilderProps) {
     const next = orderedPages(cur).find((x) => x.id !== pageId)!;
     apply([{ op: "page.remove", pageId }], { announce: `Removed the page ${p.title}. Undo with Ctrl+Z.` });
     goPage(next);
-    toast({ kind: "info", title: `Removed the page ${p.title}`, description: "Undo with Ctrl+Z.", action: { label: "Undo", onClick: () => { growWatch.current.clear(); client.current!.undo(); setAnnounce("Undone"); } } });
+    const entry = client.current!.lastEntryId;
+    toast({ kind: "info", title: `Removed the page ${p.title}`, description: "Undo with Ctrl+Z.", action: { label: "Undo", onClick: () => undoStep(entry) } });
   };
 
   // Round 2 item 8 (Note 3): a saved theme edited since the last publish is a change viewers do not see yet.
@@ -1512,6 +1619,36 @@ export function BuilderScreen(props: BuilderProps) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [selectedId, doc]);
+  // Wave 2.10c R1: a small "Changed" mark on every Repeat copy with its own changes (edit mode only).
+  const [copyMarks, setCopyMarks] = useState<{ key: string; rowKey: string; r: Rect }[]>([]);
+  const copyMarksRef = useRef<{ key: string; rowKey: string; r: Rect }[]>([]);
+  useLayoutEffect(() => {
+    const next: { key: string; rowKey: string; r: Rect }[] = [];
+    if (editMode && canvasRef.current) {
+      const o = canvasRef.current.getBoundingClientRect();
+      const visit = (n: ComponentNode) => {
+        if (n.type === "repeat" || (n.type === "roulette" && n.props.mode === "repeat")) {
+          const all = overridesOf(n);
+          const src = repeatSource(n);
+          for (const rowKey of Object.keys(all)) {
+            const el = copyElement(n.id, rowKey, src);
+            if (!el) continue;
+            const r = el.getBoundingClientRect();
+            next.push({ key: `${n.id}|${rowKey}`, rowKey, r: { left: r.left - o.left, top: r.top - o.top, width: r.width, height: r.height } });
+          }
+        }
+        for (const k of n.children ?? []) visit(k);
+      };
+      visit(page.root);
+    }
+    // Only a real change sets state: a same-value set inside a layout effect still counts toward React's
+    // nested update limit, and the outline measuring above already uses most of it.
+    const prev = copyMarksRef.current;
+    if (prev.length === next.length && prev.every((m, i) => m.key === next[i]!.key && sameRect(m.r, next[i]!.r))) return;
+    copyMarksRef.current = next;
+    setCopyMarks(next);
+    // Measured with the outlines: after an edit, new data, a resize of the canvas or a zoom.
+  }, [doc, page, editMode, rects, shownData, canvasW, innerH, zoom, device, growTick]);
   const selRect = rects.sel;
   const hovRect = rects.hov;
   const showCanvas = !narrow || narrowTab === "canvas";
@@ -1549,7 +1686,8 @@ export function BuilderScreen(props: BuilderProps) {
   );
 
   return (
-    <div ref={rootRef} className="flex h-dvh min-h-[560px] flex-col bg-bg" data-builder={app.slug} data-builder-narrow={narrow ? "" : undefined}>
+    // N2 (A11.1): a field losing focus ends its typed step, so the next edit there is a step of its own.
+    <div ref={rootRef} className="flex h-dvh min-h-[560px] flex-col bg-bg" data-builder={app.slug} data-builder-narrow={narrow ? "" : undefined} onBlurCapture={() => client.current?.seal()}>
       {/* Builder bar, 48px. The publish glow (design v4 Note 1) is a gold strip across the bar beneath its text. */}
       <div className="relative isolate flex h-12 flex-none items-center gap-2 overflow-hidden border-b border-line-strong bg-bg-hi px-3 max-sm:gap-1 max-sm:px-2" data-builder-bar data-glowing={glowing ? "" : undefined}>
         {glow > 0 && !reduced && (
@@ -1578,6 +1716,8 @@ export function BuilderScreen(props: BuilderProps) {
           <SelectMenu label="Page" hideLabel name="page" value={page.id} onChange={(id) => { const p = findPage(doc, id); if (p) goPage(p); }} options={orderedPages(doc).map((p) => ({ value: p.id, label: `${p.title}${p.inNav ? "" : " (hidden)"}` }))} />
         </div>
         {!narrow && <PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} />}
+        {/* Wave 2.10c N2 (A11.1): Undo and Redo, disabled at the ends, the tooltip naming the step. */}
+        {!narrow && <HistoryButtons undo={client.current!.undoLabel} redo={client.current!.redoLabel} onStep={historyStep} narrow={false} />}
         {/* Wave 2.10b F8: Navigation sits beside Pages, not inside Look. */}
         {!narrow && <button type="button" onClick={() => setNavOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-navigation><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 3h9M1.5 6h9M1.5 9h9" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>Navigation</button>}
         {/* Wave 2.10b F9: Theme beside Navigation: pick with a preview on this page, edit, create. */}
@@ -1637,6 +1777,8 @@ export function BuilderScreen(props: BuilderProps) {
                 </button>
               ))}
             </div>
+            {/* Wave 2.10c N2: Undo and Redo sit here on phones too (the bar has no room left at 360px). */}
+            <span className="flex flex-none border-l border-line-strong"><HistoryButtons undo={client.current!.undoLabel} redo={client.current!.redoLabel} onStep={historyStep} narrow /></span>
             <span className="flex-none border-l border-line-strong"><PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} compact /></span>
           </div>
         </>
@@ -1684,7 +1826,13 @@ export function BuilderScreen(props: BuilderProps) {
                 e.stopPropagation();
                 if (suppressClick.current) { suppressClick.current = false; return; }
                 if (id && e.shiftKey && !narrow && id !== page.root.id) { toggleMulti(id); return; }
-                if (id) { setMulti([]); setSelectedId(id); setSelCopy(copyAt(e.target, id)); setAnnounce(`Selected ${nodeLabel(findNode(doc, id)!.node)}`); }
+                if (id) {
+                  setMulti([]); setSelectedId(id); setSelCopy(copyAt(e.target, id));
+                  const row = rowAt(e.target, id);
+                  if (!row || row.nodeId !== selRow?.nodeId || row.rowKey !== selRow?.rowKey) setCopyMode("all");
+                  setSelRow(row);
+                  setAnnounce(`Selected ${nodeLabel(findNode(doc, id)!.node)}${row ? `, the ${row.rowKey} copy` : ""}`);
+                }
               }}
               data-canvas-root
               data-theme-previewing={previewTheme?.id}
@@ -1711,6 +1859,9 @@ export function BuilderScreen(props: BuilderProps) {
               {/* A layer hidden on this device is gone from the canvas; selected from Layers it shows faintly. */}
               {selectedId && /^c_[a-z2-7]{10}$/.test(selectedId) && <style>{`[data-canvas-root] .atr-node[data-node="${selectedId}"][data-hidden-device]{visibility:visible}`}</style>}
               {hovRect && <div aria-hidden className="pointer-events-none absolute border border-accent-ink" style={hovRect} data-hover-outline />}
+              {copyMarks.map((m) => (
+                <span key={m.key} className="pointer-events-none absolute border border-accent-ink bg-bg-hi px-1 font-mono text-[11px] leading-4 text-fg" style={{ left: m.r.left + m.r.width - 4, top: m.r.top + 4, transform: "translateX(-100%)" }} title={`The ${m.rowKey} copy has its own changes`} data-copy-changed-mark={m.rowKey}>Changed</span>
+              ))}
               {selRect && selected && !multiOn && (
                 <motion.div
                   key={`sel-${selected.id}-${settling}`}
@@ -1862,7 +2013,8 @@ export function BuilderScreen(props: BuilderProps) {
             {multiOn ? (
               <MultiPanel names={multi.map((id) => { const n = findNode(doc, id)?.node; return n ? nodeLabel(n) : id; })} onAction={arrange} onClear={() => setMulti([])} />
             ) : (
-            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops) => apply(ops)} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow} titleBars={(previewTheme?.theme ?? render.theme).tokens.surface.titleBars}
+            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops, o) => apply(ops, o?.label ? { label: o.label } : {})}
+              {...(selected && selRow && selRow.nodeId === selected.id && findNode(doc, selRow.repeatId) ? { copy: { repeatId: selRow.repeatId, rowKey: selRow.rowKey, mode: copyMode, setMode: (m: "all" | "one") => { setCopyMode(m); setAnnounce(m === "one" ? `Changes now go to the ${selRow.rowKey} copy only` : "Changes now go to every copy"); } } } : {})} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow} titleBars={(previewTheme?.theme ?? render.theme).tokens.surface.titleBars}
               live={{ data: shownData, states: live.states }} onPick={onInspectorPick} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
             )}
           </aside>
@@ -1894,7 +2046,8 @@ export function BuilderScreen(props: BuilderProps) {
           if (reduced) showPublishToast();
           const latest = await fetch(`/api/apps/${app.id}/draft`, { credentials: "same-origin" }).then((r) => r.json() as Promise<{ rev: number; doc: AppDocument }>);
           growWatch.current.clear();
-          client.current!.reset(latest.doc, latest.rev);
+          // N2 (A11.1): publishing keeps the history; only a reload clears it.
+          client.current!.reset(latest.doc, latest.rev, { keepHistory: true });
           void refreshMeta();
         }} />
       )}
@@ -1907,7 +2060,7 @@ export function BuilderScreen(props: BuilderProps) {
       )}
       {barFor && <MachineChooser nodeId={barFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setBarFor(null)} />}
       {tileFor && <ServiceChooser nodeId={tileFor} doc={doc} bindable={bindable ?? bindableRef.current} apply={(ops) => { apply(ops, { into: chooserEntry.current }); void client.current!.flush(); }} onClose={() => setTileFor(null)} />}
-      {startOpen && <StartPageSheet appId={app.id} apply={(ops) => { apply(ops, { announce: "Made a start page" }); void client.current!.flush(); }} onClose={() => setStartOpen(false)} onMade={(pageId) => {
+      {startOpen && <StartPageSheet appId={app.id} apply={(ops) => { apply(ops, { announce: "Made a start page", label: "Make start page" }); void client.current!.flush(); }} onClose={() => setStartOpen(false)} onMade={(pageId) => {
         setStartOpen(false);
         const p = findPage(client.current!.doc, pageId);
         // Wave 2.10b F1: the start page is one undo step, its growth included. Its boxes are watched in the
@@ -2025,6 +2178,22 @@ function PageNameSheet({ title, fresh, onSave, onClose }: { title: string; fresh
 }
 
 const pageItem = "flex h-8 cursor-pointer select-none items-center px-2 text-left type-label outline-none data-[disabled]:cursor-default data-[disabled]:opacity-40 data-[highlighted]:bg-bg-sunk touch:h-11";
+
+/** Wave 2.10c N2: the builder bar's Undo and Redo (a 44px hit area on touch screens and phones). */
+function HistoryButtons({ undo, redo, onStep, narrow }: { undo: string | null; redo: string | null; onStep(dir: "undo" | "redo"): void; narrow: boolean }) {
+  const cls = `inline-flex flex-none items-center justify-center text-fg hover:bg-bg-sunk disabled:cursor-default disabled:text-fg-3 disabled:hover:bg-transparent ${narrow ? "size-11 border-line-strong" : "size-8 border border-line-strong touch:size-11"}`;
+  const tip = (dir: "undo" | "redo", label: string | null) => (label ? `${dir === "undo" ? "Undo" : "Redo"} ${label}` : dir === "undo" ? "Nothing to undo" : "Nothing to redo");
+  return (
+    <div role="group" aria-label="History" className="flex flex-none" data-history>
+      <button type="button" className={cls} disabled={!undo} onClick={() => onStep("undo")} title={tip("undo", undo)} aria-label={tip("undo", undo)} aria-keyshortcuts="Control+Z Meta+Z" data-history-undo>
+        <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M5.5 3.5 2.5 6.5l3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
+      </button>
+      <button type="button" className={narrow ? `${cls} border-l` : `${cls} -ml-px`} disabled={!redo} onClick={() => onStep("redo")} title={tip("redo", redo)} aria-label={tip("redo", redo)} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" data-history-redo>
+        <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M10.5 3.5l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M13 6.5H6.5a3.5 3.5 0 0 0 0 7H9" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
+      </button>
+    </div>
+  );
+}
 
 /**
  * The Pages menu. Radix in a portal (operator bugs 3 and 4): the builder bar clips its overflow for the

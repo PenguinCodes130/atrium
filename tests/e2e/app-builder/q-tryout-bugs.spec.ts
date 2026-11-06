@@ -322,6 +322,11 @@ test("B7 criterion 7: frosted theme, no grid outside a drag, a faint column over
   const view = await vctx.newPage();
   await view.goto(`/a/${app.slug}`);
   await expect(view.locator("[data-atrium-canvas]").first()).toBeVisible({ timeout: 15_000 });
+  // Wave 2.10c: wait for the two stats themselves (a busy VM drew the canvas before them once, suite3),
+  // then the fixed 800 ms as before.
+  await expect(view.locator('[data-atrium-canvas] [data-type="stat"]')).toHaveCount(2, { timeout: 10_000 });
+  // Drawn, not only present: each stat and every box around it fully opaque (an entrance may still run).
+  await expect.poll(() => view.evaluate(() => [...document.querySelectorAll('[data-atrium-canvas] [data-type="stat"]')].every((el) => { for (let a: Element | null = el; a; a = a.parentElement) if (Number(getComputedStyle(a).opacity) < 1) return false; return true; })), { timeout: 10_000 }).toBe(true);
   await view.waitForTimeout(800);
   result.viewPainters = await gridPainters(view);
   expect.soft(result.viewPainters, "the viewer draws no grid").toEqual([]);

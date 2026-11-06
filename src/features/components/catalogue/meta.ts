@@ -64,6 +64,17 @@ export const META: Record<BuiltInType, ComponentMeta> = {
       examples: [node("repeat", "repeat", { items: bind("{{ hosts.rows }}"), columns: 3 }, { children: [node("stat", "repeatstat", { value: bind("{{ $item.cpu }}"), label: bind("{{ $item.name }}"), unit: "%" })] })],
     },
   },
+  roulette: {
+    type: "roulette", title: "Roulette", category: "layout", container: true, maxChildren: 50, defaults: { mode: "slots", advance: { scroll: true, arrows: true, dots: true } }, styleSlots: ["root", "slot", "dots"],
+    docs: {
+      summary: "Shows one child at a time and turns like a revolver cylinder: by scroll after a click on it, by its arrows and dots, or on a timer. Slots mode turns through its children (2 to 50); repeat mode draws its one child once per row (at most 50), with $item and $index.",
+      whenToUse: "Several values that share one spot, such as CPU for each machine, or a few views to flip through.",
+      examples: [
+        node("roulette", "roulettereps", { mode: "repeat", items: bind("{{ hosts.rows }}"), timerSec: 10 }, { children: [node("stat", "roulettestat", { value: bind("{{ $item.cpu }}"), label: bind("{{ $item.name }}"), unit: "%" })] }),
+        node("roulette", "rouletteslot", { mode: "slots" }, { children: [node("stat", "rouletteone", { data: bind("{{ cpu }}") }), node("status", "roulettetwo", { data: bind("{{ services }}") })] }),
+      ],
+    },
+  },
   stat: {
     type: "stat", title: "Stat", category: "data", container: false, accepts: ["stat"], defaults: { label: "", decimals: 1 }, styleSlots: ["root", "value", "label", "unit", "delta"], states: ["hover"],
     docs: { summary: "One big number with its unit, label, change and threshold colour.", whenToUse: "A single live value: CPU, temperature, free disk.", examples: [node("stat", "stat", { data: bind("{{ cpu }}"), warn: 70, bad: 90 })] },
@@ -211,6 +222,7 @@ export const SIZING: Record<BuiltInType, ComponentSizing> = {
   button: "fit", toggle: "fit", slider: "fit", select: "fit",
   html: "fit",
   "service-tile": "fit", group: "fit", "resource-bar": "fit", bookmarks: "fit",
+  roulette: "scale",
 };
 
 /**

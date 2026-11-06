@@ -144,14 +144,31 @@ export function AppView(p: ViewProps) {
     // Scope and canonical address agree (gauntlet w2-r1 item 4). Once the worker is active, the page hands
     // it the document and the files it loaded, so an offline reload can draw the app after one visit.
     const base = `/a/${p.app.slug}`;
+    // Wave 2.10c (lead round, service worker stall): when this load found a new version (a publish since the
+    // last visit), the files go to the NEW worker once it is active. Posting them to the outgoing one woke it
+    // and held the new version back, and the next navigation was handed to a worker about to stop.
+    let gone = false;
+    const settled = (reg: ServiceWorkerRegistration): Promise<ServiceWorker | null> => {
+      const next = reg.installing ?? reg.waiting;
+      if (!next) return Promise.resolve(reg.active);
+      return new Promise((resolve) => {
+        const done = () => { if (next.state === "activated" || next.state === "redundant") { next.removeEventListener("statechange", done); resolve(next.state === "activated" ? next : reg.active); } };
+        next.addEventListener("statechange", done);
+        done();
+        // Never wait for ever: without an answer in 10 s, skip the offline copy for this visit.
+        window.setTimeout(() => { next.removeEventListener("statechange", done); resolve(null); }, 10_000);
+      });
+    };
     navigator.serviceWorker
       .register(`${base}/sw.js`, { scope: base })
-      .then(() => navigator.serviceWorker.ready)
-      .then((reg) => {
+      .then((reg) => settled(reg))
+      .then((worker) => {
+        if (gone || !worker) return;
         const urls = [window.location.pathname + window.location.search, ...performance.getEntriesByType("resource").map((e) => e.name).filter((u) => u.startsWith(window.location.origin))];
-        reg.active?.postMessage({ type: "atrium-cache", urls });
+        worker.postMessage({ type: "atrium-cache", urls });
       })
       .catch(() => {});
+    return () => { gone = true; };
   }, [p.mode, p.app.slug, p.snapshot]);
   return (
     <>
