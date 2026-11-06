@@ -189,6 +189,10 @@ export function BuilderScreen(props: BuilderProps) {
   const intoRef = useRef<Into | null>(null);
   const suppressClick = useRef(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  // Try-out 2.10b: a widget inside a Repeat is drawn once per row; these say WHICH copy was clicked or is
+  // under the pointer, so its outline sits on that copy instead of always on the first one.
+  const [selCopy, setSelCopy] = useState<{ id: string; nth: number } | null>(null);
+  const [hovCopy, setHovCopy] = useState<{ id: string; nth: number } | null>(null);
   const [device, setDevice] = useState<Device>("desktop");
   const [editMode, setEditMode] = useState(true);
   // ---- Wave 2.6: snapping, preview width, folded panels (remembered per person in this browser) ----
@@ -609,9 +613,17 @@ export function BuilderScreen(props: BuilderProps) {
     }
     return null;
   };
-  const rectOf = (id: string | null) => {
+  /** Which copy of a widget an event hit: its index among the canvas elements drawn for that id. */
+  const copyAt = (target: EventTarget | null, id: string | null): { id: string; nth: number } | null => {
+    if (!id || !canvasRef.current || !(target instanceof Element)) return null;
+    const el = target.closest(`[data-node="${CSS.escape(id)}"]`);
+    const all = [...canvasRef.current.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)];
+    const nth = el ? all.indexOf(el) : -1;
+    return all.length > 1 && nth > 0 ? { id, nth } : null;
+  };
+  const rectOf = (id: string | null, copy?: { id: string; nth: number } | null) => {
     if (!id || !canvasRef.current) return null;
-    const el = canvasRef.current.querySelector(`[data-node="${CSS.escape(id)}"]`);
+    const el = copy && copy.id === id ? canvasRef.current.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)[copy.nth] ?? canvasRef.current.querySelector(`[data-node="${CSS.escape(id)}"]`) : canvasRef.current.querySelector(`[data-node="${CSS.escape(id)}"]`);
     if (!el) return null;
     const r = el.getBoundingClientRect();
     const o = canvasRef.current.getBoundingClientRect();
@@ -1487,12 +1499,12 @@ export function BuilderScreen(props: BuilderProps) {
     if (measureRounds.current++ > 3) return;
     if (measureRounds.current === 1) window.requestAnimationFrame(() => { measureRounds.current = 0; });
     const next = {
-      sel: editMode ? rectOf(selectedId) : null,
-      hov: editMode && !narrow && hoverId !== selectedId ? rectOf(hoverId) : null,
+      sel: editMode ? rectOf(selectedId, selCopy) : null,
+      hov: editMode && !narrow && (hoverId !== selectedId || hovCopy?.nth !== selCopy?.nth) ? rectOf(hoverId, hovCopy) : null,
       multi: multiOn && editMode ? multi.flatMap((id) => { const r = rectOf(id); return r ? [{ id, r }] : []; }) : [],
     };
     setRects((prev) => (sameRect(prev.sel, next.sel) && sameRect(prev.hov, next.hov) && prev.multi.length === next.multi.length && prev.multi.every((m, i) => m.id === next.multi[i]!.id && sameRect(m.r, next.multi[i]!.r)) ? prev : next));
-  }, [selectedId, hoverId, multi, multiOn, editMode, narrow, doc, forced, canvasW, innerH, zoom, device, page.id, ghost, drag, resizing, growTick, narrowTab, foldLeft, foldRight]);
+  }, [selectedId, hoverId, selCopy, hovCopy, multi, multiOn, editMode, narrow, doc, forced, canvasW, innerH, zoom, device, page.id, ghost, drag, resizing, growTick, narrowTab, foldLeft, foldRight]);
   useEffect(() => {
     const el = selectedId ? canvasRef.current?.querySelector(`[data-node="${CSS.escape(selectedId)}"]`) : null;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -1586,7 +1598,7 @@ export function BuilderScreen(props: BuilderProps) {
             <button type="button" aria-pressed={editMode} onClick={() => setEditMode((v) => !v)} className={`h-8 border border-line-strong px-2 type-label ${editMode ? "bg-fg text-bg" : "text-fg-2"}`} data-edit-toggle>Edit</button>
           </>
         )}
-        <Button variant="quiet" href={`/a/${app.slug}/${page.slug}?draft=1`} target="_blank" rel="noopener" aria-label="Preview (opens a new tab)" title="Opens in a new tab" className="flex-none max-sm:w-11 max-sm:px-0" data-preview>
+        <Button variant="secondary" href={`/a/${app.slug}/${page.slug}?draft=1`} target="_blank" rel="noopener" aria-label="Preview the full page (opens a new tab)" title="See this page full size, as people will see it, in a new tab" className="flex-none max-sm:w-11 max-sm:px-0" data-preview>
           {/* Phones (gauntlet w2-r3 item 5): the glyph alone, in a 44px square; the name stays in aria-label. */}
           <span className="max-sm:sr-only">Preview</span>
           <svg viewBox="0 0 12 12" width={11} height={11} aria-hidden className="ml-1 flex-none max-sm:ml-0 max-sm:h-4 max-sm:w-4" data-external-glyph>
@@ -1651,7 +1663,7 @@ export function BuilderScreen(props: BuilderProps) {
               className="relative"
               style={scaled ? { width: (previewW as number) * zoom, height: innerH * zoom } : undefined}
               data-canvas-zoom={Math.round(zoom * 1000) / 1000}
-              onPointerMove={(e) => { if (editMode && !drag && !resizing && !narrow) setHoverId(nodeAt(e.target)); }}
+              onPointerMove={(e) => { if (editMode && !drag && !resizing && !narrow) { const id = nodeAt(e.target); setHoverId(id); const c = copyAt(e.target, id); setHovCopy((p) => (p?.id === c?.id && p?.nth === c?.nth ? p : c)); } }}
               onPointerLeave={() => setHoverId(null)}
               onPointerDown={(e) => {
                 // A box dragged from empty canvas (a grid, not a widget) selects what it touches (spec 3.2).
@@ -1672,7 +1684,7 @@ export function BuilderScreen(props: BuilderProps) {
                 e.stopPropagation();
                 if (suppressClick.current) { suppressClick.current = false; return; }
                 if (id && e.shiftKey && !narrow && id !== page.root.id) { toggleMulti(id); return; }
-                if (id) { setMulti([]); setSelectedId(id); setAnnounce(`Selected ${nodeLabel(findNode(doc, id)!.node)}`); }
+                if (id) { setMulti([]); setSelectedId(id); setSelCopy(copyAt(e.target, id)); setAnnounce(`Selected ${nodeLabel(findNode(doc, id)!.node)}`); }
               }}
               data-canvas-root
               data-theme-previewing={previewTheme?.id}

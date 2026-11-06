@@ -536,14 +536,20 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
                 {thing === null && (
                   !res ? <ul className="m-0 flex list-none flex-col gap-1 p-0">{[0, 1, 2].map((i) => <li key={i} className="h-11 border border-line bg-bg-sunk" />)}</ul> : (
                     <ul className="m-0 flex list-none flex-col gap-1 p-0" data-show-things>
-                      {thingsOfService.map((t) => (
+                      {thingsOfService.map((t) => {
+                        // Try-out 2.10b: a thing with one read is that read, so it is listed as the choice itself
+                        // (live value, preview on hover, Use on click) instead of a level to open and back out of.
+                        const only = t.count === 1 ? items.find((it) => (it.thing ? `${it.thing.param}=${it.thing.value}` : "") === t.value) : undefined;
+                        if (only) return rowFor(only);
+                        return (
                         <li key={t.value}>
                           <button type="button" className={row} onClick={() => setThing(t.value)} data-show-thing={t.value}>
                             <span className="flex min-w-0 flex-1 flex-col"><span className="type-body truncate font-medium">{t.label}</span>{t.detail && <span className="type-caption truncate text-fg-2">{t.detail}</span>}</span>
                             <span className="type-caption flex-none text-fg-2">{t.count} {t.count === 1 ? "read" : "reads"}</span>
                           </button>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )
                 )}

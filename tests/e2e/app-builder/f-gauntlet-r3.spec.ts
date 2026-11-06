@@ -636,7 +636,7 @@ test("items 9, 10, 15, 17: the canvas tag names a library instance; Preview says
   await page.screenshot({ path: ev("screens", "item9-library-tag.png") });
   // 10
   const preview = page.locator("[data-preview]");
-  await expect(preview).toHaveAccessibleName("Preview (opens a new tab)");
+  await expect(preview).toHaveAccessibleName("Preview the full page (opens a new tab)");
   await expect(preview.locator("[data-external-glyph]")).toBeVisible();
   expect(await preview.getAttribute("target")).toBe("_blank");
   await preview.screenshot({ path: ev("screens", "item10-preview-glyph.png") });

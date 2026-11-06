@@ -11,7 +11,7 @@
 // The outermost RenderNode becomes the render root: it measures its own width (phones under 640px,
 // unless RenderDeviceProvider forces a device), ticks $now each second only when the tree reads it,
 // and, for signed-in editors, asks the server to compile CSS for nodes edited since the page loaded.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import "../components.css";
 import type { ComponentNode, PropValue, RenderContext } from "@/core/contracts";
@@ -286,7 +286,7 @@ function PlainNodeView({ node, ctx, scope, path }: { node: ComponentNode; ctx: R
       ) : null}
       <ScopeContext.Provider value={{ scope, path }}>
         <NodeContext.Provider value={env}>
-          {Comp ? <Comp node={eff} resolved={resolved} ctx={ctx} /> : <div data-slot="root" className="atr-unknown canvas-surface">This component type is not installed: {node.type}</div>}
+          {Comp ? <WidgetBoundary nodeId={node.id} resetKey={JSON.stringify(eff.props)}><Comp node={eff} resolved={resolved} ctx={ctx} /></WidgetBoundary> : <div data-slot="root" className="atr-unknown canvas-surface">This component type is not installed: {node.type}</div>}
         </NodeContext.Provider>
       </ScopeContext.Provider>
       {sample && edit ? (
@@ -336,4 +336,24 @@ function InstanceView({ node, ctx, scope, path }: { node: ComponentNode; ctx: Re
       <NodeView node={inner} ctx={ctx} scope={innerScope} path={path} />
     </div>
   );
+}
+
+/**
+ * Try-out 2.10b: one widget that throws while drawing (an odd value, a text where a number was expected)
+ * shows a small note in its own box instead of taking the whole page or builder down with it. Changing the
+ * widget's settings or data tries again.
+ */
+class WidgetBoundary extends Component<{ nodeId: string; resetKey: string; children: ReactNode }, { failed: string | null; key: string }> {
+  state = { failed: null as string | null, key: this.props.resetKey };
+  static getDerivedStateFromError(e: unknown) { return { failed: e instanceof Error ? e.message : String(e) }; }
+  static getDerivedStateFromProps(p: { resetKey: string }, s: { failed: string | null; key: string }) { return p.resetKey !== s.key ? { failed: null, key: p.resetKey } : null; }
+  componentDidCatch(e: unknown) { console.error(`Widget ${this.props.nodeId} could not draw`, e); }
+  render() {
+    if (this.state.failed === null) return this.props.children;
+    return (
+      <div data-slot="root" className="atr-unknown canvas-surface" role="alert" data-widget-failed={this.props.nodeId}>
+        This widget could not draw its data. Change its data or settings to try again.
+      </div>
+    );
+  }
 }

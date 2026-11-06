@@ -366,6 +366,7 @@ function RowHint({ node, doc, live }: { node: ComponentNode; doc: AppDocument; l
   const key = fields.find((f) => /^(name|label|host|title)$/i.test(f.key))?.key ?? fields[0]?.key ?? "name";
   return (
     <p className="m-0 border-b border-line px-3 py-2 type-caption text-fg-2" data-row-hint={around.repeatId}>
+      <strong className="block font-medium text-fg" data-row-hint-all>{repeat ? nodeLabel(repeat) : "A repeat"} draws this once for each row, so a change here changes every copy.</strong>
       Inside {repeat ? nodeLabel(repeat) : "a repeat"}: each copy shows its own row. Use <code className="font-mono text-fg">{`{{ $item.${key} }}`}</code> for this row&apos;s {fields.find((f) => f.key === key)?.label.toLowerCase() ?? key}, or Pick data, This row.
     </p>
   );

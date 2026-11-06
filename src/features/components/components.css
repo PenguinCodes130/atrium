@@ -158,6 +158,9 @@
   .atr-stack { display: flex; gap: var(--theme-gap, 16px); }
   /* Rows keep their content's height: a box grown taller never spreads its cards apart (w210a r3). */
   .atr-repeat { display: grid; gap: var(--theme-gap, 16px); align-content: start; }
+  /* Try-out 2.10b: copies side by side in one row share the tallest copy's height. */
+  .atr-repeat > [data-slot="item"] { display: flex; flex-direction: column; min-width: 0; }
+  .atr-repeat > [data-slot="item"] > * { flex: 1 1 auto; }
   .atr-section { display: flex; flex-direction: column; gap: calc(var(--theme-gap, 16px) / 2); }
   .atr-section-title { margin: 0; font-family: var(--theme-font-display); font-weight: var(--theme-heading-weight, 600); letter-spacing: var(--theme-heading-tracking, -0.02em); font-size: calc(22px * var(--theme-type-scale, 1)); color: var(--theme-canvas-text); }
   .atr-section-desc { margin: 0; color: var(--theme-surface-muted); font-size: calc(14px * var(--theme-type-scale, 1)); }
@@ -482,8 +485,12 @@
   .atr-bar .atr-marks { top: 4px; right: 6px; }
   /* Lead w210a: the readings start at 240px so a narrow bar moves its clock and search onto a second line
      instead of squeezing the readings into a sliver that spills over them. */
-  .atr-bar-items { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; flex: 1 1 240px; min-width: 0; }
+  /* Try-out 2.10b: equal columns sized by the bar's width only, never by the values, so every copy in a
+     Repeat (a card for each machine) breaks its readings onto rows the same way and the cards match. */
+  .atr-bar-items { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(112px * var(--atr-k, 1))), 1fr)); gap: 8px 22px; flex: 1 1 240px; min-width: 0; }
   .atr-bar-item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .atr-bar-item .atr-bar-line { overflow: hidden; text-overflow: ellipsis; }
+  .atr-bar-item .atr-bar-track { max-width: 100%; }
   .atr-bar-icon { color: var(--theme-surface-muted); display: inline-flex; }
   .atr-bar-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .atr-bar-line { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
