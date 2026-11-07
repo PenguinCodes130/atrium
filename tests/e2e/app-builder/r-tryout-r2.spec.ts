@@ -163,7 +163,7 @@ test("item 1: right after Create app from the start page template, the canvas sh
   await ctx.close();
 });
 
-test("item 1: an existing app with boxes too small for their content opens uncropped in the builder", async ({ browser }) => {
+test("item 1 (changed in 2.10c r2 item 7): an existing app with boxes too small opens unchanged, the cut boxes marked", async ({ browser }) => {
   const card = cid();
   const kids: Node[] = [
     { id: card, type: "card", title: "Rack", props: {}, slot: { x: 0, y: 0, w: 4, h: 6 }, children: [{ id: cid(), type: "stat", props: { label: "CPU", value: 42, unit: "%" } }] },
@@ -185,13 +185,13 @@ test("item 1: an existing app with boxes too small for their content opens uncro
   await view.screenshot({ path: out("item1-old-viewer.png") });
   note("item1-old", { edit, viewer });
   expect(viewer).toEqual([]);
-  expect(edit, "an old app opens with nothing cut").toEqual([]);
-  // The growth is one undo step: Ctrl+Z puts the drawn boxes back.
-  const grown = await draft(app.id);
-  expect(nodeIn(grown, card)!.slot!.h).toBeGreaterThan(6);
-  await key(page, "Control+z");
-  const back = await untilDraft(app.id, (d) => nodeIn(d, card)!.slot!.h === 6);
-  expect(nodeIn(back, card)!.slot!.h).toBe(6);
+  // Wave 2.10c r2 item 7 (changed from Wave 2.10 round 2): opening the builder writes nothing and records no
+  // step; a box too small for its content keeps the size it was given and says so with "Content is cut · Fit".
+  void edit;
+  const after = await draft(app.id);
+  expect(nodeIn(after, card)!.slot!.h, "the drawn size is kept").toBe(6);
+  await expect(page.locator("[data-builder-bar] [data-history-undo]"), "no step on open").toBeDisabled();
+  expect(await page.locator("[data-canvas-root] [data-content-cut]").count(), "the cut boxes say so (components' badge)").toBeGreaterThan(0);
   await ctx.close();
 });
 
@@ -217,7 +217,8 @@ test("item 8: a saved theme edit after publish shows Theme changed since v1 and 
   await expect(status).toContainText("Theme changed since v1", { timeout: 6000 });
   await expect(page.locator('[data-door="outlined"]')).toHaveCount(1);
   await page.locator("[data-publish]").click();
-  await expect(page.getByText(/theme .*changed since v1/i).first()).toBeVisible({ timeout: 6000 });
+  // Wave 2.10c r2: the bar's status is a dot below 1600 px, so the sentence is looked for in the review.
+  await expect(page.locator("[role=dialog]").getByText(/theme .*changed since v1/i).first()).toBeVisible({ timeout: 6000 });
   await expect(page.locator("[data-publish-confirm]")).toBeEnabled();
   await page.screenshot({ path: out("item8-review.png") });
   await page.locator("[data-publish-confirm]").click();

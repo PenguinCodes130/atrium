@@ -259,11 +259,13 @@ describe("fetchFavicon: picks, caps and stores", () => {
     }
   });
 
-  it("a page over 512 KB is not parsed; /favicon.ico is tried instead", async () => {
+  // Round 2 (Fix 16): a page over 512 KB is asked for again with a Range header first (favicon-r2.test.ts);
+  // this scripted site ignores Range, so only /favicon.ico is left.
+  it("a page over 512 KB whose server sends no part is not parsed; /favicon.ico is tried instead", async () => {
     const s = scripted({ "/": { body: "x".repeat(600 * 1024) }, "/favicon.ico": { type: "image/x-icon", body: ico([{ w: 32, bpp: 32 }]) } });
     const r = await m.fetchFavicon(OWNER, "https://bigpage.fake.example/", { request: s.request, resolve: publicDns });
     expect(r.path).toMatch(/\.png$/);
-    expect(s.calls.map((c) => new URL(c.url).pathname)).toEqual(["/", "/favicon.ico"]);
+    expect(s.calls.map((c) => [new URL(c.url).pathname, c.headers?.range ?? null])).toEqual([["/", null], ["/", "bytes=0-524287"], ["/favicon.ico", null]]);
   });
 
   it("an icon over 1 MB, or only icons over 256 px, answer in words", async () => {
@@ -312,21 +314,21 @@ describe("fetchFavicon: picks, caps and stores", () => {
   });
 });
 
-describe("fetchFavicon: the 7 day same-origin store", () => {
+describe("fetchFavicon: the 7 day store (round 2: keyed by the exact address)", () => {
   let m: Awaited<ReturnType<typeof boot>>;
   beforeEach(async () => {
     m = await boot();
     m.resetFaviconLimits();
   });
 
-  it("the same origin within 7 days answers the stored path without any request; after 7 days it fetches again", async () => {
+  it("the same address within 7 days answers the stored path without any request; after 7 days it fetches again", async () => {
     let now = Date.UTC(2026, 10, 6, 12);
     const clock = () => now;
     const s = scripted({ "/": { body: HTML(`<link rel="icon" href="/i.png">`) }, "/i.png": { type: "image/png", body: png(32, 32, 5) } });
     const first = await m.fetchFavicon(OWNER, "https://cache.fake.example/", { request: s.request, resolve: publicDns, now: clock });
     expect(s.calls).toHaveLength(2);
     now += 6 * 24 * 3600 * 1000;
-    const again = await m.fetchFavicon(MEMBER, "https://cache.fake.example/another/page?x=1", { request: s.request, resolve: publicDns, now: clock });
+    const again = await m.fetchFavicon(MEMBER, "https://cache.fake.example", { request: s.request, resolve: publicDns, now: clock });
     expect(again).toEqual({ ...first, cached: true });
     expect(s.calls).toHaveLength(2);
     // Another origin (other scheme or port) is its own entry.

@@ -13,10 +13,11 @@ import { findNode, findPage, newId, nodeLabel, orderedPages, slugify } from "@/f
 import { AppFrame } from "./app-frame";
 import { DraftClient, type SendResult } from "./draft-client";
 import { tagFor } from "./tags";
-import { overflowRowsOf, overflowXOf } from "./fit-measure";
+import { minFitRows, overflowRowsOf, overflowXOf } from "./fit-measure";
 import { growTriggers, MAX_GROW_ROWS, sizingOf, WATCH_MS } from "./auto-grow";
 import { getComponentDef, iconSlotIn, measureTableOverflow } from "./components-client";
 import { guidesFor, nearestGapPx, smartSnap, spacingFor, type SpacingMark } from "./snap";
+import { ROULETTE_SHOW_EVENT, rouletteRefusal } from "./roulette-drop";
 import { alignGuides, alignOps, cellAt, columnsOn, coveredOnPage, distributeOps, FINE, fitOps, freeSpot, freshCopy, gridColumns, groupDuplicateOps, groupMoveOps, keyAction, overlaps, resizeSlot, sameSizeOps, slotOn, slotOp, slotRect, snapDrop, withGapsClosed, type AlignHow, type Device, type Edges, type GridBox, type Guide } from "./geometry";
 import { boxForShape, shapeRatio } from "@/features/components/inspector/media";
 import { uploadFile, guessKind } from "@/features/uploads/client";
@@ -36,8 +37,8 @@ import { ShowPicker, type ShowTarget } from "./show-picker";
 import { MachineChooser, ServiceChooser, StartPageSheet } from "./service-sheets";
 import { normaliseOps } from "@/features/apps/managed";
 import { timingOf } from "./data-line";
-import { fieldKey } from "./history-label";
-import { overridesOf, repeatSource, rowKeyOf } from "./copy-overrides";
+import { fieldKey, kindWord, stepName } from "./history-label";
+import { overridesOf, repeatSource, rowKeyOf, safeKey } from "./copy-overrides";
 import { repeatItems } from "@/features/components/render/resolve";
 
 /** Wave 2.10c N2: a field the person types in (its own undo wins there), as opposed to a button or a checkbox. */
@@ -69,9 +70,13 @@ export type BuilderProps = {
 
 type Drag = { kind: "insert"; item: InsertItem; w: number; h: number } | { kind: "move"; nodeId: string; label: string; w: number; h: number; /** Several selected: they all move by the same amount (spec 3.2). */ group?: string[] };
 /** A drop into a container (a selected one, or an empty Repeat) rather than onto a grid cell (spec 3.2). */
-type Into = { id: string; name: string; rect: { left: number; top: number; width: number; height: number }; /** A group (A10.7): where among its tiles the drop lands. */ index?: number };
-/** Containers a widget can be dropped into; a Repeat takes one child. */
-const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat", "group"]);
+type Into = { id: string; name: string; rect: { left: number; top: number; width: number; height: number }; /** A group (A10.7): where among its tiles the drop lands. */ index?: number; /** Wave 2.10c r2 item 1: a full roulette says why it takes nothing more. */ refused?: string };
+/** Containers a widget can be dropped into; a Repeat takes one child; a roulette its slots (A11.4). */
+const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat", "group", "roulette"]);
+/** Wave 2.10c r2 item 1: turns a roulette on the canvas to the slot just added (edit mode; components listen). */
+function showRouletteSlot(rouletteId: string, index: number): void {
+  if (typeof window !== "undefined") window.setTimeout(() => window.dispatchEvent(new CustomEvent(ROULETTE_SHOW_EVENT, { detail: { nodeId: rouletteId, index } })), 120);
+}
 type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[]; /** F7: equal-spacing marks and the gap to the nearest neighbour, in canvas px. */ spacing?: SpacingMark[]; gap?: { px: number; axis: "x" | "y" } | null; /** F7: the faint columns (Snap on, even while Alt holds the pull off). */ columns?: boolean };
 /** One button on a selected widget's toolbar: a 10px stroked icon, a 44px hit area on touch screens. */
 function BarButton({ label, title, onClick, disabled, pressed, danger, children, ...data }: { label: string; title: string; onClick(): void; disabled?: boolean; pressed?: boolean; danger?: boolean; children: React.ReactNode } & Record<`data-${string}`, unknown>) {
@@ -82,7 +87,8 @@ function BarButton({ label, title, onClick, disabled, pressed, danger, children,
       title={title}
       aria-pressed={pressed}
       disabled={disabled}
-      className={`pointer-events-auto relative flex h-5 w-5 items-center justify-center border-l border-bg/40 bg-accent-ink text-bg after:absolute after:-inset-1 disabled:opacity-40 touch:after:-inset-3 ${danger ? "hover:bg-bad" : "hover:bg-fg"}`}
+      // Wave 2.10c r2 item 17: 44 px buttons on touch screens (the phone's only delete is here).
+      className={`pointer-events-auto relative flex h-5 w-5 items-center justify-center border-l border-bg/40 bg-accent-ink text-bg after:absolute after:-inset-1 disabled:opacity-40 touch:h-11 touch:w-11 touch:after:inset-0 ${danger ? "hover:bg-bad" : "hover:bg-fg"}`}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       {...data}
@@ -131,12 +137,16 @@ const START_PAGE_INSERT: InsertItem = { type: "start-page", title: "Start page",
 const DATA_TYPES = new Set(["stat", "chart", "table", "list", "status", "gauge", "progress"]);
 /** Round 2 item 14: components that insert as wide as their grid (a table's columns need the room). */
 const WIDE_TYPES = new Set(["table"]);
+/** Wave 2.10c r2 item 19: widgets whose height is their text's (a resize cannot make them shorter). */
+const TEXT_FLOW = new Set(["text", "heading", "link"]);
 /** Pull distance of the alignment guides, in screen px (spec 3.5). */
 const GUIDE_PULL_PX = 6;
 
 const NARROW = "(max-width: 899.98px)";
 /** Round 2 item 1: how long after a page opens its fit components are watched (live data arrives later). */
 const OPEN_WATCH_MS = 10000;
+/** Wave 2.10c r2 item 9: how long a new start page's boxes are watched while its live data and legends arrive. */
+const START_WATCH_MS = 30000;
 
 /** The eight resize handles on the selected outline, centred on its 2px border (operator bug 2). */
 const RESIZE_HANDLES: { id: string; edges: Edges; cls: string }[] = [
@@ -362,6 +372,8 @@ export function BuilderScreen(props: BuilderProps) {
   }, [doc, pageId, app.slug, refreshRender]);
 
   // Wave 2.10 B1 (A11.2): components an edit changed, watched for a while so a fit one grows to its content.
+  /** Wave 2.10c r2 item 7: until when the first open after Create app fits the template (0: never). */
+  const newAppFit = useRef(0);
   const growWatch = useRef(new Map<string, { until: number; entry: number; grown: number; force?: boolean; last?: Record<string, number>; /** Passes in a row that did not shrink the overflow. */ strikes?: number; /** Round 2 item 1: watched because the page opened. */ open?: boolean }>());
   const [growTick, setGrowTick] = useState(0);
   /** The undo entry of the insert that opened the service or machine chooser (its choice joins it). */
@@ -376,6 +388,8 @@ export function BuilderScreen(props: BuilderProps) {
     for (const ms of [60, 300, 900, 2000, WATCH_MS - 200]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
   }, []);
 
+  /** Wave 2.10c r2 item 19: how to undo, in words for this screen (a phone has no Ctrl+Z). */
+  const undoWords = () => (typeof window !== "undefined" && (window.matchMedia(NARROW).matches || window.matchMedia("(pointer: coarse)").matches) ? "Tap Undo to bring it back." : "Undo with Ctrl+Z.");
   /** A toast's Undo: takes back its own step only while it is still the newest (never a later edit). */
   const undoStep = useCallback((entry: number) => {
     growWatch.current.clear();
@@ -408,7 +422,7 @@ export function BuilderScreen(props: BuilderProps) {
     const label = client.current!.undoLabel;
     if (opts.deleteToast !== false && entry !== entryBefore && label?.startsWith("Delete ")) {
       toast({
-        kind: "info", title: label.replace(/^Delete /, "Deleted "), description: opts.deleteToast ?? "Undo with Ctrl+Z.",
+        kind: "info", title: label.replace(/^Delete /, "Deleted "), description: (opts.deleteToast ?? "Undo with Ctrl+Z.").replace("Undo with Ctrl+Z.", undoWords()),
         action: { label: "Undo", onClick: () => undoStep(entry) },
       });
     }
@@ -571,6 +585,56 @@ export function BuilderScreen(props: BuilderProps) {
     if (multi.length && (!selectedId || !multi.includes(selectedId))) setMulti([]);
   }, [selectedId]);
 
+  // Wave 2.10c r2 item 1: the container a drag would drop into carries data-drop-over ("" or "refused"), so its
+  // own drop zone (the roulette's "Drop widgets here") can light up too (interface note for components).
+  useEffect(() => {
+    if (!drag || !into) return;
+    const el = canvasRef.current?.querySelector(`[data-node="${CSS.escape(into.id)}"]`);
+    el?.setAttribute("data-drop-over", into.refused ? "refused" : "");
+    return () => el?.removeAttribute("data-drop-over");
+  }, [drag, into]);
+
+  /**
+   * Wave 2.10c r2 item 8: inside an inspector text field, Ctrl+Z and Ctrl+Shift+Z (Ctrl+Y) step the builder's
+   * history instead of the browser's text undo. Typing in a field is already one builder step (A11.1), so the
+   * field's own undo and the builder's are the same step: the typing goes back, Redo offers it again, and no
+   * new change is recorded on top. With nothing typed there, the step before it goes back (the field has
+   * nothing of its own to undo). Text fields elsewhere (searches, renames, sheets) keep the browser's undo.
+   */
+  useEffect(() => {
+    const inField = (t: EventTarget | null): t is HTMLElement => t instanceof HTMLElement && isTextEntry(t) && !!t.closest("[data-builder-inspector]") && !t.closest("[role=dialog]") && !!rootRef.current?.contains(t);
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || !/^[zy]$/i.test(e.key) || !inField(e.target)) return;
+      e.preventDefault();
+      historyStepRef.current(e.key.toLowerCase() === "y" || e.shiftKey ? "redo" : "undo");
+    };
+    // The Edit menu's Undo (and any other history input) must not add a change on top either.
+    const onBefore = (e: InputEvent) => { if (/^history(Undo|Redo)$/.test(e.inputType) && inField(e.target)) { e.preventDefault(); historyStepRef.current(e.inputType === "historyRedo" ? "redo" : "undo"); } };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("beforeinput", onBefore, true);
+    return () => { window.removeEventListener("keydown", onKey, true); window.removeEventListener("beforeinput", onBefore, true); };
+  }, []);
+  /**
+   * Wave 2.10c r2 item 14: with one Repeat copy selected, the inspector previews bindings against that copy's
+   * row (`$item`, `$index`), not the first row. Components' `rowScope` keeps an `$item` already in scope.
+   */
+  const copyCtx: RenderContext = useMemo(() => {
+    if (!selRow) return ctx;
+    const r = findNode(doc, selRow.repeatId)?.node;
+    const src = r ? repeatSource(r) : null;
+    const rows = src ? repeatItems(shownData[src], 200) : [];
+    const i = rows.findIndex((_, k) => rowKeyOf(rows, k) === selRow.rowKey);
+    return i < 0 ? ctx : { ...ctx, values: { ...(ctx.values as Record<string, unknown>), $item: rows[i], $index: i } as RenderContext["values"] };
+  }, [ctx, selRow, doc, shownData]);
+  // Wave 2.10c r2 item 1 (components' note): selecting a roulette's slot (in Layers, or after an insert) turns
+  // the roulette to it, so its box and outline are drawn.
+  useEffect(() => {
+    const at = selectedId ? findNode(client.current!.doc, selectedId) : null;
+    if (at?.parent?.type === "roulette" && at.parent.props.mode !== "repeat") showRouletteSlot(at.parent.id, at.index);
+  }, [selectedId]);
+  /** Wave 2.10c r2 item 1: the widget Ctrl+C or Ctrl+X took, and where Ctrl+V puts it (placeNode, below). */
+  const clipRef = useRef<ComponentNode | null>(null);
+  const placeRef = useRef<(node: ComponentNode, hint?: GridSlot) => void>(() => {});
   // ---- Keyboard (design v4 section 6) ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -613,6 +677,25 @@ export function BuilderScreen(props: BuilderProps) {
           return;
         }
         if (!e.ctrlKey && !e.metaKey) return;
+      }
+      // Wave 2.10c r2 item 1: Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste widgets inside the builder; a paste
+      // lands where Insert would (into a selected roulette or card's flow, else beside the selection).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && /^[xcv]$/i.test(e.key) && !(window.getSelection()?.toString() ?? "")) {
+        const k = e.key.toLowerCase();
+        const cur = client.current!.doc;
+        if (k === "v") {
+          if (!clipRef.current) return;
+          e.preventDefault();
+          placeRef.current(freshCopy(clipRef.current), clipRef.current.slot);
+          return;
+        }
+        const at = selectedId ? findNode(cur, selectedId) : null;
+        if (!at?.parent) return;
+        e.preventDefault();
+        clipRef.current = structuredClone(at.node);
+        if (k === "c") { setAnnounce(`Copied ${nodeLabel(at.node)}. Paste with Ctrl+V.`); return; }
+        apply([{ op: "node.remove", nodeId: at.node.id }], { announce: `Cut ${nodeLabel(at.node)}. Paste it with Ctrl+V.`, select: at.parent.id, label: `Cut ${kindWord(at.node)}`, deleteToast: false });
+        return;
       }
       const act = keyAction(client.current!.doc, selectedId, { key: e.key, shift: e.shiftKey, alt: e.altKey, mod: e.ctrlKey || e.metaKey }, device, { step: snapRef.current ? 1 : FINE });
       if (!act) return;
@@ -696,20 +779,23 @@ export function BuilderScreen(props: BuilderProps) {
     const around = repeatAround(client.current!.doc, id);
     if (!around || !(target instanceof Element)) return null;
     const el = target.closest(`[data-node="${CSS.escape(id)}"]`);
-    const item = el?.closest('[data-slot="item"]');
+    // A repeat-mode roulette draws each copy as a face carrying its row key (components).
+    const item = el?.closest('[data-slot="item"], [data-face][data-row-key]');
     if (!item || !item.closest(`[data-node="${CSS.escape(around.repeatId)}"]`)) return null;
     const drawn = item.getAttribute("data-row-key");
-    if (drawn) return { nodeId: id, repeatId: around.repeatId, rowKey: drawn };
+    // Wave 2.10c r2 item 6c: a row named __proto__, constructor or prototype gets no This copy only.
+    if (drawn) return safeKey(drawn) ? { nodeId: id, repeatId: around.repeatId, rowKey: drawn } : null;
     const index = Number(item.getAttribute("data-index") ?? -1);
     if (!(index >= 0)) return null;
     const rows = around.source ? repeatItems(shownData[around.source], 200) : [];
-    return { nodeId: id, repeatId: around.repeatId, rowKey: rowKeyOf(rows, index) };
+    const key = rowKeyOf(rows, index);
+    return safeKey(key) ? { nodeId: id, repeatId: around.repeatId, rowKey: key } : null;
   };
   /** The drawn copy for one row of a repeat (by `data-row-key`, else by the row's index). */
   const copyElement = (repeatId: string, rowKey: string, source: string | null): Element | null => {
     const root = canvasRef.current?.querySelector(`[data-node="${CSS.escape(repeatId)}"]`);
     if (!root) return null;
-    const items = [...root.querySelectorAll('[data-slot="item"]')].filter((x) => x.parentElement?.closest("[data-node]") === root);
+    const items = [...root.querySelectorAll('[data-slot="item"], [data-face][data-row-key]')].filter((x) => x.parentElement?.closest("[data-node]") === root && x.getAttribute("aria-hidden") !== "true");
     const byAttr = items.find((x) => x.getAttribute("data-row-key") === rowKey);
     if (byAttr) return byAttr;
     if (items.some((x) => x.hasAttribute("data-row-key"))) return null;
@@ -924,11 +1010,18 @@ export function BuilderScreen(props: BuilderProps) {
       if (n && DROP_CONTAINERS.has(n.type)) {
         const empty = !(n.children ?? []).length;
         // Any group under the pointer takes a tile (spec 3.6: tiles drag between groups), not only a selected one.
-        const ok = n.type === "repeat" ? empty : n.type === "group" ? true : n.id === sel;
+        // Wave 2.10c r2 item 1: a roulette under the pointer takes the widget as a slot (or its one template),
+        // selected or not, as its "Drop widgets here" says; a full one lights up as refused and says why.
+        const ok = n.type === "repeat" ? empty : n.type === "group" || n.type === "roulette" ? true : n.id === sel;
         const own = d.kind === "move" && (n.id === d.nodeId || inside(cur, d.nodeId, n.id));
         if (ok && !own) {
           const r = rectOf(n.id);
           if (!r) return null;
+          if (n.type === "roulette") {
+            const moving = d.kind === "move" ? d.nodeId : undefined;
+            const why = rouletteRefusal(n, moving);
+            return { id: n.id, name: nodeLabel(n), rect: r, ...(why ? { refused: why } : {}) };
+          }
           return n.type === "group" ? { id: n.id, name: nodeLabel(n), rect: r, index: groupIndexAt(n.id, x, y, d.kind === "move" ? d.nodeId : null) } : { id: n.id, name: nodeLabel(n), rect: r };
         }
       }
@@ -953,18 +1046,24 @@ export function BuilderScreen(props: BuilderProps) {
   /** Puts a dragged widget into a container: no grid slot there, it stacks in the container's order. */
   const dropInto = (d: Drag, target: Into) => {
     const cur = client.current!.doc;
+    // Wave 2.10c r2 item 1: a full roulette takes nothing; the sentence says why and nothing changes.
+    if (target.refused) { toast({ kind: "info", title: target.refused }); setAnnounce(target.refused); return; }
+    const host = findNode(cur, target.id)?.node;
+    const roulette = host?.type === "roulette" ? host : null;
     if (d.kind === "insert") {
       const node = freshCopy(d.item.node);
       delete node.slot;
-      apply([{ op: "node.add", parentId: target.id, ...(target.index !== undefined ? { index: target.index } : {}), node }], { announce: `Added ${nodeLabel(node)} into ${target.name}`, select: node.id });
+      apply([{ op: "node.add", parentId: target.id, ...(target.index !== undefined ? { index: target.index } : {}), node }], { announce: roulette ? `Added ${nodeLabel(node)} into ${target.name} as slot ${(roulette.children ?? []).length + 1}` : `Added ${nodeLabel(node)} into ${target.name}`, select: node.id });
+      if (roulette) showRouletteSlot(roulette.id, (roulette.children ?? []).length);
       reveal(node.id);
       openPickerForNew(node);
     } else {
       const at = findNode(cur, d.nodeId);
       if (!at) return;
-      // A tile dropped back on its own place is no change.
-      if (at.parent?.id === target.id && target.index === at.index) return;
+      // A tile dropped back on its own place is no change; so is a slot dropped back on its own roulette.
+      if (at.parent?.id === target.id && (target.index === at.index || roulette)) return;
       apply([{ op: "node.move", nodeId: d.nodeId, parentId: target.id, ...(target.index !== undefined ? { index: target.index } : {}) }], { announce: `${nodeLabel(at.node)} moved into ${target.name}` });
+      if (roulette) showRouletteSlot(roulette.id, (roulette.children ?? []).length);
     }
   };
   /** Drags an edge or corner of the selected component, snapping to the grid (operator bug 2). */
@@ -1005,6 +1104,21 @@ export function BuilderScreen(props: BuilderProps) {
       if (last.x === start.x && last.y === start.y && last.w === start.w && last.h === start.h) return;
       const cur = client.current!.doc;
       const node = findNode(cur, nodeId)?.node;
+      // Wave 2.10c r2 item 19: a fit widget (A11.2) cannot be made shorter than its content: it would only grow
+      // back, so the height stops at what the content needs, and a resize left with no change is no step.
+      if (node && last.h < start.h && sizingOf(node.type, getComponentDef, node) === "fit" && node.props.fixedHeight !== true) {
+        const el = canvasRef.current?.querySelector(`[data-node="${CSS.escape(nodeId)}"]`);
+        // Only for text that flows (Text, Heading, Link): its words decide its height, so a smaller box shows no
+        // change. A card or a stat visibly shrinks and shows the cut badge, as before.
+        const minH = el && TEXT_FLOW.has(node.type) ? minFitRows(el, start.h) : 1;
+        if (last.h < minH) last = { ...last, h: minH, ...(edges.n ? { y: start.y + start.h - minH } : {}) };
+        if (last.x === start.x && last.y === start.y && last.w === start.w && last.h === start.h) {
+          const why = `${kindWord(node)} grows to fit its content, so it cannot be shorter than that.`;
+          toast({ kind: "info", title: why, description: "Make the content shorter, or turn on a fixed height in Layout." });
+          setAnnounce(why);
+          return;
+        }
+      }
       // A picture or video keeps its shape when its width changes, and its height prop follows the box.
       const fix = node && device === "desktop" ? mediaAfterResize(node, last, edges, box) : null;
       const final = fix?.slot ?? last;
@@ -1069,7 +1183,9 @@ export function BuilderScreen(props: BuilderProps) {
     const ops = [...byGrid].flatMap(([gridId, grow]) => fitOps(cur, gridId, grow, device));
     const count = [...byGrid.values()].reduce((n, g) => n + Object.keys(g).length, 0);
     if (!ops.length) { if (!opts.quiet) toast({ kind: "success", title: "Everything already fits" }); return 0; }
-    apply(ops, { announce: `Fitted ${count} ${count === 1 ? "component" : "components"} to their content. Undo with Ctrl+Z.` });
+    // Wave 2.10c r2 item 4: the step is named after the Fit ("Fit Roulette"), not the moves it makes.
+    const fitted = onlyId ? findNode(cur, onlyId)?.node : null;
+    apply(ops, { announce: `Fitted ${count} ${count === 1 ? "component" : "components"} to their content. Undo with Ctrl+Z.`, label: fitted ? `Fit ${stepName(fitted)}` : `Fit ${count} ${count === 1 ? "widget" : "widgets"}` });
     // Wave 2.10 B2: content that reflows as its box grows is measured again after the page redraws, until it
     // fits (rounded up to the next row); those passes join this Fit's undo step.
     const entry = client.current!.lastEntryId;
@@ -1132,6 +1248,20 @@ export function BuilderScreen(props: BuilderProps) {
   const growPass = useCallback(() => {
     const watch = growWatch.current;
     const now = Date.now();
+    // Wave 2.10c r2 item 7: right after Create app only, fit the template's boxes with no undo step.
+    if (newAppFit.current > now && !drag && !resizing && editMode && !narrow && canvasRef.current) {
+      const cur0 = client.current!.doc;
+      const grow0 = new Map<string, Record<string, number>>();
+      for (const el of canvasRef.current.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]")) {
+        const id = el.getAttribute("data-node")!;
+        const at = findNode(cur0, id);
+        if (!at?.parent || at.parent.type !== "grid" || sizingOf(at.node.type, getComponentDef, at.node) === "scroll" || at.node.props.fixedHeight === true) continue;
+        const rows = Math.min(overflowRowsOf(el), MAX_GROW_ROWS);
+        if (rows > 0) grow0.set(at.parent.id, { ...grow0.get(at.parent.id), [id]: rows });
+      }
+      const ops0 = [...grow0].flatMap(([gridId, grow]) => fitOps(cur0, gridId, grow, device));
+      if (ops0.length) client.current!.edit(ops0, { history: "none" });
+    }
     for (const [id, w] of watch) if (w.until < now) watch.delete(id);
     // Never grow while the publish review is open: it would change the draft under the review ("draft changed").
     if (!watch.size || drag || resizing || reviewOpen || !editMode || !canvasRef.current) return;
@@ -1169,41 +1299,33 @@ export function BuilderScreen(props: BuilderProps) {
       }
     }
     const ops = [...byGrid].flatMap(([gridId, grow]) => fitOps(cur, gridId, grow, device));
-    if (!ops.length) return;
-    client.current!.edit(ops, { history: "merge", into: entry });
-    // Round 2 item 1: growth on opening a page is one undo step of its own; later passes join it.
-    if (entry === 0) {
-      const id = client.current!.lastEntryId;
-      for (const w of watch.values()) if (w.open && w.entry === 0) w.entry = id;
-      const count = [...byGrid.values()].reduce((m, g) => m + Object.keys(g).length, 0);
-      if (!openNoticeShown.current) {
-        openNoticeShown.current = true;
-        setAnnounce(`Grew ${count} ${count === 1 ? "component" : "components"} to show all their content, as viewers see it. Undo with Ctrl+Z.`);
-      }
-    }
+    // Wave 2.10c r2 item 7: growth only ever joins the step of an edit the person made; nothing grows (or is
+    // written) on its own when a page opens.
+    if (!ops.length || entry === 0) return;
+    // A later step since then: the growth goes in with no step of its own, never as a "Move N widgets" the
+    // person did not take (item 7).
+    client.current!.edit(ops, client.current!.lastEntryId === entry ? { history: "merge", into: entry } : { history: "none" });
   }, [drag, resizing, reviewOpen, editMode, narrow, device]);
   useEffect(() => { growPass(); }, [growPass, doc, growTick, shownData]);
 
   /**
-   * Round 2 item 1 (gauntlet r1: the canvas cropped what the viewer showed): when a page opens in the full
-   * builder, every fit component on it is watched like an edited one, so a box drawn too small for its
-   * content (an older app, or a template right after Create app) grows to hold it, as the viewer's rows do.
-   * The growth is one undo step; nothing is written when everything fits.
+   * Wave 2.10c r2 item 7 (gauntlet r1: phantom history): opening a page in the builder writes nothing. The old
+   * open-time growth (Wave 2.10 round 2 item 1) recorded "Move N widgets" as the person's own step and undid
+   * sizes they had set by hand, so it is removed: a box too small for its content shows components' "Content is
+   * cut · Fit" badge until the person presses Fit. Pages made here (the start page) still grow in their own step.
+   * One exception: the first open right after Create app (`?new=1`, the launcher's), where the template's boxes
+   * are fitted to their live content as part of making the app: written with no undo step, so Undo still starts
+   * at "Nothing to undo", and never again after that.
    */
-  const openNoticeShown = useRef(false);
-  const openedPages = useRef(new Set<string>());
   useEffect(() => {
-    if (narrow || !editMode || device !== "desktop" || openedPages.current.has(page.id)) return;
-    const t = window.setTimeout(() => {
-      openedPages.current.add(page.id);
-      const ids = [...(canvasRef.current?.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]") ?? [])].map((el) => el.getAttribute("data-node")!).filter(Boolean);
-      const until = Date.now() + OPEN_WATCH_MS;
-      for (const id of ids) if (!growWatch.current.has(id)) growWatch.current.set(id, { until, entry: 0, grown: 0, open: true });
-      for (const ms of [0, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
-    }, 60);
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("new") !== "1") return;
+    url.searchParams.delete("new");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    if (narrow || !editMode || device !== "desktop") return;
+    const t = window.setTimeout(() => { newAppFit.current = Date.now() + OPEN_WATCH_MS; for (const ms of [0, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms); }, 60);
     return () => window.clearTimeout(t);
-  }, [page.id, narrow, editMode, device]);
-
+  }, []);
   /**
    * Round 2 (settings' note, item 4): a theme change in the builder (another theme, or the same theme saved
    * with another density) changes how tall content is, so every fit component on the page is watched again
@@ -1241,9 +1363,29 @@ export function BuilderScreen(props: BuilderProps) {
   const addToSelected = (item: InsertItem) => {
     // Wave 2.9 (spec 3.7): Insert > Start page makes a whole page from your services.
     if (item.insertId === START_PAGE_ITEM) { setStartOpen(true); return; }
+    placeNode(freshCopy(item.node), item.node.slot);
+  };
+  /**
+   * Puts a new widget where Insert puts it (above), also used by Ctrl+V (Wave 2.10c r2 item 1). `hint` is the
+   * size it came with.
+   */
+  const placeNode = (node: ComponentNode, hint?: GridSlot) => {
     const cur = client.current!.doc;
-    const node = freshCopy(item.node);
     const sel = selectedRef.current ? findNode(cur, selectedRef.current) : null;
+    // Wave 2.10c r2 item 1: a selected roulette (or one of its slots) takes the new widget as a slot, after the
+    // selected slot or at the end; repeat mode takes one template and refuses a second in words.
+    const roulette = sel?.node.type === "roulette" ? sel.node : sel?.parent?.type === "roulette" ? sel.parent : null;
+    if (roulette) {
+      const why = rouletteRefusal(roulette);
+      if (why) { toast({ kind: "info", title: why }); setAnnounce(why); return; }
+      delete node.slot;
+      const index = sel?.node.type === "roulette" ? (roulette.children ?? []).length : (sel?.index ?? 0) + 1;
+      apply([{ op: "node.add", parentId: roulette.id, index, node }], { announce: `Added ${nodeLabel(node)} into ${nodeLabel(roulette)} as slot ${index + 1}`, select: node.id });
+      showRouletteSlot(roulette.id, index);
+      reveal(node.id);
+      openPickerForNew(node);
+      return;
+    }
     // A selected group (or a tile inside one) takes the new component in its flow (A10.7: no grid slots).
     const group = sel?.node.type === "group" ? sel.node : sel?.parent?.type === "group" ? sel.parent : null;
     if (group) {
@@ -1264,7 +1406,7 @@ export function BuilderScreen(props: BuilderProps) {
     const curPage = findPage(cur, page.id) ?? page;
     let target: ComponentNode = curPage.root;
     let anchor: GridSlot | null = null;
-    let size = { w: item.node.slot?.w ?? 3, h: item.node.slot?.h ?? 16 };
+    let size = { w: hint?.w ?? 3, h: hint?.h ?? 16 };
     if (sel?.parent?.type === "grid" && sel.node.id !== curPage.root.id) {
       target = sel.parent;
       anchor = slotOn(sel.node, "desktop", gridColumns(sel.parent)) ?? null;
@@ -1284,6 +1426,7 @@ export function BuilderScreen(props: BuilderProps) {
     reveal(node.id);
     openPickerForNew(node);
   };
+  placeRef.current = placeNode;
   /** A new data widget opens the data picker at once, with "Skip for now" to keep sample values (spec 3.3). */
   const openPickerForNew = (node: ComponentNode) => {
     if (node.type === "repeat" && node.name === "Card for each") { setPicker({ nodeId: node.id, prop: "items", fromInsert: true, cards: true }); return; }
@@ -1501,6 +1644,23 @@ export function BuilderScreen(props: BuilderProps) {
     const act = keyAction(client.current!.doc, id, { key: "d", shift: false, alt: false, mod: true }, narrow ? "mobile" : device);
     if (act?.kind === "ops") { apply(act.ops, { announce: act.announce, ...(act.select ? { select: act.select } : {}) }); if (act.select) reveal(act.select); }
   };
+  /**
+   * Wave 2.10c r2 item 1: a Layers move (a drag onto a row, or the row menu's Move into). A roulette refuses
+   * what it cannot hold in words; a widget moved out onto a grid gets a free spot there.
+   */
+  const layerMove = (nodeId: string, parentId: string, index?: number) => {
+    const cur = client.current!.doc;
+    const at = findNode(cur, nodeId);
+    const target = findNode(cur, parentId)?.node;
+    if (!at || !target) return;
+    if (target.type === "roulette" && at.parent?.id !== target.id) {
+      const why = rouletteRefusal(target, nodeId);
+      if (why) { toast({ kind: "info", title: why }); setAnnounce(why); return; }
+    }
+    const slot = target.type === "grid" && at.parent?.id !== target.id ? freeSpot(target, "desktop", { w: at.node.slot?.w ?? 3, h: at.node.slot?.h ?? 16 }, null) : undefined;
+    apply([{ op: "node.move", nodeId, parentId, ...(index === undefined || index === Number.MAX_SAFE_INTEGER ? {} : { index }), ...(slot ? { slot } : {}) }], { announce: at.parent?.id === target.id ? "Moved in the layer tree" : `${nodeLabel(at.node)} moved into ${nodeLabel(target)}` });
+    if (target.type === "roulette" && at.parent?.id !== target.id) showRouletteSlot(target.id, (target.children ?? []).length);
+  };
   const layerDelete = (id: string) => {
     const at = findNode(client.current!.doc, id);
     if (!at?.parent) return;
@@ -1679,7 +1839,7 @@ export function BuilderScreen(props: BuilderProps) {
       {!narrow && tab === "insert" ? (
         <InsertPanel groups={insertGroups} onAdd={addToSelected} onPickUp={(item, e) => { if (item.insertId === START_PAGE_ITEM) return; startDrag({ kind: "insert", item, w: WIDE_TYPES.has(item.type) && device !== "mobile" ? gridColumns(page.root) : item.node.slot?.w ?? (device === "mobile" ? 4 : 3), h: item.node.slot?.h ?? 16 }, e); }} />
       ) : (
-        <LayersPanel page={page} selectedId={selectedId} agentNodes={meta.agentNodes} stepButtons={narrow} device={narrow ? "mobile" : device} covered={covered} selectedIds={multiOn ? new Set(multi) : undefined} onSelect={(id, o) => (o?.shift && !narrow ? toggleMulti(id) : setSelectedId(id))} onMove={(nodeId, parentId, index) => apply([{ op: "node.move", nodeId, parentId, ...(index === Number.MAX_SAFE_INTEGER ? {} : { index }) }], { announce: "Moved in the layer tree" })}
+        <LayersPanel page={page} selectedId={selectedId} agentNodes={meta.agentNodes} stepButtons={narrow} device={narrow ? "mobile" : device} covered={covered} selectedIds={multiOn ? new Set(multi) : undefined} onSelect={(id, o) => (o?.shift && !narrow ? toggleMulti(id) : setSelectedId(id))} onMove={layerMove} onMoveInto={(nodeId, parentId) => layerMove(nodeId, parentId)}
           onHide={layerHide} onRename={layerRename} onDuplicate={layerDuplicate} onDelete={layerDelete} />
       )}
     </aside>
@@ -1712,21 +1872,27 @@ export function BuilderScreen(props: BuilderProps) {
           {glow > 0 && reduced && <StaticRing key={glow} />}
         </span>
         {glow > 0 && <PublishCheck key={`c${glow}`} reduced={reduced} />}
-        <div className="w-40 min-w-0 flex-none max-sm:w-auto max-sm:min-w-[4.5rem] max-sm:flex-[1_1_0%] [&_[data-select]>span:first-child]:min-w-0 [&_[data-select]>span:first-child]:truncate" data-page-switcher>
+        <div className="w-32 min-w-0 flex-none min-[1440px]:w-40 max-sm:w-auto max-sm:min-w-[4.5rem] max-sm:flex-[1_1_0%] [&_[data-select]>span:first-child]:min-w-0 [&_[data-select]>span:first-child]:truncate" data-page-switcher>
           <SelectMenu label="Page" hideLabel name="page" value={page.id} onChange={(id) => { const p = findPage(doc, id); if (p) goPage(p); }} options={orderedPages(doc).map((p) => ({ value: p.id, label: `${p.title}${p.inNav ? "" : " (hidden)"}` }))} />
         </div>
         {!narrow && <PageMenu doc={doc} page={page} apply={apply} onAdd={addPage} onRename={() => setNaming({ pageId: page.id, fresh: false })} onRemove={() => removePage(page.id)} onLook={() => setLookOpen(true)} onFit={() => fitToContent()} />}
         {/* Wave 2.10c N2 (A11.1): Undo and Redo, disabled at the ends, the tooltip naming the step. */}
         {!narrow && <HistoryButtons undo={client.current!.undoLabel} redo={client.current!.redoLabel} onStep={historyStep} narrow={false} />}
         {/* Wave 2.10b F8: Navigation sits beside Pages, not inside Look. */}
-        {!narrow && <button type="button" onClick={() => setNavOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-navigation><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 3h9M1.5 6h9M1.5 9h9" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>Navigation</button>}
+        {!narrow && <button type="button" onClick={() => setNavOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" title="Navigation" data-builder-navigation><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 3h9M1.5 6h9M1.5 9h9" fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>{/* Wave 2.10c r2 item 19: below 1440 px the bar is full, so the word is for screen readers only. */}<span className="max-[1439.98px]:sr-only">Navigation</span></button>}
         {/* Wave 2.10b F9: Theme beside Navigation: pick with a preview on this page, edit, create. */}
         {/* Like Navigation and Look, it is on the full builder only (phones get the reduced edit mode). */}
         {!narrow && <button type="button" onClick={() => setThemeOpen((o) => !o)} aria-expanded={themeOpen} aria-label="Theme" className={`inline-flex h-8 flex-none items-center justify-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk max-sm:h-11 max-sm:min-w-11 max-sm:px-0 ${themeOpen ? "bg-bg-sunk" : ""}`} data-builder-theme><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.3" /><path d="M6 1.4a4.6 4.6 0 0 1 0 9.2z" fill="currentColor" /></svg><span className="max-sm:sr-only">Theme</span></button>}
         {!narrow && <button type="button" onClick={() => setLookOpen(true)} className="inline-flex h-8 items-center gap-1.5 border border-line-strong px-2 type-label hover:bg-bg-sunk" data-builder-look><span aria-hidden className="h-3 w-3 border border-line-strong bg-accent" />Look</button>}
         {/* Round 2 (gauntlet r1, low): the status fills the space that is left (basis 0), so its text changing
             never moves the page switcher, Pages or Look, and it gives way first when the bar is short. */}
-        <span className={`ml-2 hidden min-w-0 flex-1 basis-0 truncate font-mono text-[12px] lg:block ${glowing ? "text-accent-fg" : "text-fg-2"}`} title={`${status}${who ? ` · ${who}` : ""}`} data-draft-status>{status}{who ? ` · ${who}` : ""}</span>
+        {/* Wave 2.10c r2 item 19: with Undo and Redo on the bar there is no room for the words below 1600 px
+            (they were cut to a stray letter), so the status shows as a dot there, its words in the tooltip. */}
+        <span className={`ml-2 hidden min-w-0 flex-1 basis-0 truncate font-mono text-[12px] min-[1600px]:block ${glowing ? "text-accent-fg" : "text-fg-2"}`} title={`${status}${who ? ` · ${who}` : ""}`} data-draft-status>{status}{who ? ` · ${who}` : ""}</span>
+        <span className="ml-1 hidden h-8 w-5 flex-none items-center justify-center lg:inline-flex min-[1600px]:hidden" title={`${status}${who ? ` · ${who}` : ""}`} role="status" data-draft-status-dot>
+          <span aria-hidden className={`h-2 w-2 rounded-full ${glowing ? "bg-accent" : "bg-fg-3"}`} />
+          <span className="sr-only">{status}</span>
+        </span>
         <span className="ml-auto" />
         {!narrow && (
           <>
@@ -1745,8 +1911,8 @@ export function BuilderScreen(props: BuilderProps) {
             <path d="M5 2.5H2.5v7h7V7M7 2.5h2.5V5M9.5 2.5 5.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="square" />
           </svg>
         </Button>
-        {!narrow && <Button variant="quiet" href={`/build/${app.slug}/versions`} data-versions-link>Versions</Button>}
-        {!narrow && <Button variant="quiet" href={`/build/${app.slug}/settings`} data-settings-link>Settings</Button>}
+        {!narrow && <Button variant="quiet" href={`/build/${app.slug}/versions`} className="flex-none px-2" data-versions-link>Versions</Button>}
+        {!narrow && <Button variant="quiet" href={`/build/${app.slug}/settings`} className="flex-none px-2" data-settings-link>Settings</Button>}
         <Button variant="primary" className="flex-none max-sm:px-3" onClick={() => { void client.current!.flush(); setReviewOpen(true); }} data-publish>Publish</Button>
       </div>
 
@@ -1802,7 +1968,7 @@ export function BuilderScreen(props: BuilderProps) {
           <motion.div className="relative mx-auto" initial={false} animate={{ padding: editMode && !narrow ? 24 : 0 }} transition={transitionFor("lift", reduced)} style={{ maxWidth: device === "mobile" ? 390 + 48 : undefined, ...(scaled ? { width: (previewW as number) * zoom + inset * 2 } : {}) }} data-canvas-inset={editMode && !narrow ? "24" : "0"}>
             <div
               ref={canvasRef}
-              className="relative"
+              className={`relative ${editMode && !narrow ? "select-none" : ""}`}
               style={scaled ? { width: (previewW as number) * zoom, height: innerH * zoom } : undefined}
               data-canvas-zoom={Math.round(zoom * 1000) / 1000}
               onPointerMove={(e) => { if (editMode && !drag && !resizing && !narrow) { const id = nodeAt(e.target); setHoverId(id); const c = copyAt(e.target, id); setHovCopy((p) => (p?.id === c?.id && p?.nth === c?.nth ? p : c)); } }}
@@ -1812,7 +1978,17 @@ export function BuilderScreen(props: BuilderProps) {
                 if (!editMode || narrow || e.button !== 0) return;
                 if (e.target instanceof Element && e.target.closest("[data-canvas-control]")) return;
                 const id = nodeAt(e.target);
-                const n = id ? findNode(client.current!.doc, id)?.node : null;
+                const at = id ? findNode(client.current!.doc, id) : null;
+                const n = at?.node ?? null;
+                // Wave 2.10c r2 item 19: dragging the body of the selected widget moves it, as its handle does
+                // (a click still selects; the widget's own buttons and fields keep their pointer).
+                if (n && n.id === selectedRef.current && n.type !== "grid" && at?.parent && !(e.target instanceof Element && e.target.closest("button, a, input, textarea, select, [role=button], [role=slider], [contenteditable=true]"))) {
+                  const s0 = slotOn(n, device) ?? (at.parent.type === "group" ? { x: 0, y: 0, w: 3, h: 12 } : undefined);
+                  if (!s0) return;
+                  e.preventDefault();
+                  startDrag({ kind: "move", nodeId: n.id, label: nodeLabel(n), w: s0.w, h: s0.h }, e);
+                  return;
+                }
                 if (n?.type !== "grid") return;
                 e.preventDefault();
                 startMarquee(n.id, e);
@@ -1873,11 +2049,11 @@ export function BuilderScreen(props: BuilderProps) {
                   data-selected-outline={selected.id}
                   data-settled={settling ? "" : undefined}
                 >
-                  <div className="absolute -top-5 left-[-2px] flex whitespace-nowrap" data-canvas-control>
+                  <div className="absolute -top-5 left-[-2px] flex whitespace-nowrap touch:-top-11" data-canvas-control>
                     <span
                       aria-hidden
                       title={narrow ? undefined : "Drag to move"}
-                      className={`pointer-events-auto flex flex-none select-none items-center gap-1 whitespace-nowrap bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg ${narrow ? "" : "cursor-grab touch-none"}`}
+                      className={`pointer-events-auto flex flex-none select-none items-center gap-1 whitespace-nowrap bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg touch:min-h-11 ${narrow ? "" : "cursor-grab touch-none"}`}
                       onPointerDown={(e) => { if (narrow) return; const s = slotOn(selected, device) ?? (selectedParent?.type === "group" ? { w: 3, h: 12 } : undefined); if (s) startDrag({ kind: "move", nodeId: selected.id, label: nodeLabel(selected), w: s.w, h: s.h }, e); }}
                       data-drag-handle
                     >
@@ -1890,7 +2066,7 @@ export function BuilderScreen(props: BuilderProps) {
                         type="button"
                         aria-label={`Fit ${nodeLabel(selected)} to its content`}
                         title="Grow the box so all its content shows. Undo with Ctrl+Z"
-                        className="pointer-events-auto relative flex h-5 items-center border-l border-bg/40 bg-accent-ink px-1.5 font-mono text-[11px] text-bg after:absolute after:-inset-1 hover:bg-fg touch:after:-inset-3"
+                        className="pointer-events-auto relative flex h-5 items-center border-l border-bg/40 bg-accent-ink px-1.5 font-mono text-[11px] text-bg after:absolute after:-inset-1 hover:bg-fg touch:h-11 touch:min-w-11 touch:after:inset-0"
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => fitToContent(selected.id)}
                         data-fit-selected
@@ -1971,9 +2147,16 @@ export function BuilderScreen(props: BuilderProps) {
               })()}
               {marquee && <div aria-hidden className="pointer-events-none absolute border border-accent-ink bg-[color-mix(in_srgb,var(--accent)_12%,transparent)]" style={marquee} data-marquee />}
               {drag && into && (
-                <div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink bg-[color-mix(in_srgb,var(--accent)_18%,transparent)]" style={into.rect} data-drop-into={into.id}>
-                  <span className="absolute left-0 top-0 bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg">into {into.name}</span>
-                </div>
+                into.refused ? (
+                  // Wave 2.10c r2 item 1: a full roulette lights up as refused, with the reason in words.
+                  <div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-bad bg-[color-mix(in_srgb,var(--bad)_10%,transparent)]" style={into.rect} data-drop-into={into.id} data-drop-refused>
+                    <span className="absolute left-0 top-0 max-w-full bg-bad px-1 font-mono text-[11px] leading-5 text-bg">{into.name} is full</span>
+                  </div>
+                ) : (
+                  <div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink bg-[color-mix(in_srgb,var(--accent)_18%,transparent)]" style={into.rect} data-drop-into={into.id}>
+                    <span className="absolute left-0 top-0 bg-accent-ink px-1 font-mono text-[11px] leading-5 text-bg">into {into.name}</span>
+                  </div>
+                )
               )}
               {(drag || resizing) && ghost?.group?.map((g, i) => (
                 <div key={`grp${i}`} aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink" style={{ left: ghost.origin.left + slotRect(ghost.box, g).left, top: ghost.origin.top + slotRect(ghost.box, g).top, width: slotRect(ghost.box, g).width, height: Math.max(8, slotRect(ghost.box, g).height - (ghost.box.cellPad ?? 0)) }} data-group-ghost />
@@ -2013,7 +2196,7 @@ export function BuilderScreen(props: BuilderProps) {
             {multiOn ? (
               <MultiPanel names={multi.map((id) => { const n = findNode(doc, id)?.node; return n ? nodeLabel(n) : id; })} onAction={arrange} onClear={() => setMulti([])} />
             ) : (
-            <Inspector node={selected} doc={doc} ctx={ctx} device={narrow ? "mobile" : device} problems={problems} apply={(ops, o) => apply(ops, o?.label ? { label: o.label } : {})}
+            <Inspector node={selected} doc={doc} ctx={copyCtx} device={narrow ? "mobile" : device} problems={problems} apply={(ops, o) => apply(ops, o?.label ? { label: o.label } : {})}
               {...(selected && selRow && selRow.nodeId === selected.id && findNode(doc, selRow.repeatId) ? { copy: { repeatId: selRow.repeatId, rowKey: selRow.rowKey, mode: copyMode, setMode: (m: "all" | "one") => { setCopyMode(m); setAnnounce(m === "one" ? `Changes now go to the ${selRow.rowKey} copy only` : "Changes now go to every copy"); } } } : {})} onFit={fitOne} applyAndWait={applyAndWait} compact={narrow} titleBars={(previewTheme?.theme ?? render.theme).tokens.surface.titleBars}
               live={{ data: shownData, states: live.states }} onPick={onInspectorPick} onSelect={(id) => { setSelectedId(id); reveal(id); }} />
             )}
@@ -2066,11 +2249,12 @@ export function BuilderScreen(props: BuilderProps) {
         // Wave 2.10b F1: the start page is one undo step, its growth included. Its boxes are watched in the
         // start page's own entry, so opening the new page adds no step of its own.
         if (p) {
-          openedPages.current.add(p.id);
           const entry = client.current!.lastEntryId;
-          const until = Date.now() + OPEN_WATCH_MS;
-          for (const k of p.root.children ?? []) growWatch.current.set(k.id, { until, entry, grown: 0 });
-          for (const ms of [60, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
+          // Wave 2.10c r2 item 9: the charts (scale sizing) grow too, to hold their legend of every machine, so
+          // the new page passes its own fit rule; the legends arrive with the data, so the watch runs longer.
+          const until = Date.now() + START_WATCH_MS;
+          for (const k of p.root.children ?? []) growWatch.current.set(k.id, { until, entry, grown: 0, ...(k.type === "chart" ? { force: true } : {}) });
+          for (const ms of [60, 300, 900, 2000, 4000, 6000, OPEN_WATCH_MS - 200, 15000, 22000, START_WATCH_MS - 200]) window.setTimeout(() => setGrowTick((x) => x + 1), ms);
         }
         if (p && p.id !== page.id) goPage(p);
         toast({ kind: "success", title: "Start page made", description: "Values fill in as your services answer. Undo takes it all back." });

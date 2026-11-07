@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { MAX_TEMPLATE_BYTES } from "../bindings/parse";
 import { ICON_PATHS } from "../render/icons";
+import { isSafeKey } from "../render/copy-overrides";
 
 export const bindingSchema = z
   .strictObject({ $bind: z.string().max(MAX_TEMPLATE_BYTES).describe("A binding template, for example {{ cpu.value | round(1) }}%") })
@@ -104,8 +105,14 @@ export const copyOverrideSchema = z.strictObject({
   style: z.record(z.string().max(40), z.unknown()).optional().describe("Style panel changes for this copy only, by part (root, value, ...)."),
   hidden: z.boolean().optional().describe("Hide this node in this copy only."),
 });
+/** Item 6c: own keys checked on the raw value (a record schema can skip "__proto__" without a word). */
+const safeTwoLevels = (v: unknown): boolean => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return true;
+  return Object.keys(v).every((k) => isSafeKey(k) && safeTwoLevels1((v as Record<string, unknown>)[k]));
+};
+const safeTwoLevels1 = (v: unknown): boolean => !v || typeof v !== "object" || Array.isArray(v) || Object.keys(v).every(isSafeKey);
 export const copyOverridesField = lit(
-  z.record(z.string().min(1).max(200), z.record(z.string().max(64), copyOverrideSchema)).refine((v) => Object.keys(v).length <= 200, "at most 200 changed copies"),
+  z.custom<unknown>(safeTwoLevels, "a row key or node id cannot be __proto__, constructor or prototype").pipe(z.record(z.string().min(1).max(200).refine(isSafeKey, "a row key cannot be __proto__, constructor or prototype"), z.record(z.string().max(64).refine(isSafeKey, "a node id cannot be __proto__, constructor or prototype"), copyOverrideSchema)).refine((v) => Object.keys(v).length <= 200, "at most 200 changed copies")),
   "Changes for single copies, by row key (the row's name, like a machine's) and then by node id of the template: { props, style, hidden }. Each copy without an entry draws the template as it is. Set by the builder's \"This copy only\".",
 );
 

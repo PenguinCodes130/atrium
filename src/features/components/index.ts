@@ -36,3 +36,7 @@ export { lineDataKey } from "./page";
 // Wave 2.10c R1: per-copy changes inside a Repeat (row keys and the override shape the builder writes).
 export { rowKeys, rowName, copyOverridesOf, applyCopyOverride, hasCopyChange, repeatsTemplate, COPY_OVERRIDES, ROW_NAME_FIELDS } from "./render/copy-overrides";
 export type { CopyOverride, CopyOverrides } from "./render/copy-overrides";
+// Wave 2.10c round 2 (gauntlet item 1): what a roulette takes as a child, the same answer on every path.
+export { rouletteDropRule, ROULETTE_FULL, ROULETTE_TEMPLATE_TAKEN, ROULETTE_NOT_ITSELF, ROULETTE_SHOW_EVENT, ROULETTE_MAX_SLOTS } from "./roulette-rules";
+export type { RouletteDropRule } from "./roulette-rules";
+export { UNSAFE_KEYS, isSafeKey } from "./render/copy-overrides";

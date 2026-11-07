@@ -39,6 +39,12 @@ const LONG_TEXT = new Set(["text", "description"]);
 /** Wave 2.9: where the list props of the new components sit (a tile's numbers are data; bookmarks are content). */
 const GROUP_OF: Record<string, FieldSpec["group"]> = { "service-tile.stats": "data", "service-tile.status": "data", "resource-bar.items": "data", "bookmarks.items": "content", "chart.lines": "data", "service-tile.description": "content" };
 
+/**
+ * Round 2 (gauntlet w210c-r1 item 2): fields read as data whatever their schema says. A roulette's rows are
+ * a data field (Pick data, Write a template, the chip), not a JSON box that drops a typed template.
+ */
+const KIND_OF: Record<string, { field: FieldKind; bindable: boolean }> = { "roulette.items": { field: { kind: "data" }, bindable: true } };
+
 function kindOf(s: ZodType): { field: FieldKind; bindable: boolean } {
   let d = def(s);
   if (d.type === "optional") d = def(d.innerType!);
@@ -78,7 +84,8 @@ export const labelOf = (k: string) => k.replace(/([A-Z])/g, " $1").toLowerCase()
 export function fieldsFor(type: BuiltInType): FieldSpec[] {
   const schema = propsSchemas[type] as unknown as { shape: Record<string, ZodType & { description?: string }> };
   return Object.entries(schema.shape).map(([key, s]) => {
-    const { field, bindable } = kindOf(s);
+    const own = KIND_OF[`${type}.${key}`];
+    const { field, bindable } = own ?? kindOf(s);
     const group: FieldSpec["group"] = GROUP_OF[`${type}.${key}`] ?? (key === "control" || (type === "html" && key === "controls") ? "control" : DATA_KEYS.has(key) || field.kind === "data" ? "data" : "content");
     const f: FieldKind = field.kind === "text" && LONG_TEXT.has(key) ? { kind: "text", long: true } : field;
     const w = wordsFor(type, key);

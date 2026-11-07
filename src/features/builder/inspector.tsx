@@ -373,13 +373,26 @@ function RowHint({ node, doc, live, copy }: { node: ComponentNode; doc: AppDocum
   const fields = around.source ? rowFields(live?.data[around.source]) : [];
   const key = fields.find((f) => /^(name|label|host|title)$/i.test(f.key))?.key ?? fields[0]?.key ?? "name";
   const one = copy?.mode === "one" && copy.repeatId === around.repeatId;
+  // Wave 2.10c r2 item 14: the repeat by its own name when it has one, never "repeat Repeat".
+  const own = (repeat?.name?.trim() || repeat?.title?.trim() || "").replace(/\s+/g, " ");
+  const subject = own && own.toLowerCase() !== (repeat?.type ?? "") ? `"${own}"` : repeat?.type === "roulette" ? "This roulette" : "This Repeat";
   return (
     <p className="m-0 border-b border-line px-3 py-2 type-caption text-fg-2" data-row-hint={around.repeatId} data-row-hint-mode={one ? "one" : "all"}>
-      {/* Wave 2.10c R1: the sentence says which mode is on. */}
+      {/* Wave 2.10c R1: the sentence says which mode is on. Round 2 item 14: it names exactly what stays shared. */}
       {one
-        ? <strong className="block font-medium text-fg" data-row-hint-one>This copy only: content and style changes here change only the {copy.rowKey} copy. Data, layout and title still change every copy.</strong>
-        : <strong className="block font-medium text-fg" data-row-hint-all>{repeat ? nodeLabel(repeat) : "A repeat"} draws this once for each row, so a change here changes every copy.{copy ? " To change one copy, choose This copy only." : ""}</strong>}
-      Inside {repeat ? nodeLabel(repeat) : "a repeat"}: each copy shows its own row. Use <code className="font-mono text-fg">{`{{ $item.${key} }}`}</code> for this row&apos;s {fields.find((f) => f.key === key)?.label.toLowerCase() ?? key}, or Pick data, This row.
+        ? <strong className="block font-medium text-fg" data-row-hint-one>This copy only: content and style changes here change only the {copy.rowKey} copy. The parts marked Every copy (choosing data, layout, the title bar and CSS) still change every copy.</strong>
+        : <strong className="block font-medium text-fg" data-row-hint-all>{subject} draws this once for each row, so a change here changes every copy.{copy ? " To change one copy, choose This copy only." : ""}</strong>}
+      Each copy shows its own row. Use <code className="font-mono text-fg">{`{{ $item.${key} }}`}</code> for this row&apos;s {fields.find((f) => f.key === key)?.label.toLowerCase() ?? key}, or Pick data, This row.
+    </p>
+  );
+}
+
+/** Wave 2.10c r2 item 14: in This copy only, a control that still changes every copy says so. */
+function EveryCopy({ what, children }: { what: "data" | "layout" | "title" | "css"; children: ReactNode }) {
+  return (
+    <p className="m-0 flex items-start gap-2 type-caption text-fg-2" data-copy-every={what}>
+      <span className="flex-none border border-line-strong px-1 font-mono text-[11px] leading-4 text-fg">Every copy</span>
+      <span>{children}</span>
     </p>
   );
 }
@@ -407,6 +420,13 @@ function CopyScopeBar({ node, doc, copy, apply }: { node: ComponentNode; doc: Ap
           label={<span data-field-label>Hide in this copy</span>} description={<span className="text-fg-3" data-field-hint>Only the {copy.rowKey} copy. The others keep showing it</span>} data-copy-hide />
       )}
       {changed && <Button variant="secondary" onClick={() => { const ops = resetCopyOps(doc, copy.repeatId, copy.rowKey); if (ops.length) apply(ops, { label: "Reset this copy" }); }} data-copy-reset>Reset this copy</Button>}
+      {copy.mode === "one" && (
+        <>
+          <EveryCopy what="css">CSS for this component applies to every copy, so its box is locked here. To style only this copy, target <code className="font-mono text-fg">{`[data-row-key="${copy.rowKey.replace(/["\\]/g, "")}"]`}</code> in the theme&apos;s CSS, or choose Every copy.</EveryCopy>
+          {/* Node ids are plain identifiers (c_ and letters); the lock is a style rule on components' CSS box. */}
+          {/^[A-Za-z0-9_-]+$/.test(node.id) ? <style data-copy-css-lock>{`[data-inspector="${node.id}"] [data-css-box] textarea{pointer-events:none;opacity:.45}`}</style> : null}
+        </>
+      )}
     </div>
   );
 }
@@ -603,6 +623,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
       <InspectorHeader node={node} library={(ctx.values as { $library?: Record<string, LibraryComponent> }).$library} />
       <RowHint node={node} doc={doc} live={live} {...(copy ? { copy } : {})} />
       {copy && !readOnly && <CopyScopeBar node={node} doc={doc} copy={copy} apply={apply} />}
+      {onPick && !readOnly && oneCopy && <div className="border-b border-line px-3 py-2"><EveryCopy what="data">Choosing data (Change, Remove, Add a reading, Pick data) changes every copy. Labels and formats typed in the fields below change only this copy.</EveryCopy></div>}
       {onPick && !readOnly && <DataTop node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} />}
       {onPick && !readOnly && (() => {
         const prop = repeatedSentence(node, doc);
@@ -615,7 +636,10 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
           // anything a copy cannot keep goes to every copy in the same step.
           if (oneCopy) {
             const r = copyEditOps(doc, oneCopy.repeatId, oneCopy.rowKey, node.id, patch);
-            const ops = [...r.ops, ...(r.rest ? [{ op: "node.update", nodeId: node.id, patch: r.rest } as DraftOp] : [])];
+            // Round 2 item 14: the CSS box is locked in this mode (it would change every copy), so CSS typed
+            // into it anyway (by keyboard) is not written.
+            const rest = r.rest ? Object.fromEntries(Object.entries(r.rest).filter(([k]) => k !== "css")) : null;
+            const ops = [...r.ops, ...(rest && Object.keys(rest).length ? [{ op: "node.update", nodeId: node.id, patch: rest } as DraftOp] : [])];
             if (ops.length) apply(ops, { label: `Change ${kindWord(node)} in this copy` });
             return;
           }
@@ -634,6 +658,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
         }} onOps={(ops: DraftOp[]) => apply(ops)}
           {...(onPick && !readOnly ? { onConnectData: (prop?: string) => onPick({ nodeId: node.id, ...(prop ? { prop } : {}) }), dataSummary: <DataSummary node={node} doc={doc} bindable={bindable} live={live} onPick={onPick} apply={apply} /> } : {})} />
         {!compact && layoutSlot && createPortal(<Group id="layout" title="Layout" order={4}>
+          {oneCopy && <EveryCopy what="layout">Size and place are the Repeat&apos;s, shared by every copy.</EveryCopy>}
           <LayoutFields node={node} doc={doc} device={device} slot={slot} setSlot={setSlot} apply={apply} {...(onFit ? { onFit } : {})} />
           {device === "mobile" && (
             <div data-builder-setting="hide-on-phones">
@@ -644,6 +669,7 @@ export function Inspector({ node, doc, ctx, device, problems, apply, readOnly, c
         </Group>, layoutSlot)}
         {!compact && node.type !== "grid" && (
           <Group id="title" title="Title bar" order={4}>
+            {oneCopy && <EveryCopy what="title">The title bar changes every copy.</EveryCopy>}
             <TitleFields node={node} apply={apply} {...(titleBars !== undefined ? { titleBars } : {})} />
           </Group>
         )}

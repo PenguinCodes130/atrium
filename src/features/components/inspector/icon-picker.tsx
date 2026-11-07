@@ -27,10 +27,39 @@ export function IconGlyph({ icon, size = 20 }: { icon: string; size?: number }) 
   );
 }
 
-/** The words for an icon reference: its name, "Your picture", or the package it is the glyph of. */
+/**
+ * Round 2 (item 20): an icon taken from a website keeps its site's words ("github.com icon, from the
+ * website") in this browser, so the field does not call it "Your picture". Only words, never the site.
+ */
+const SITE_ICON_KEY = "atrium.siteIcons";
+export function rememberSiteIcon(path: string, name: string): void {
+  try {
+    const cur = JSON.parse(localStorage.getItem(SITE_ICON_KEY) ?? "{}") as Record<string, string>;
+    const next: Record<string, string> = Object.create(null);
+    for (const [k, v] of Object.entries(cur).slice(-49)) if (typeof v === "string" && k.startsWith("/uploads/")) next[k] = v;
+    if (path.startsWith("/uploads/")) next[path] = name.slice(0, 80);
+    localStorage.setItem(SITE_ICON_KEY, JSON.stringify(next));
+  } catch {
+    // Private mode or storage off: the field just says "Your picture".
+  }
+}
+export function siteIconName(path: string): string | null {
+  try {
+    const cur = JSON.parse(localStorage.getItem(SITE_ICON_KEY) ?? "{}") as Record<string, unknown>;
+    const v = Object.prototype.hasOwnProperty.call(cur, path) ? cur[path] : undefined;
+    return typeof v === "string" && v ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The words for an icon reference: its name, "Your picture" (or its website's name), or the package's glyph. */
 export function iconRefWords(icon: string): string {
   const k = iconRefKind(icon);
-  if (k.kind === "upload") return "Your picture";
+  if (k.kind === "upload") {
+    const site = typeof window !== "undefined" ? siteIconName(k.path) : null;
+    return site ? `${site}, from the website` : "Your picture";
+  }
   if (k.kind === "builtin") return icon.startsWith("pkg:") ? `${iconWords(k.name)} (service)` : iconWords(k.name);
   return icon ? `${icon} (not found)` : "";
 }
@@ -103,7 +132,7 @@ export function FromWebsite({ onUse, initialUrl }: { onUse(path: string): void; 
   if (!open) {
     return (
       <Button variant="secondary" onClick={() => setOpen(true)} data-icon-from-website>
-        From website
+        Type its address
       </Button>
     );
   }
@@ -151,7 +180,7 @@ export function FromWebsite({ onUse, initialUrl }: { onUse(path: string): void; 
           ) : null}
         </div>
         {state.kind === "ready" ? (
-          <Button onClick={() => onUse(state.path)} data-favicon-use>
+          <Button onClick={() => { rememberSiteIcon(state.path, state.name); onUse(state.path); }} data-favicon-use>
             Use
           </Button>
         ) : null}
@@ -187,7 +216,7 @@ function SiteIcon({ siteUrl, onUse }: { siteUrl: string; onUse(path: string): vo
         {state.kind === "failed" ? <p className="type-caption m-0 text-fg-2" data-site-icon-error>{state.message}</p> : null}
       </div>
       {state.kind === "ready" ? (
-        <Button onClick={() => onUse(state.path)} data-site-icon-use>
+        <Button onClick={() => { rememberSiteIcon(state.path, state.name); onUse(state.path); }} data-site-icon-use>
           Use
         </Button>
       ) : null}
@@ -236,6 +265,20 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
   // Typing searches every icon, whatever category is chosen.
   const pool = useMemo(() => (cat === "all" || query.trim() ? PICKER_ICONS : PICKER_CATEGORIES.find((c) => c.id === cat)?.names ?? PICKER_ICONS), [cat, query]);
   const shown = useMemo(() => searchIcons(query, pool), [query, pool]);
+  // Item 18: the sheet's own box clips (overflow hidden); a focused field near its edge must never scroll it
+  // and push the title out of view. The list inside scrolls instead.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    let sheet: HTMLElement | null = null;
+    const keep = () => { if (sheet && sheet.scrollTop) sheet.scrollTop = 0; };
+    const t = setTimeout(() => {
+      sheet = rootRef.current?.closest<HTMLElement>("[data-sheet]") ?? null;
+      sheet?.addEventListener("scroll", keep);
+      keep();
+    }, 0);
+    return () => { clearTimeout(t); sheet?.removeEventListener("scroll", keep); };
+  }, [open]);
   const current = iconRefKind(value);
   const currentName = current.kind === "builtin" ? current.name : "";
   const pick = (ref: string) => {
@@ -250,7 +293,7 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
   );
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Choose an icon" name="icon-picker" width={560} description={`${PICKER_ICONS.length} icons, or your own picture.`}>
-      <div className="flex flex-col gap-3" data-icon-picker data-motion={reduced ? "none" : "sheet"}>
+      <div ref={rootRef} className="flex flex-col gap-3" data-icon-picker data-motion={reduced ? "none" : "sheet"}>
         <input
           type="search"
           // Focus the search on a pointer screen; on touch it would pop the keyboard over the grid.
@@ -273,11 +316,15 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
           ))}
         </div>
         {open && siteUrl ? <SiteIcon siteUrl={siteUrl} onUse={(p) => pick(p)} /> : null}
-        <div className="flex flex-wrap items-start gap-2" data-icon-entries>
-          <div className="min-w-0 flex-1" data-icon-upload-entry>
+        {/* Round 2 (item 20): the ways to an icon of your own read as peers, each on its own row. */}
+        <div className="flex flex-col gap-2" data-icon-entries>
+          <section className="flex flex-col gap-1 border border-line p-2" data-icon-website-entry>
+            <h4 className="m-0 type-label text-fg-2">From a website</h4>
+            <FromWebsite key={open ? "open" : "closed"} onUse={(p) => pick(p)} {...(siteUrl ? { initialUrl: siteUrl } : {})} />
+          </section>
+          <section className="min-w-0 border border-line p-2" data-icon-upload-entry>
             <MediaField accept="image" label="Upload your own" hint="A small square picture works best" value={current.kind === "upload" ? current.path : undefined} onChange={(p) => pick(p)} />
-          </div>
-          <FromWebsite key={open ? "open" : "closed"} onUse={(p) => pick(p)} {...(siteUrl ? { initialUrl: siteUrl } : {})} />
+          </section>
           {extraEntries}
           {onNone ? (
             <Button

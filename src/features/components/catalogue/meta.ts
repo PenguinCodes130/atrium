@@ -65,7 +65,7 @@ export const META: Record<BuiltInType, ComponentMeta> = {
     },
   },
   roulette: {
-    type: "roulette", title: "Roulette", category: "layout", container: true, maxChildren: 50, defaults: { mode: "slots", advance: { scroll: true, arrows: true, dots: true } }, styleSlots: ["root", "slot", "dots"],
+    type: "roulette", title: "Roulette", category: "layout", container: true, maxChildren: 50, defaults: { mode: "slots", advance: { scroll: true, arrows: true, dots: true } }, styleSlots: ["root", "slot", "dots", "arrows"], states: ["hover", "focus"],
     docs: {
       summary: "Shows one child at a time and turns like a revolver cylinder: by scroll after a click on it, by its arrows and dots, or on a timer. Slots mode turns through its children (2 to 50); repeat mode draws its one child once per row (at most 50), with $item and $index.",
       whenToUse: "Several values that share one spot, such as CPU for each machine, or a few views to flip through.",

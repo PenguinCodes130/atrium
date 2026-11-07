@@ -11,6 +11,26 @@ import { rowKeys } from "@/features/components/render/copy-overrides";
 export type CopyOverride = { props?: Record<string, PropValue>; style?: Record<string, unknown>; hidden?: boolean };
 export type CopyOverrides = Record<string, Record<string, CopyOverride>>;
 
+/**
+ * Wave 2.10c r2 item 6c (security): row keys come from service data (a machine's name), so a row named
+ * `__proto__` must never reach an object's prototype. These keys are refused as row and node keys: no override
+ * is written for them, the builder offers no This copy only for that copy, and every lookup is an own-key one.
+ */
+export const UNSAFE_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+export const safeKey = (k: string): boolean => !UNSAFE_KEYS.has(k);
+const own = <T>(o: Record<string, T> | undefined, k: string): T | undefined => (o && safeKey(k) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
+/** A copy of an override map with no prototype and without unsafe keys, at every level the builder writes. */
+function cleanMap(all: CopyOverrides): CopyOverrides {
+  const out = Object.create(null) as CopyOverrides;
+  for (const [row, nodes] of Object.entries(all)) {
+    if (!safeKey(row) || !plain(nodes)) continue;
+    const keep = Object.create(null) as Record<string, CopyOverride>;
+    for (const [id, ov] of Object.entries(nodes)) if (safeKey(id) && plain(ov)) keep[id] = structuredClone(ov);
+    out[row] = keep;
+  }
+  return out;
+}
+
 const plain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v) && !("$bind" in (v as object));
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -39,13 +59,14 @@ export function overridesOf(repeat: ComponentNode | null | undefined): CopyOverr
 /** The override one copy has for one node inside the template, or undefined. */
 export function overrideFor(doc: AppDocument, repeatId: string, rowKey: string, nodeId: string): CopyOverride | undefined {
   const r = findNode(doc, repeatId)?.node;
-  const row = overridesOf(r)[rowKey];
-  return row && plain(row[nodeId]) ? row[nodeId] : undefined;
+  const row = own(overridesOf(r), rowKey);
+  const ov = own(row, nodeId);
+  return plain(ov) ? ov : undefined;
 }
 
 /** True when the copy for this row has any override. */
 export function copyChanged(doc: AppDocument, repeatId: string, rowKey: string): boolean {
-  const row = overridesOf(findNode(doc, repeatId)?.node)[rowKey];
+  const row = own(overridesOf(findNode(doc, repeatId)?.node), rowKey);
   return !!row && Object.keys(row).length > 0;
 }
 
@@ -63,12 +84,13 @@ export function withOverride(node: ComponentNode, ov: CopyOverride | undefined):
 /** A merge patch (null deletes a key) that turns `from` into `to`; undefined when they are the same. */
 export function mergeDiff(from: unknown, to: unknown): unknown {
   if (plain(from) && plain(to)) {
-    const out: Record<string, unknown> = {};
+    const out = Object.create(null) as Record<string, unknown>;
     for (const k of Object.keys(to)) {
-      const d = mergeDiff(from[k], to[k]);
+      if (!safeKey(k)) continue;
+      const d = mergeDiff(own(from, k), to[k]);
       if (d !== undefined) out[k] = d;
     }
-    for (const k of Object.keys(from)) if (!(k in to)) out[k] = null;
+    for (const k of Object.keys(from)) if (safeKey(k) && !Object.prototype.hasOwnProperty.call(to, k)) out[k] = null;
     return Object.keys(out).length ? out : undefined;
   }
   if (to === undefined) return from === undefined ? undefined : null;
@@ -77,9 +99,10 @@ export function mergeDiff(from: unknown, to: unknown): unknown {
 
 /** Drops empty override objects (a node with nothing left, a row with no node). */
 function prune(all: CopyOverrides): CopyOverrides {
-  const out: CopyOverrides = {};
+  const out = Object.create(null) as CopyOverrides;
   for (const [row, nodes] of Object.entries(all)) {
-    const keep: Record<string, CopyOverride> = {};
+    if (!safeKey(row)) continue;
+    const keep = Object.create(null) as Record<string, CopyOverride>;
     for (const [id, ov] of Object.entries(nodes ?? {})) {
       const o: CopyOverride = {};
       if (ov.props && Object.keys(ov.props).length) o.props = ov.props;
@@ -115,9 +138,11 @@ export function copyEditOps(doc: AppDocument, repeatId: string, rowKey: string, 
   const repeat = findNode(doc, repeatId)?.node;
   const node = findNode(doc, nodeId)?.node;
   if (!repeat || !node) return { ops: [], rest: patch };
-  const all = structuredClone(overridesOf(repeat));
-  const row = (all[rowKey] ??= {});
-  const ov: CopyOverride = { ...(row[nodeId] ?? {}) };
+  // Item 6c: a row (or node) key that could reach a prototype is refused outright: nothing is written.
+  if (!safeKey(rowKey) || !safeKey(nodeId)) return { ops: [], rest: null };
+  const all = cleanMap(overridesOf(repeat));
+  const row = (all[rowKey] ??= Object.create(null) as Record<string, CopyOverride>);
+  const ov: CopyOverride = { ...(own(row, nodeId) ?? {}) };
   const p = patch as Record<string, unknown>;
   if ("props" in p && plain(p.props)) {
     const merged = { ...(ov.props ?? {}) };
@@ -153,9 +178,9 @@ export function copyEditOps(doc: AppDocument, repeatId: string, rowKey: string, 
 /** Reset this copy: the op removing every override the row has (null when it has none). */
 export function resetCopyOps(doc: AppDocument, repeatId: string, rowKey: string): DraftOp[] {
   const repeat = findNode(doc, repeatId)?.node;
-  if (!repeat) return [];
-  const all = structuredClone(overridesOf(repeat));
-  if (!all[rowKey]) return [];
+  if (!repeat || !safeKey(rowKey)) return [];
+  const all = cleanMap(overridesOf(repeat));
+  if (!own(all, rowKey)) return [];
   delete all[rowKey];
   const op = writeOp(repeat, all);
   return op ? [op] : [];

@@ -54,6 +54,8 @@ export function issueMessage(path: string): string {
   const key = path.replace(/^(tokens|dark)\./, "");
   const nf = NUMBER_FIELDS[key];
   if (nf) return `${nf.label} must be between ${nf.min} and ${nf.max}.`;
+  if (key === "scrollbar.widthPx") return "Scrollbar width must be 4, 6 or 8 px.";
+  if (key === "scrollbar.thumb") return "Scrollbar colour must be an oklch() or #hex colour.";
   if (RANGE_TEXT[leaf]) return `${path} must be ${RANGE_TEXT[leaf]}.`;
   if (/color|Text|surface$|accent|line|ok$|warn$|bad$|info$|background|activeFill/.test(leaf) || path.includes(".color.")) return `${path} must be an oklch() or #hex colour.`;
   if (/display|body|mono/.test(leaf)) return `${path} must be one of the built-in font families or an uploaded font.`;

@@ -732,6 +732,10 @@ const ChromeSchema = z.object({
   gradient: z.tuple([color, color]).optional(),
 });
 
+// A11.3, A11.5 (Wave 2.10c r2 Fix 15): the scroll kinds' drawn thumb, set in the theme editor; absent
+// means canvas text at 35%, 6 px.
+const ScrollbarSchema = z.object({ thumb: color, widthPx: nearest([4, 6, 8] as const) });
+
 export const ThemeTokensSchema = z.object({
   wallpaper: WallpaperSchema,
   color: ColorSchema,
@@ -741,6 +745,7 @@ export const ThemeTokensSchema = z.object({
   space: SpaceSchema,
   motion: MotionSchema,
   chrome: ChromeSchema,
+  scrollbar: ScrollbarSchema.optional(),
 });
 
 export const MAX_CUSTOM_CSS_BYTES = 64 * 1024;
@@ -762,7 +767,7 @@ export const ThemeSchema = z.object({
   mode: z.enum(["light", "dark", "auto"]),
   tokens: ThemeTokensSchema,
   dark: z
-    .object({ wallpaper: WallpaperSchema, color: ColorSchema, surface: SurfaceSchema, type: TypeSchema, shape: ShapeSchema, space: SpaceSchema, motion: MotionSchema, chrome: ChromeSchema })
+    .object({ wallpaper: WallpaperSchema, color: ColorSchema, surface: SurfaceSchema, type: TypeSchema, shape: ShapeSchema, space: SpaceSchema, motion: MotionSchema, chrome: ChromeSchema, scrollbar: ScrollbarSchema })
     .partial()
     .optional(),
   fonts: z.array(ThemeFontSchema).max(8).optional(),

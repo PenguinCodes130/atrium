@@ -12,6 +12,19 @@ export function kindWord(node: ComponentNode | undefined | null): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * Wave 2.10c r2 item 19: a widget in a step's words: its kind, and its own title or name when it has one
+ * ('Stat "CPU, every machine"'), so two charts on one page read apart. Props (a stat's label) are not used.
+ */
+export function stepName(node: ComponentNode | undefined | null): string {
+  const kind = kindWord(node);
+  const own = (node?.title?.trim() || node?.name?.trim() || "").replace(/\s+/g, " ");
+  if (!own || own.toLowerCase() === kind.toLowerCase()) return kind;
+  return `${kind} "${own.length > 40 ? `${own.slice(0, 39)}...` : own}"`;
+}
+/** Wave 2.10c r2 item 19: a page name in a step's words, quoted ('"New page"'). */
+const pageName = (t: string | undefined) => (t?.trim() ? `"${t.trim()}"` : "");
+
 const isBindingValue = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v) && typeof (v as { $bind?: unknown }).$bind === "string";
 const hasBinding = (v: unknown): boolean => {
   if (isBindingValue(v)) return true;
@@ -22,7 +35,7 @@ const hasBinding = (v: unknown): boolean => {
 
 /** The words for one node.update: Resize, Move, Rename, Hide, data or a plain change. */
 function updateWord(node: ComponentNode | undefined, patch: Record<string, unknown>): string {
-  const kind = kindWord(node);
+  const kind = stepName(node);
   const keys = Object.keys(patch);
   if (keys.length === 1 && keys[0] === "slot") {
     const s = patch.slot as { w?: number; h?: number } | null;
@@ -68,18 +81,22 @@ export function historyLabel(before: AppDocument, ops: DraftOp[]): string {
   const many = (n: number, one: string) => (n === 1 ? one : `${n} widgets`);
   if (kinds.has("page.add")) {
     const p = list.find((o): o is Extract<DraftOp, { op: "page.add" }> => o.op === "page.add")!;
-    return `Add page ${p.page.title}`.trim();
+    return `Add page ${pageName(p.page.title)}`.trim();
   }
   if (kinds.has("page.remove")) {
     const p = list.find((o): o is Extract<DraftOp, { op: "page.remove" }> => o.op === "page.remove")!;
-    return `Remove page ${findPage(before, p.pageId)?.title ?? ""}`.trim();
+    return `Remove page ${pageName(findPage(before, p.pageId)?.title)}`.trim();
   }
   if (kinds.size === 1 && kinds.has("page.move")) return "Reorder pages";
   if (kinds.size === 1 && kinds.has("page.update")) {
     const p = list[0] as Extract<DraftOp, { op: "page.update" }>;
     const keys = Object.keys(p.patch ?? {});
-    const title = findPage(before, p.pageId)?.title ?? "";
-    if (keys.includes("title")) return `Rename page ${title}`.trim();
+    const title = pageName(findPage(before, p.pageId)?.title);
+    if (keys.includes("title")) {
+      const to = typeof p.patch.title === "string" ? pageName(p.patch.title) : "";
+      if (to && to !== title) return title ? `Rename page ${title} to ${to}` : `Rename page to ${to}`;
+      return `Rename page ${title}`.trim();
+    }
     if (keys.includes("inNav")) return `${p.patch.inNav ? "Show" : "Hide"} page ${title} in navigation`.trim();
     return `Change page ${title}`.trim();
   }
@@ -91,14 +108,13 @@ export function historyLabel(before: AppDocument, ops: DraftOp[]): string {
   if (kinds.size === 1 && kinds.has("chrome.update")) return "Change navigation";
   if (adds.length && !removes.length) {
     const first = adds[0]!.node;
-    if (adds.length === 1 && updates.length === 0) return `Insert ${kindWord(first)}`;
-    return adds.length === 1 ? `Insert ${kindWord(first)}` : `Insert ${adds.length} widgets`;
+    return adds.length === 1 ? `Insert ${stepName(first)}` : `Insert ${adds.length} widgets`;
   }
-  if (removes.length && !adds.length) return `Delete ${many(removes.length, kindWord(node(removes[0]!.nodeId)))}`;
+  if (removes.length && !adds.length) return `Delete ${many(removes.length, stepName(node(removes[0]!.nodeId)))}`;
   if (moves.length && !updates.length) {
     // A resize handle sends a move in place with a new size: that is a resize.
     const resized = moves.every((m) => { const was = node(m.nodeId); const p = was ? findNode(before, m.nodeId)?.parent : null; return !!m.slot && !!was?.slot && p?.id === m.parentId && (m.slot.w !== was.slot.w || m.slot.h !== was.slot.h); });
-    return `${resized ? "Resize" : "Move"} ${many(moves.length, kindWord(node(moves[0]!.nodeId)))}`;
+    return `${resized ? "Resize" : "Move"} ${many(moves.length, stepName(node(moves[0]!.nodeId)))}`;
   }
   if (updates.length) {
     const ids = new Set(updates.map((u) => u.nodeId));

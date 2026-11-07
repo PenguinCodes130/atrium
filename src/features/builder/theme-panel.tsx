@@ -2,8 +2,8 @@
 // Theme in the builder bar (Wave 2.10b F9; spec 4 F9, criterion 16). A panel docked on the right, so the
 // canvas stays in view and undimmed: every theme as a swatch row; pointing at one (hover or focus)
 // previews it on this app's real page with nothing written; Use puts it on the app (one undoable edit);
-// Edit opens settings' full theme editor on a saved theme; New theme copies the current one and opens
-// the editor on it. Settings > Themes stays where it is. The editor is settings' own export, embedded
+// Edit opens settings' full theme editor on a saved theme; New theme opens the editor on an unsaved copy
+// of the current one, stored and put on the app only on its first Save (Wave 2.10c r2, gauntlet Fix 21). Settings > Themes stays where it is. The editor is settings' own export, embedded
 // as is (not forked): it keeps its own draft and Save (A11.1), and the canvas follows each save.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DraftOp, Theme, ThemeRef } from "@/core/contracts";
@@ -11,7 +11,7 @@ import { Button, toast } from "@/features/shell";
 import { ThemeEditor, type EditorProps } from "@/features/settings/ui/theme-editor";
 import { refreshThemePicker, type ThemeOption } from "@/features/themes/client";
 
-type Saved = { id: string; name: string; rev: number; builtIn: boolean; invalid: number; theme: Theme; usedBy: EditorProps["usedBy"] };
+type Saved = { id: string; name: string; rev: number; builtIn: boolean; invalid: number; theme: Theme; usedBy: EditorProps["usedBy"]; isNew?: boolean };
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   const r = await fetch(url, { credentials: "same-origin", ...(init ?? {}), headers: { accept: "application/json", ...(init?.body ? { "content-type": "application/json" } : {}) } }).catch(() => null);
@@ -73,23 +73,28 @@ export function ThemePanel({ current, apply, preview, saved, onClose }: ThemePan
     preview(null, null);
     setEditing({ ...j, id });
   };
-  // New theme: a saved copy of this app's theme (or Control Room), put on the app and opened in the editor.
+  // New theme: an unsaved copy of this app's theme (or Control Room) in the editor. Nothing is stored
+  // until Save; then the theme is put on the app and the editor stays open on it.
   const create = async () => {
     setBusy(true);
     const base = currentId ?? "control-room";
-    const j = await getJson<{ id: string; name: string }>(`/api/settings/themes/${encodeURIComponent(base)}/duplicate`, { method: "POST" });
+    const j = await getJson<{ theme: Theme; name: string }>(`/api/settings/themes/${encodeURIComponent(base)}/duplicate`);
     setBusy(false);
-    if (!j?.id) { toast({ kind: "error", title: "The theme could not be made", description: "Owners and members can make themes." }); return; }
+    if (!j?.theme) { toast({ kind: "error", title: "The theme could not be made", description: "Owners and members can make themes." }); return; }
+    preview(null, null);
+    setEditing({ id: "new", name: j.name, rev: 0, builtIn: false, invalid: 0, theme: j.theme, usedBy: [], isNew: true });
+  };
+  const created = async (c: { id: string }) => {
     refreshThemePicker();
-    apply([{ op: "theme.set", theme: { themeId: j.id } }]);
+    apply([{ op: "theme.set", theme: { themeId: c.id } }]);
     await load();
-    await openEditor(j.id);
+    await openEditor(c.id);
   };
 
   // While the editor is open, follow its saves: the saved rev changes, the canvas is drawn again.
   const rev = useRef<number | null>(null);
   useEffect(() => {
-    if (!editing) return;
+    if (!editing || editing.isNew) return;
     rev.current = editing.rev;
     let live = true;
     const t = window.setInterval(async () => {
@@ -114,14 +119,14 @@ export function ThemePanel({ current, apply, preview, saved, onClose }: ThemePan
     >
       <header className="flex h-12 flex-none items-center gap-2 border-b border-line px-3">
         {editing && <button type="button" className="inline-flex min-h-9 items-center px-1 type-label underline underline-offset-2 touch:min-h-11" onClick={() => { setEditing(null); void load(); }} data-theme-back>All themes</button>}
-        <h2 className="m-0 min-w-0 flex-1 truncate type-title-3">{editing ? `Edit ${editing.name}` : "Theme"}</h2>
+        <h2 className="m-0 min-w-0 flex-1 truncate type-title-3">{editing ? (editing.isNew ? `New theme: ${editing.name}` : `Edit ${editing.name}`) : "Theme"}</h2>
         <Button variant="quiet" onClick={onClose} data-theme-close>Close</Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         {editing ? (
           <div className="flex flex-col gap-3" data-theme-editing={editing.id}>
-            <p className="m-0 type-caption text-fg-2">Every app that uses {editing.name} changes when you save. Save, and this page shows it at once. Settings &gt; Themes has the same editor.</p>
-            <ThemeEditor key={editing.id} id={editing.id} rev={editing.rev} theme={editing.theme} invalid={editing.invalid} usedBy={editing.usedBy} />
+            <p className="m-0 type-caption text-fg-2">{editing.isNew ? "A new theme, not stored yet. Save stores it and puts it on this app; All themes or Close leaves without making it." : `Every app that uses ${editing.name} changes when you save. Save, and this page shows it at once. Settings > Themes has the same editor.`}</p>
+            <ThemeEditor key={editing.id} id={editing.id} rev={editing.rev} theme={editing.theme} invalid={editing.invalid} usedBy={editing.usedBy} isNew={editing.isNew} onCreated={(c) => void created(c)} />
           </div>
         ) : (
           <div className="flex flex-col gap-4" data-theme-list>

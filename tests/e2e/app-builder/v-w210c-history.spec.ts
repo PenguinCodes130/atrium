@@ -165,7 +165,7 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   d = await untilDraft(id, (x) => JSON.stringify(nodeIn(x, stat)?.slot) !== JSON.stringify(slot0));
   const slot1 = nodeIn(d, stat)!.slot!;
   expect(slot1, "the drag moved the stat").not.toEqual(slot0);
-  await expect(undoBtn(page)).toHaveAttribute("title", "Undo Move Stat");
+  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Move Stat( "[^"]*")?$/);
   await key(page, "Control+z");
   d = await untilDraft(id, (x) => JSON.stringify(nodeIn(x, stat)?.slot) === JSON.stringify(slot0));
   expect(nodeIn(d, stat)!.slot, "one undo puts the whole drag back").toEqual(slot0);
@@ -187,7 +187,7 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   d = await untilDraft(id, (x) => nodeIn(x, stat)!.slot!.w !== slot1.w || nodeIn(x, stat)!.slot!.h !== slot1.h);
   const slot2 = nodeIn(d, stat)!.slot!;
   expect(slot2.w * 100 + slot2.h, "the resize grew the stat").not.toBe(slot1.w * 100 + slot1.h);
-  await expect(undoBtn(page)).toHaveAttribute("title", "Undo Resize Stat");
+  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Resize Stat( "[^"]*")?$/);
   await undoBtn(page).click();
   d = await untilDraft(id, (x) => JSON.stringify(nodeIn(x, stat)?.slot) === JSON.stringify(slot1));
   expect(nodeIn(d, stat)!.slot, "one undo puts the whole resize back").toEqual(slot1);
@@ -206,7 +206,7 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   await field.pressSequentially("Load", { delay: 120 });
   d = await untilDraft(id, (x) => nodeIn(x, stat)?.props.label === "Load");
   expect(nodeIn(d, stat)!.props.label).toBe("Load");
-  await expect(undoBtn(page)).toHaveAttribute("title", "Undo Change Stat");
+  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Change Stat( "[^"]*")?$/);
   // Focus a non-text control in the inspector (a group heading) and undo from there.
   const heading = insp.locator("[data-inspector-group] h3 button").first();
   await heading.focus();
@@ -218,11 +218,16 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   await page.keyboard.press("Control+Shift+z");
   d = await untilDraft(id, (x) => nodeIn(x, stat)?.props.label === "Load");
   expect(nodeIn(d, stat)!.props.label).toBe("Load");
-  // Inside a text field being typed in, the shortcut is the field's own (the builder history is untouched).
+  // Wave 2.10c r2 item 8 (changed from round 1): inside an inspector text field the shortcut steps the
+  // builder's history (the field's typing is that step), so nothing new is recorded on top; Redo brings it back.
   await field.click();
   await page.keyboard.press("Control+z");
-  await page.waitForTimeout(800);
-  expect(nodeIn(await draft(id), stat)!.props.label, "Ctrl+Z inside a text field is not a builder undo").toBe("Load");
+  d = await untilDraft(id, (x) => ((nodeIn(x, stat)?.props.label as string | undefined) ?? "") === label0);
+  expect((nodeIn(d, stat)!.props.label as string | undefined) ?? "", "Ctrl+Z in the field takes the typed word back as one step").toBe(label0);
+  await expect(redoBtn(page)).toHaveAttribute("title", /^Redo Change Stat( "[^"]*")?$/);
+  await page.keyboard.press("Control+Shift+z");
+  d = await untilDraft(id, (x) => nodeIn(x, stat)?.props.label === "Load");
+  expect(nodeIn(d, stat)!.props.label).toBe("Load");
   await page.screenshot({ path: out("n2-prop-edit.png") });
 
   // 6. Delete: the Delete key shows "Deleted Stat · Undo"; the toast's Undo brings it back.
@@ -250,7 +255,7 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   await page.keyboard.press("Escape");
   d = await untilDraft(id, (x) => x.doc.pages.length === 2);
   expect(d.doc.pages).toHaveLength(2);
-  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Add page New page/);
+  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Add page "New page"/);
   await undoBtn(page).click();
   d = await untilDraft(id, (x) => x.doc.pages.length === 1);
   expect(d.doc.pages, "undo removed the added page").toHaveLength(1);
@@ -265,7 +270,7 @@ test("N2 criterion 21: insert, data, move, resize, prop, delete and page add eac
   await expect(page.locator("[data-publish-glow], [data-publish-check]").first()).toBeAttached();
   await expect(page.locator("[data-review]")).toHaveCount(0);
   await expect(undoBtn(page)).toBeEnabled();
-  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Add page New page/);
+  await expect(undoBtn(page)).toHaveAttribute("title", /^Undo Add page "New page"/);
   await undoBtn(page).click();
   d = await untilDraft(id, (x) => x.doc.pages.length === 1);
   expect(d.doc.pages, "history survived publish").toHaveLength(1);

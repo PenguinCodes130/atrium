@@ -7,13 +7,18 @@
 // addresses are allowed as for integrations, with one tightening: when the typed address is a PUBLIC
 // website, every later hop and every icon must also be public (the request is marked the way the image
 // proxy marks its public-only reads, so safeRequest refuses private addresses and pins public ones). A
-// public page can therefore never point Atrium's server at a machine on the LAN.
+// public page can therefore never point Atrium's server at a machine on the LAN. A typed host counts as
+// public when ANY of its addresses is public; one whose DNS answer mixes public and private addresses
+// is refused before any request (gauntlet w210c-r1 Fix 6a), so a site's DNS cannot switch the rule off.
 //
-// One 5 s deadline covers the whole fetch. The page is read up to 512 KB (a larger page is not parsed;
-// /favicon.ico is tried instead), the manifest up to 512 KB, each icon up to 1 MB. The best raster at
-// most 256 px or an SVG (sanitised as uploads are) is stored, deduplicated by content hash, and the
-// typed origin remembers it for 7 days: the next ask for that origin answers the stored path without
-// any request.
+// One 5 s deadline covers the whole fetch. The page is read up to 512 KB; a larger page is asked for
+// again with `Range: bytes=0-524287` and its start is parsed (icons are declared in the head; Fix 16),
+// and when the server will not send a part only /favicon.ico is tried. The manifest is read up to
+// 512 KB, each icon up to 1 MB. The best raster at most 256 px or an SVG (sanitised as uploads are) is
+// stored, deduplicated by content hash, and the exact typed address (scheme, host, port, path and query)
+// remembers it for 7 days: the next ask for that same address answers the stored path without any
+// request. Keyed by the exact address, not the origin (Fix 6b), so one page's icon is never answered for
+// another page or the bare site; `refresh` fetches again.
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import type { Principal } from "@/core/contracts";
@@ -60,9 +65,11 @@ const STATUS: Record<FaviconMessageKey, [number, string]> = {
   forbidden: [403, "forbidden"],
   refused: [403, "favicon_refused"],
   privateFromPublic: [403, "favicon_refused"],
+  mixedAnswer: [403, "favicon_refused"],
   none: [422, "favicon_none"],
   tooLarge: [422, "favicon_none"],
   tooManyPx: [422, "favicon_none"],
+  pageTooLarge: [422, "favicon_none"],
   rateLimited: [429, "rate_limited"],
   unreachable: [502, "favicon_unreachable"],
   redirects: [502, "favicon_unreachable"],
@@ -102,12 +109,17 @@ export function addressesFor(raw: unknown): URL[] {
   return out;
 }
 
-// ---- The 7 day store (settings rows: scope "favicon-cache", key = origin) -------------------------------
+// ---- The 7 day store (settings rows: scope "favicon-cache", key = the exact normalised address) ----------
+
+/** The store's key for an address: scheme, host, port, path and query, without the fragment. */
+export function cacheKey(u: URL): string {
+  return `${u.origin}${u.pathname || "/"}${u.search}`;
+}
 
 type CacheValue = { file: string; at: number };
 
-export function cachedIcon(origin: string, now: number): { path: string; name: string } | null {
-  const row = db().select().from(settingValues).where(and(eq(settingValues.scope, CACHE_SCOPE), eq(settingValues.key, origin))).get();
+export function cachedIcon(key: string, now: number): { path: string; name: string } | null {
+  const row = db().select().from(settingValues).where(and(eq(settingValues.scope, CACHE_SCOPE), eq(settingValues.key, key))).get();
   const v = row?.value as Partial<CacheValue> | undefined;
   if (!v || typeof v.file !== "string" || typeof v.at !== "number") return null;
   if (now - v.at >= FAVICON_CACHE_MS || v.at > now + 60_000) return null;
@@ -117,11 +129,11 @@ export function cachedIcon(origin: string, now: number): { path: string; name: s
   return { path: `/uploads/${v.file}`, name: up.name };
 }
 
-function remember(origin: string, file: string, now: number, by: string) {
+function remember(key: string, file: string, now: number, by: string) {
   const value: CacheValue = { file, at: now };
   db()
     .insert(settingValues)
-    .values({ scope: CACHE_SCOPE, key: origin, value, updatedAt: new Date(now), updatedBy: by })
+    .values({ scope: CACHE_SCOPE, key, value, updatedAt: new Date(now), updatedBy: by })
     .onConflictDoUpdate({ target: [settingValues.scope, settingValues.key], set: { value, updatedAt: new Date(now), updatedBy: by } })
     .run();
 }
@@ -143,7 +155,13 @@ export function resetFaviconLimits() {
 
 // ---- Fetching ------------------------------------------------------------------------------------------
 
-export type FaviconDeps = { request?: (r: SafeRequest) => Promise<RawResponse>; resolve?: (host: string) => Promise<{ address: string }[]>; now?: () => number };
+export type FaviconDeps = {
+  request?: (r: SafeRequest) => Promise<RawResponse>;
+  resolve?: (host: string) => Promise<{ address: string }[]>;
+  now?: () => number;
+  /** Skip the 7 day store and fetch again (the result replaces the stored one). */
+  refresh?: boolean;
+};
 
 /** Why a safeRequest failed, in the favicon's own words. */
 export function reasonOf(err: unknown): FaviconMessageKey {
@@ -160,7 +178,7 @@ export function reasonOf(err: unknown): FaviconMessageKey {
 }
 
 /** Failure reasons, most important first: a refusal always wins, so a blocked address is never hidden. */
-const PRIORITY: FaviconMessageKey[] = ["refused", "privateFromPublic", "timeout", "tooLarge", "tooManyPx", "none"];
+const PRIORITY: FaviconMessageKey[] = ["refused", "mixedAnswer", "privateFromPublic", "timeout", "tooLarge", "tooManyPx", "pageTooLarge", "none"];
 
 type Run = {
   deadline: number;
@@ -171,7 +189,7 @@ type Run = {
   now: () => number;
 };
 
-async function get(run: Run, url: string, maxBytes: number, accept: string): Promise<RawResponse> {
+async function get(run: Run, url: string, maxBytes: number, accept: string, extra: Record<string, string> = {}): Promise<RawResponse> {
   const remaining = run.deadline - run.now();
   if (remaining <= 50) throw new FaviconRefused("timeout");
   return run.request({
@@ -181,12 +199,18 @@ async function get(run: Run, url: string, maxBytes: number, accept: string): Pro
     maxBytes,
     timeoutMs: remaining,
     verifyTls: !(run.insecureHost && new URL(url).hostname === run.insecureHost),
-    headers: { accept, ...(run.publicOnly ? { [FAVICON_PUBLIC_HEADER]: "public-only" } : {}) },
-    ...(run.publicOnly ? { userShaped: { trustedHeaders: [] } } : {}),
+    headers: { accept, ...extra, ...(run.publicOnly ? { [FAVICON_PUBLIC_HEADER]: "public-only" } : {}) },
+    // A run that began on your network stays there on every hop and socket (w210c r2, SFR 2).
+    ...(run.publicOnly ? { userShaped: { trustedHeaders: [] } } : { privateOnly: true }),
   });
 }
 
-/** The typed host's addresses, refused here first when any is link-local or metadata. */
+/**
+ * Whether the typed host is a public website (then every hop must be public), from its addresses. Refused
+ * here first when any address is link-local or metadata, and when the answer mixes public and private
+ * addresses: such a host is neither a plain LAN machine nor a plain website, and treating it as either
+ * would let its DNS steer the server (gauntlet w210c-r1 Fix 6a).
+ */
 async function hostIsPublic(run: Run, resolve: (h: string) => Promise<{ address: string }[]>, host: string): Promise<boolean> {
   const remaining = run.deadline - run.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -200,7 +224,9 @@ async function hostIsPublic(run: Run, resolve: (h: string) => Promise<{ address:
   // address sits in the carrier NAT range the engine allows, so the typed host is refused here too
   // (later hops: shared file request to integrations, see the N4 build report).
   if (addrs.some((a) => EXTRA_METADATA.has(a.address.replace(/^::ffff:/i, "")))) throw new FaviconRefused("refused");
-  return addrs.length > 0 && addrs.every((a) => !isPrivateAddress(a.address));
+  const pub = addrs.filter((a) => !isPrivateAddress(a.address)).length;
+  if (pub > 0 && pub < addrs.length) throw new FaviconRefused("mixedAnswer");
+  return pub > 0;
 }
 
 const EXTRA_METADATA = new Set(["100.100.100.200"]);
@@ -244,10 +270,20 @@ async function tryIcon(run: Run, c: IconCandidate) {
   return iconFromBytes(res.body);
 }
 
-/** The page, once: the response, or `null` when it was too large to parse (then only /favicon.ico is tried). */
+/**
+ * The page: the whole response; for a page over 512 KB, its first 512 KB asked for with a Range header
+ * (icons are declared in the head); or `null` when the server would not send a part (then only
+ * /favicon.ico is tried).
+ */
 async function readPage(run: Run, url: string): Promise<RawResponse | null> {
   try {
     return await get(run, url, FAVICON_MAX_PAGE_BYTES, PAGE_ACCEPT);
+  } catch (err) {
+    if (reasonOf(err) !== "tooLarge") throw err;
+  }
+  try {
+    const part = await get(run, url, FAVICON_MAX_PAGE_BYTES, PAGE_ACCEPT, { range: `bytes=0-${FAVICON_MAX_PAGE_BYTES - 1}` });
+    return part.status === 206 ? { ...part, status: 200 } : part;
   } catch (err) {
     if (reasonOf(err) === "tooLarge") return null;
     throw err;
@@ -300,6 +336,7 @@ async function fetchOne(p: Principal, start: URL, run: Run, resolve: (h: string)
       }
     }
     if (list.some((c) => c.oversized)) reasons.add("tooManyPx");
+    if (!page) reasons.add("pageTooLarge");
     ranked = rankIcons([...list, fallbackIcon(finalUrl)]);
   }
   let checked: ReturnType<typeof iconFromBytes> | null = null;
@@ -326,7 +363,8 @@ async function fetchOne(p: Principal, start: URL, run: Run, resolve: (h: string)
 }
 
 /**
- * The icon for what the person typed: from the 7 day store when the origin has one, else fetched on
+ * The icon for what the person typed: from the 7 day store when that exact address has one (unless
+ * `deps.refresh`), else fetched on
  * the server and stored as an image upload. Owners and members only (agents with atrium:edit are
  * owners or members). Throws FaviconRefused with the sentence to show.
  */
@@ -334,9 +372,11 @@ export async function fetchFavicon(p: Principal, raw: unknown, deps: FaviconDeps
   if (!canUpload(p)) throw new Forbidden(M.forbidden);
   const now = deps.now ?? Date.now;
   const tries = addressesFor(raw);
-  for (const u of tries) {
-    const hit = cachedIcon(u.origin, now());
-    if (hit) return { ...hit, cached: true };
+  if (!deps.refresh) {
+    for (const u of tries) {
+      const hit = cachedIcon(cacheKey(u), now());
+      if (hit) return { ...hit, cached: true };
+    }
   }
   const by = p.kind === "guest" ? "" : p.userId;
   countFetch(by, now());
@@ -348,7 +388,7 @@ export async function fetchFavicon(p: Principal, raw: unknown, deps: FaviconDeps
   for (const [n, u] of tries.entries()) {
     try {
       const r = await fetchOne(p, u, run, resolve);
-      remember(u.origin, r.path.slice("/uploads/".length), now(), by);
+      remember(cacheKey(u), r.path.slice("/uploads/".length), now(), by);
       log.info("favicon_stored", { ms: now() - t0, scheme: u.protocol.replace(":", "") });
       return r;
     } catch (err) {

@@ -2,7 +2,7 @@
 // builder writes the grown `h` on insert and when a component's props, data or children change, as one
 // history entry with that edit, pushing siblings down (fitOps). This file decides which edits start a
 // check (pure, unit-tested); builder-screen measures after the page has drawn (fit-measure.ts).
-import type { AppDocument, ComponentSizing, ComponentType, DraftOp } from "@/core/contracts";
+import type { ComponentNode, AppDocument, ComponentSizing, ComponentType, DraftOp } from "@/core/contracts";
 import { findNode } from "@/features/apps/doc";
 
 /** How long after an edit its components are still watched (live data and images arrive later). */
@@ -42,7 +42,10 @@ export function growTriggers(before: AppDocument, ops: DraftOp[]): string[] {
   const out = new Set<string>();
   for (const op of ops) {
     if (op.op === "node.add") {
-      out.add(op.node.id);
+      // Wave 2.10c r2 item 7: everything inside an added widget too (a Card for each's stats), since a page no
+      // longer grows on open; the insert's own step is where its boxes fit their content.
+      const all = (n: ComponentNode) => { out.add(n.id); for (const k of n.children ?? []) all(k); };
+      all(op.node);
       out.add(op.parentId);
     } else if (op.op === "node.update") {
       const node = findNode(before, op.nodeId)?.node;

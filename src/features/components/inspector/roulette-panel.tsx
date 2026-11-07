@@ -2,7 +2,9 @@
 // Wave 2.10c N3: the roulette's own inspector fields (A11.4). The timer is a menu (Off, 3 s to 1 h), the
 // ways to turn it are three switches, and a repeat over more than 50 rows offers a list or a table in its
 // place (one draft step: the roulette is replaced by a list or table reading the same rows, in its slot).
+import type { ReactNode } from "react";
 import type { ComponentNode, DraftOp, PropValue } from "@/core/contracts";
+import { isBinding, sourcesInTemplate } from "../bindings";
 import { newId } from "../ids";
 import { advanceOf, ROULETTE_MAX, timerOf } from "../render/roulette";
 import { SwitchRow } from "./inspector";
@@ -108,5 +110,129 @@ export function RouletteTooMany({ node, rows, pages, onOps }: { node: ComponentN
         </div>
       ) : null}
     </div>
+  );
+}
+
+// ---- Round 2 (gauntlet w210c-r1 items 1 and 2) ----
+
+/** Words for a data kind, in a sentence ("one number"). */
+const KIND_WORDS: Record<string, string> = { stat: "one number", series: "a series over time", status: "a status list", table: "a table", list: "a list", text: "text" };
+type Sample = { kind?: string; columns?: { key: string; label?: string; type?: string }[]; rows?: Record<string, unknown>[]; items?: unknown[] } | undefined;
+
+/**
+ * Why a repeat-mode roulette's rows cannot be drawn, in one sentence, or null when they can (or are still
+ * loading). `value` is the field as stored, `drawn` what it reads now, `sources` the app's source names.
+ */
+export function rouletteItemsSentence(value: unknown, drawn: unknown, sources: readonly string[]): string | null {
+  if (!isBinding(value)) return null;
+  const t = value.$bind.trim();
+  if (!t) return null;
+  if (!/^\{\{[\s\S]*\}\}$/.test(t)) return "Write it as a template in double braces, such as {{ machines.rows }}, or pick a list below.";
+  let used: string[] = [];
+  try { used = sourcesInTemplate(t); } catch { used = []; }
+  const missing = used.filter((u) => !u.startsWith("$") && !sources.includes(u));
+  if (missing.length) return `This app has no data called ${missing[0]}. Pick a list below, or Connect data first.`;
+  if (drawn === undefined || drawn === null) return null; // still loading
+  if (Array.isArray(drawn)) return null;
+  const k = drawn && typeof drawn === "object" ? (drawn as { kind?: unknown }).kind : typeof drawn === "string" ? "text" : typeof drawn === "number" ? "stat" : undefined;
+  if (k === "table" || k === "status") return null;
+  return `This reads ${KIND_WORDS[String(k)] ?? "one value"}, not rows. A roulette turns through the rows of a table or a status list, such as {{ machines.rows }}.`;
+}
+
+/** The binding for a source's rows ({{ name.rows }}, or .items for a status list). */
+export function rowsTemplate(name: string, sample: Sample): string {
+  return sample?.kind === "status" ? `{{ ${name}.items }}` : `{{ ${name}.rows }}`;
+}
+
+/** A ready template for one row: a stat with the row's first number and its name (like Card for each). */
+export function rowTemplateNode(sample: Sample): ComponentNode {
+  const cols = sample?.columns ?? [];
+  const firstRow = sample?.rows?.[0] ?? {};
+  const isNum = (c: { key: string; type?: string }) => c.type === "number" || c.type === "percent" || c.type === "bytes" || typeof firstRow[c.key] === "number";
+  const nameCol = cols.find((c) => !isNum(c)) ?? cols[0];
+  const numCol = cols.find(isNum);
+  if (sample?.kind === "status") return { id: newId("c"), type: "stat", props: { value: { $bind: "{{ $item.state }}" }, label: { $bind: "{{ $item.label }}" } } };
+  const props: Record<string, PropValue> = {};
+  if (numCol) props.value = { $bind: `{{ $item.${numCol.key} }}` };
+  if (nameCol) props.label = { $bind: `{{ $item.${nameCol.key} }}` };
+  if (!numCol && nameCol) props.value = { $bind: `{{ $item.${nameCol.key} }}` };
+  // Data not in yet: the row's name, which every machine and status row has; change it after.
+  if (!cols.length) props.value = { $bind: "{{ $item.name }}" };
+  return { id: newId("c"), type: "stat", props };
+}
+
+/**
+ * The roulette's "One slot for each row of" (item 2): the same data line as other data fields (Pick data,
+ * Write a template, the chip), plus a "Rows from" list of this app's data that binds its rows and, when the
+ * roulette has no widget yet, adds a ready one for each row, in one step. A wrong template keeps what was
+ * typed and says why in a sentence.
+ */
+export function RouletteItemsField({ node, field, sources, labelOf, data, drawn, onOps, setProp, tooMany }: {
+  node: ComponentNode;
+  field: ReactNode;
+  sources: readonly string[];
+  labelOf(name: string): string;
+  data: Record<string, unknown> | undefined;
+  drawn: unknown;
+  onOps?: (ops: DraftOp[]) => void;
+  setProp(k: string, v: PropValue | null): void;
+  tooMany: ReactNode;
+}) {
+  const repeat = node.props.mode === "repeat";
+  const sentence = repeat ? rouletteItemsSentence(node.props.items, drawn, sources) : null;
+  const cur = isBinding(node.props.items) ? node.props.items.$bind : "";
+  const pick = (name: string) => {
+    if (!name) return;
+    const sample = data?.[name] as Sample;
+    const items = { $bind: rowsTemplate(name, sample) };
+    if (onOps && !(node.children ?? []).length) {
+      onOps([{ op: "node.update", nodeId: node.id, patch: { props: { ...node.props, items } } } as DraftOp, { op: "node.add", parentId: node.id, node: rowTemplateNode(sample) }]);
+    } else setProp("items", items);
+  };
+  return (
+    <div className="flex flex-col gap-2" data-roulette-items>
+      {field}
+      {repeat && sources.length ? (
+        <label className="flex flex-col gap-1">
+          <span className={labelCls}>Rows from</span>
+          <select className={inputCls} value={sources.find((s) => cur.includes(`${s}.`) || cur === `{{ ${s} }}`) ?? ""} onChange={(e) => pick(e.target.value)} data-roulette-rows-from>
+            <option value="">Pick a list of this app&apos;s data</option>
+            {sources.map((s) => {
+              const k = (data?.[s] as Sample)?.kind;
+              const fits = !k || k === "table" || k === "status";
+              const rows = k === "table" ? (data?.[s] as Sample)?.rows?.length : k === "status" ? (data?.[s] as Sample)?.items?.length : undefined;
+              return (
+                <option key={s} value={s} disabled={!fits}>
+                  {`${labelOf(s)}${rows !== undefined ? ` · ${rows} ${rows === 1 ? "row" : "rows"}` : ""}${fits ? "" : " (not a list)"}`}
+                </option>
+              );
+            })}
+          </select>
+          <span className="type-caption text-fg-3">{(node.children ?? []).length ? "Its widget shows once for each row." : "Adds a ready widget for each row; change it after."}</span>
+        </label>
+      ) : null}
+      {sentence ? <p role="alert" className="type-caption m-0 text-[color:var(--warn)]" data-roulette-items-wrong>{sentence}</p> : null}
+      {tooMany}
+    </div>
+  );
+}
+
+/**
+ * "Turns through" (item 1, A11.4): repeating for each row holds exactly one widget, so with two or more in
+ * it that choice is off and says why; nothing is removed for you.
+ */
+export function RouletteModeField({ node, label, hint, words, setProp }: { node: ComponentNode; label: string; hint: string; words: Record<string, string>; setProp(k: string, v: PropValue | null): void }) {
+  const mode = node.props.mode === "repeat" ? "repeat" : "slots";
+  const kids = (node.children ?? []).length;
+  const blocked = mode === "slots" && kids > 1;
+  return (
+    <label className="flex flex-col gap-1" data-field="mode">
+      <span className={labelCls} data-field-label>{label}</span>
+      <select className={inputCls} value={mode} onChange={(e) => setProp("mode", e.target.value)} data-roulette-mode>
+        <option value="slots">{words.slots ?? "Its slots"}</option>
+        <option value="repeat" disabled={blocked}>{words.repeat ?? "One widget for each row"}</option>
+      </select>
+      {blocked ? <span className="type-caption text-fg-2" data-field-reason>{`To repeat one widget for each row, keep one widget in it first (it holds ${kids}).`}</span> : <span className="type-caption text-fg-3" data-field-hint>{hint}</span>}
+    </label>
   );
 }

@@ -133,7 +133,7 @@ export function describeTemplate(template: string): string | null {
 
 /** The prop that takes a whole source on this component type, or null when it has none. */
 export function wholeProp(type: string): "data" | "items" | null {
-  if (type === "list" || type === "repeat") return "items";
+  if (type === "list" || type === "repeat" || type === "roulette") return "items"; // Wave 2.10c r2 (C's request, item 2): a roulette's rows
   return META[type as keyof typeof META]?.accepts ? "data" : null;
 }
 

@@ -401,15 +401,25 @@ test.describe("desktop", () => {
     const { appId, rootId } = await prepare(req, "r4-final");
     const scratch = await context.newPage();
     const load = async () => {
+      // Wave 2.10c round 2 lead round: the scratch page (opened above for the pixel diff) can leave this
+      // page in the background, where its CSS entrance animations do not advance; the first cell (no delay)
+      // then stays at the entrance's first frame and is missing from the shot (c_r4styledaa "99.73%
+      // changed" on every variant, as the baseline was the bad shot). Bring it to the front first.
+      await page.bringToFront();
       await page.goto("/a/r4-final");
       await expect(page.locator(`[data-node="${PLAIN}"]`)).toBeVisible({ timeout: 15_000 });
+      // The theme's page-open entrance (F11) runs on the grid cells, outside every node, so no node CSS can
+      // reach it; it is not what this test measures, and a cell caught mid-entrance (or not repainted after
+      // it) was missing from the shot. End it at once. Node animations (the keyframes variants) still run.
+      await page.addStyleTag({ content: ".atr-render-root .atr-cell, .atr-render-root .atr-cell::after { animation: none !important; }" });
       await page.evaluate(() => document.fonts.ready);
-      // Wave 2.10c lead round: the baseline was sometimes taken while a widget was still drawing in (the
-      // viewer's Entrance, F11, and Motion's settle), so every variant then differed from it on that
-      // sibling (c_r4styledaa "99.73% changed"). Wait until no animation is running before any screenshot.
-      await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"), undefined, { timeout: 10_000 }).catch(() => {});
-      await expect(page.locator(`[data-node="${STYLED}"]`).first()).toHaveCSS("opacity", "1", { timeout: 10_000 }).catch(() => {});
-      await page.waitForTimeout(500);
+      // Wait until every entrance and settle animation has finished. Scroll-driven animations (the nav
+      // row's fade, on a scroll timeline) count as "running" forever, so the old wait always timed out
+      // after 10 s and was ignored; they are left out here, and a timeout now fails the test.
+      await page.waitForFunction(() => document.visibilityState === "visible" && document.getAnimations().every((a) => a.playState !== "running" || !(a.timeline instanceof DocumentTimeline)), undefined, { timeout: 15_000 });
+      await expect(page.locator(`[data-node="${STYLED}"]`).first()).toHaveCSS("opacity", "1", { timeout: 10_000 });
+      await expect(page.locator(`[data-cell="${STYLED}"]`).first()).toHaveCSS("opacity", "1", { timeout: 10_000 });
+      await page.waitForTimeout(300);
     };
     await setVariant(req, appId, rootId, "baseline", null);
     await load();

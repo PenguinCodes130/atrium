@@ -117,8 +117,9 @@ const menuItem = "flex h-8 cursor-pointer select-none items-center px-2 text-lef
  * step within its parent, and a menu with Rename, Duplicate and Delete) show on hover, always on the
  * selected row, and always on touch screens. Double-click a name to rename it: Enter saves, Esc cancels.
  */
-export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, stepButtons, device = "desktop", onHide, onRename, onDuplicate, onDelete, covered, selectedIds }: {
+export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, onMoveInto, stepButtons, device = "desktop", onHide, onRename, onDuplicate, onDelete, covered, selectedIds }: {
   page: PageDoc; selectedId: string | null; agentNodes: Set<string>; onSelect(id: string, opts?: { shift: boolean }): void; onMove(nodeId: string, parentId: string, index: number): void;
+  /** Wave 2.10c r2 item 1: the row menu's "Move into" a container (a card, a roulette, the page). */ onMoveInto?(nodeId: string, parentId: string): void;
   /** Widgets drawn fully under another (spec 3.2): their rows carry a "covered" tag. */ covered?: ReadonlySet<string>;
   /** Several selected (Shift-click): each row shows as selected. */ selectedIds?: ReadonlySet<string>;
   /** Touch and narrow screens: Move up and Move down on the selected row (gauntlet w2-r1 item 11). */ stepButtons?: boolean;
@@ -202,6 +203,22 @@ export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, st
                       <DropdownMenu.Content align="end" sideOffset={4} collisionPadding={8} className="z-50 flex w-40 flex-col border border-line-strong bg-bg-hi p-1 text-fg shadow-window-sm" data-layer-menu-content={r.id}>
                         {onRename && <DropdownMenu.Item className={menuItem} onSelect={() => setEditing(r.id)} data-layer-rename>Rename</DropdownMenu.Item>}
                         {onDuplicate && <DropdownMenu.Item className={menuItem} onSelect={() => onDuplicate(r.id)} data-layer-duplicate>Duplicate</DropdownMenu.Item>}
+                        {onMoveInto && (() => {
+                          // Wave 2.10c r2 item 1: every other container on the page, never itself or one inside it.
+                          const own = new Set<string>([r.id]);
+                          for (const x of rows) if (x.parentId && own.has(x.parentId)) own.add(x.id);
+                          const targets = rows.filter((x) => x.container && !own.has(x.id) && x.id !== r.parentId);
+                          return targets.length ? (
+                            <DropdownMenu.Sub>
+                              <DropdownMenu.SubTrigger className={`${menuItem} justify-between`} data-layer-move-into>Move into <span aria-hidden>›</span></DropdownMenu.SubTrigger>
+                              <DropdownMenu.Portal>
+                                <DropdownMenu.SubContent sideOffset={2} collisionPadding={8} className="z-50 flex max-h-72 w-48 flex-col overflow-y-auto border border-line-strong bg-bg-hi p-1 text-fg shadow-window-sm" data-layer-move-targets={r.id}>
+                                  {targets.map((x) => <DropdownMenu.Item key={x.id} className={menuItem} onSelect={() => onMoveInto(r.id, x.id)} data-layer-move-target={x.id}><span className="truncate">{x.parentId ? x.label : "The page"}</span></DropdownMenu.Item>)}
+                                </DropdownMenu.SubContent>
+                              </DropdownMenu.Portal>
+                            </DropdownMenu.Sub>
+                          ) : null;
+                        })()}
                         {onDelete && <DropdownMenu.Item className={`${menuItem} text-bad`} onSelect={() => onDelete(r.id)} data-layer-delete>Delete</DropdownMenu.Item>}
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>

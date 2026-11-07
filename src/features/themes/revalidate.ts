@@ -201,10 +201,23 @@ function chromeGroup(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens["chrome"
   };
 }
 
+/**
+ * A11.3, A11.5 (Wave 2.10c r2 Fix 15): the drawn scrollbar thumb, optional. Absent stays absent (canvas
+ * text at 35%, 6 px); a bad colour or width is replaced and counted like any other field.
+ */
+function scrollbarGroup(ctx: Ctx, p: string, raw: unknown): ThemeTokens["scrollbar"] {
+  if (raw === undefined) return undefined;
+  const s = obj(raw);
+  if (!s) return bad(ctx, p, undefined);
+  return { thumb: color(ctx, `${p}.thumb`, s.thumb, "#8a8a8a59"), widthPx: nearest(ctx, `${p}.widthPx`, s.widthPx, [4, 6, 8] as const, 6) };
+}
+
 function tokens(ctx: Ctx, p: string, raw: unknown, fb: ThemeTokens, uploaded: readonly string[]): ThemeTokens {
   const t = obj(raw) ?? {};
   if (!obj(raw)) bad(ctx, p, null);
+  const scrollbar = scrollbarGroup(ctx, `${p}.scrollbar`, t.scrollbar);
   return {
+    ...(scrollbar ? { scrollbar } : {}),
     wallpaper: wallpaper(ctx, `${p}.wallpaper`, t.wallpaper, fb.wallpaper),
     color: colorGroup(ctx, `${p}.color`, t.color, fb.color),
     surface: surfaceGroup(ctx, `${p}.surface`, t.surface, fb.surface),
@@ -230,6 +243,10 @@ function darkSet(ctx: Ctx, raw: unknown, uploaded: readonly string[]): Partial<T
   if (d.space !== undefined) out.space = spaceGroup(ctx, "dark.space", d.space, CR_DARK.space);
   if (d.motion !== undefined) out.motion = motionGroup(ctx, "dark.motion", d.motion, CR_DARK.motion);
   if (d.chrome !== undefined) out.chrome = chromeGroup(ctx, "dark.chrome", d.chrome, CR_DARK.chrome);
+  if (d.scrollbar !== undefined) {
+    const sb = scrollbarGroup(ctx, "dark.scrollbar", d.scrollbar);
+    if (sb) out.scrollbar = sb;
+  }
   return out;
 }
 

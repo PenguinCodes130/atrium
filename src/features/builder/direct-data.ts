@@ -23,7 +23,7 @@ export type PropKind = "whole" | "items" | "value" | "status" | "line" | "gauge"
 export function propKind(type: string, prop: string): PropKind {
   if (/^lines\.\d+\.data$/.test(prop) || prop === "lines") return "line";
   if (prop === "status") return "status";
-  if (prop === "items" && (type === "list" || type === "repeat")) return "items";
+  if (prop === "items" && (type === "list" || type === "repeat" || type === "roulette")) return "items"; // Wave 2.10c r2 item 2: roulette rows
   if (prop === "data" && (type === "gauge" || type === "progress")) return "gauge";
   if (prop === "data" && wholeProp(type) === "data") return "whole";
   return "value";
@@ -117,7 +117,7 @@ export function bindItemOps(doc: AppDocument, nodeId: string, prop: string, item
   if (!read) return null;
   const m = ensureManaged(doc, want(read), opts.random ? { random: opts.random } : {});
   const words = itemWords(item);
-  const titled = opts.title && !node.title && node.type !== "repeat" ? { title: words.slice(0, 120) } : {};
+  const titled = opts.title && !node.title && node.type !== "repeat" && node.type !== "roulette" ? { title: words.slice(0, 120) } : {};
   if (opts.switchTo && opts.switchTo !== node.type) {
     const props = propsToShow(opts.switchTo as "stat", m.name, node.props);
     const cleared = Object.fromEntries(Object.keys(node.props).filter((k) => !(k in props)).map((k) => [k, null]));

@@ -59,6 +59,16 @@ function walk(el: Element, zoom: number): Walk {
     // it, so counting it here grew the outer box on every pass (gauntlet w210a r3 H1, a repeat that grew
     // on each open).
     if (k.matches("[data-node]") && k.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]")) continue;
+    // Wave 2.10c r2 item 4 (A11.2, A11.4): a roulette is `scale` sizing and shows one slot at a time. Its drum
+    // stacks every mounted face in 3D (turned faces reach far past the box), so only the slot in front counts:
+    // what that slot's own content needs, never the drum's projected height.
+    if (k.matches("[data-roulette-drum]")) {
+      const front = (Array.from(k.children) as Element[]).find((f) => f.matches("[data-face]") && f.getAttribute("aria-hidden") !== "true");
+      const child = front?.querySelector("[data-node]");
+      if (front) { const fb = front.getBoundingClientRect(); bottom = bottom === null ? fb.bottom : Math.max(bottom, fb.bottom); }
+      if (child) { const e = measureExtent(child); if (e) hidden += overflowPx(e, zoom); }
+      continue;
+    }
     if (CLIPS.has(kc.overflowY)) {
       // Out-of-flow boxes (a screen-reader-only label clipped to 1 px, a badge) hide nothing a taller box
       // would show; neither do SVG viewports.
@@ -79,7 +89,9 @@ function hiddenIn(el: HTMLElement, zoom: number): number {
   const w = walk(el, zoom);
   const inner = (r.bottom - (parseFloat(cs.borderBottomWidth) || 0) * zoom);
   const byBoxes = w.bottom === null ? 0 : (w.bottom - inner) / zoom + el.scrollTop + (parseFloat(cs.paddingBottom) || 0);
-  const over = Math.max(0, el.scrollHeight - el.clientHeight, byBoxes);
+  // A roulette's stage: the turned faces' 3D overflow is not content (item 4), only the front slot's is.
+  const drum = !!el.querySelector(":scope > [data-roulette-drum]");
+  const over = Math.max(0, drum ? 0 : el.scrollHeight - el.clientHeight, byBoxes);
   // Sub-pixel layout noise inside a box is not content; a whole hidden row is.
   return (over > NOISE_PX ? over : 0) + w.hidden;
 }
@@ -111,11 +123,58 @@ export function zoomOf(node: Element): number {
   return w > 0 && drawn > 0 ? drawn / w : 1;
 }
 
+/**
+ * Wave 2.10c r2 item 4 (A11.2 `scale`, A11.4): what a roulette needs, in layout px: the slot in front (its own
+ * content, measured the usual way) plus the arrows and dots and the gap between. Never the drum's 3D height.
+ */
+export function rouletteNeedPx(node: Element): number | null {
+  const root = node.querySelector(':scope > [data-slot="root"]');
+  // The face holds the slot directly or inside a wrapper (components' face-in): the first node inside it.
+  const front = root?.querySelector('[data-roulette-drum] > [data-face]:not([aria-hidden="true"]) [data-node]');
+  if (!root || !front) return null;
+  const z = zoomOf(node);
+  const e = measureExtent(front);
+  if (!e) return null;
+  const slot = e.contentBottom === null ? e.height / z : Math.max(e.height / z, (e.contentBottom - e.top) / z + e.scrollTop + e.padBottom) + Math.max(0, e.innerHidden);
+  const controls = root.querySelector(":scope > .atr-roulette-controls");
+  const cs = getComputedStyle(root);
+  const gap = parseFloat(cs.rowGap) || 0;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  return slot + (controls ? controls.getBoundingClientRect().height / z + gap : 0) + pad;
+}
+
 /** Rows of 8 px a node needs to show all its content (0 when it fits). */
 export function overflowRowsOf(node: Element | null | undefined): number {
   if (!node) return 0;
+  if (node.matches('[data-type="roulette"]')) {
+    const need = rouletteNeedPx(node);
+    if (need !== null) return rowsFor(need - node.getBoundingClientRect().height / zoomOf(node));
+  }
   const e = measureExtent(node);
   return e ? rowsFor(overflowPx(e, zoomOf(node))) : 0;
+}
+
+/**
+ * Wave 2.10c r2 item 19: the fewest 8 px rows a fit node's box can have and still show all its content, given
+ * it now has `rows` rows: its spare room comes off, and anything it already hides goes on.
+ */
+export function minFitRows(node: Element, rows: number): number {
+  const e = measureExtent(node);
+  if (!e) return rows;
+  const z = zoomOf(node);
+  // Plain text has no element boxes inside: its lines are measured as a range.
+  let bottom = e.contentBottom;
+  if (bottom === null && typeof document !== "undefined") {
+    const root = node.querySelector(':scope > [data-slot="root"]') ?? node;
+    const range = document.createRange();
+    range.selectNodeContents(root);
+    const r = range.getBoundingClientRect();
+    if (r.height > 0) bottom = r.bottom;
+  }
+  if (bottom === null) return rows;
+  const used = (bottom - e.top) / z + e.scrollTop + e.padBottom;
+  const spare = Math.max(0, Math.floor((e.height / z - used - NOISE_PX) / ROW_PX));
+  return Math.max(1, rows - spare + rowsFor(overflowPx(e, z)));
 }
 
 /**

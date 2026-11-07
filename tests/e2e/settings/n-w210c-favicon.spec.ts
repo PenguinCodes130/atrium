@@ -163,10 +163,11 @@ test.describe("N4 favicon fetch (server half)", () => {
       }, answer.body.path as string);
       expect(drawn).toEqual({ w: 180, h: 180 });
       await shot(page, "n4-fetched-icon-shown");
-      // The same origin within 7 days answers the stored path without fetching.
+      // The same address within 7 days answers the stored path without fetching (round 2, Fix 6b: keyed
+      // by the exact address, so the bare origin with its trailing slash is the same entry).
       const before = site.hits.length;
       const again = await page.evaluate(async ([route, url]) => {
-        const r = await fetch(route!, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: `${url}/some/other/page` }) });
+        const r = await fetch(route!, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: `${url}/` }) });
         return { status: r.status, body: await r.json(), source: r.headers.get("x-atrium-favicon") };
       }, [ROUTE, site.url]);
       expect(again).toEqual({ status: 200, body: answer.body, source: "cached" });

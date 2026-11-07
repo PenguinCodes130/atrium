@@ -16,7 +16,7 @@ type PropsOf<T extends BuiltInType> = keyof z.infer<(typeof propsSchemas)[T]>;
 export type TypeWords<T extends BuiltInType> = { simple: readonly PropsOf<T>[]; fields: { [K in PropsOf<T>]-?: FieldWords } };
 
 /** A11.3 (N1): Focus to scroll, for the scrolling kinds. */
-const FOCUS_SCROLL = { label: "Scroll with the wheel", hint: "Until you click it, the wheel scrolls the page; Esc or a click outside lets go", options: { click: "After a click (default)", hover: "While the pointer is over it", off: "Always" } };
+const FOCUS_SCROLL = { label: "Scroll with the wheel", hint: "Until you click it, the wheel scrolls the page; Esc or a click outside lets go", options: { click: "After a click (default)", hover: "While the pointer is over it", off: "Always, no click needed" } };
 const FIT = { cover: "Fill and crop", contain: "Show whole" };
 const LINK = { none: "Nothing", page: "Open a page of this app", url: "Open an address", enlarge: "Enlarge" };
 /** The Picture panel's words (media layout spec 3.1, Amendment 8 A8.7), shared by Image and Video. */
@@ -268,7 +268,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
   icon: {
     simple: ["name", "scale"],
     fields: {
-      name: { label: "Icon", hint: "Pick one of the built-in icons, or upload your own picture" },
+      name: { label: "Icon", hint: "Pick a built-in icon, get one from a website, or upload your own picture" },
       scale: { label: "Scale", hint: "How much of its box the icon fills, keeping its shape. Resize the box to make it bigger" },
       // F6: Size and Fill are only read from older icons; the inspector no longer shows them (HIDDEN_FIELDS).
       size: { label: "Size", hint: "Older icons only: replaced by Scale" },

@@ -232,7 +232,8 @@ test("N1 criterion 20: the page scrolls over an unfocused table; a click engages
   await page.mouse.click(b0.x + b0.width / 2, b0.y + 40);
   await page.mouse.wheel(0, 240);
   await page.waitForTimeout(400);
-  const b = { tableTop: await st(), ring: await root.evaluate((e) => ({ w: getComputedStyle(e).outlineWidth, s: getComputedStyle(e).outlineStyle })), engaged: await page.locator(`[data-node="${table.id}"]`).first().getAttribute("data-scroll-engaged") };
+  // Round 2 (item 13): the ring is the node box's own ::after border, drawn above the rows.
+  const b = { tableTop: await st(), ring: await page.locator(`[data-node="${table.id}"]`).first().evaluate((e) => ({ w: getComputedStyle(e, "::after").borderTopWidth, s: getComputedStyle(e, "::after").borderTopStyle })), engaged: await page.locator(`[data-node="${table.id}"]`).first().getAttribute("data-scroll-engaged") };
   expect(b.tableTop, "after a click the table scrolls").toBeGreaterThan(0);
   expect(b.ring).toEqual({ w: "1px", s: "solid" });
   expect(b.engaged).toBe("");
@@ -349,16 +350,16 @@ test("N1: in the builder, a box too small for its content says Content is cut, w
   const ok: Node = { id: "c_naokxaaaaa", type: "text", props: { text: "Short" }, slot: { x: 4, y: 0, w: 3, h: 12 } };
   await newApp(page.request, slug, [text, ok]);
   await openBuilder(page, slug);
-  const badge = page.locator(`[data-canvas-root] [data-node="${text.id}"] > .atr-cut-badge`);
+  const badge = page.locator(`[data-canvas-root] [data-cut-badge="${text.id}"]`);
   await expect(badge).toBeVisible({ timeout: 10_000 });
   await expect(badge).toContainText("Content is cut");
   await expect(badge.locator("[data-cut-fit]")).toHaveText("Fit");
-  await expect(page.locator(`[data-canvas-root] [data-node="${ok.id}"] > .atr-cut-badge`)).toBeHidden();
+  await expect(page.locator(`[data-canvas-root] [data-cut-badge="${ok.id}"]`)).toBeHidden();
   await page.screenshot({ path: shot("n1-cut-badge") });
   const asked = await page.evaluate(() => new Promise<string>((resolve) => {
     window.addEventListener("atrium:fit-node", (e) => resolve((e as CustomEvent<{ nodeId: string }>).detail.nodeId), { once: true });
     setTimeout(() => resolve(""), 3000);
-    (document.querySelector('[data-canvas-root] [data-node="c_nacutxaaaa"] [data-cut-fit]') as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    (document.querySelector('[data-canvas-root] [data-cut-badge="c_nacutxaaaa"] [data-cut-fit]') as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   }));
   expect(asked).toBe(text.id);
   await page.waitForTimeout(1200);

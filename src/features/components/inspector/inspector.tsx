@@ -26,7 +26,7 @@ import { createPortal } from "react-dom";
 import { repeatItems, type PageScope } from "../render/resolve";
 import { repeatsTemplate } from "../render/copy-overrides";
 import { ROULETTE_MAX } from "../render/roulette";
-import { RouletteAdvanceField, RouletteTimerField, RouletteTooMany } from "./roulette-panel";
+import { RouletteAdvanceField, RouletteItemsField, RouletteModeField, RouletteTimerField, RouletteTooMany } from "./roulette-panel";
 import { Chevron, MoreFold } from "./more";
 import { chipFrom, chipLine, chipValue, chipWords, dataSentence, fieldAfterRoot, isGeneratedSourceName, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber, type SourceWords } from "./binding-words";
 import { MediaField } from "@/features/uploads/client";
@@ -216,6 +216,8 @@ export function rowScope(doc: Pick<AppDocument, "pages">, nodeId: string, scope:
   let rep: ComponentNode | null | undefined;
   for (const p of doc.pages) if ((rep = repeatAround(p.root, nodeId)) !== undefined) break;
   if (!rep) return scope;
+  // Round 2 (A's request, item 14): with one copy selected the builder passes that copy's row as $item; keep it.
+  if ("$item" in (scope as Record<string, unknown>)) return scope;
   const items = rep.props.items;
   let list: unknown = items;
   if (isBinding(items)) {
@@ -438,12 +440,14 @@ function LiteralField({ spec, value, onChange, reason, fallback }: { spec: Field
           {help}
         </div>
       );
-    case "enum":
+    case "enum": {
+      const namedDefault = f.options.map(String).find((o) => /\(default\)/.test(spec.optionWords?.[o] ?? ""));
       return (
         <div className="flex flex-col gap-1">
           {label}
-          <select id={id} className={inputCls} value={value === undefined || value === null ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? null : f.options.find((o) => String(o) === e.target.value) ?? e.target.value)}>
-            <option value="">Default</option>
+          {/* Round 2 (item 20): when one choice already says "(default)", it stands for the empty value; no second "Default". */}
+          <select id={id} className={inputCls} value={value === undefined || value === null ? (namedDefault ?? "") : String(value)} onChange={(e) => onChange(e.target.value === "" || e.target.value === namedDefault ? null : f.options.find((o) => String(o) === e.target.value) ?? e.target.value)}>
+            {namedDefault ? null : <option value="">Default</option>}
             {f.options.map((o) => (
               <option key={String(o)} value={String(o)}>
                 {spec.optionWords?.[String(o)] ?? String(o)}
@@ -453,6 +457,7 @@ function LiteralField({ spec, value, onChange, reason, fallback }: { spec: Field
           {help}
         </div>
       );
+    }
     case "strings":
       return (
         <div className="flex flex-col gap-1">
@@ -967,7 +972,7 @@ function StyleControl({ prop, value, onChange, swatches }: { prop: keyof StylePr
   );
 }
 
-const SLOT_LABELS: Record<string, string> = { icon: "Icon", name: "Name", badge: "Status badge", stat: "Each number", bar: "Small bar", search: "Search box", clock: "Clock", domain: "Domain", root: "Whole component", value: "Value", label: "Label", unit: "Unit", delta: "Change", title: "Title", body: "Body", tab: "Tabs", panel: "Panel", description: "Description", item: "Each item", legend: "Legend", axis: "Axes", header: "Header row", row: "Rows", cell: "Cells", detail: "Detail", track: "Track", fill: "Fill", thumb: "Handle", field: "Field", time: "Time", date: "Date" };
+const SLOT_LABELS: Record<string, string> = { icon: "Icon", name: "Name", badge: "Status badge", stat: "Each number", bar: "Small bar", search: "Search box", clock: "Clock", domain: "Domain", root: "Whole component", value: "Value", label: "Label", unit: "Unit", delta: "Change", title: "Title", body: "Body", tab: "Tabs", panel: "Panel", description: "Description", item: "Each item", legend: "Legend", axis: "Axes", header: "Header row", row: "Rows", cell: "Cells", detail: "Detail", track: "Track", fill: "Fill", thumb: "Handle", field: "Field", time: "Time", date: "Date", slot: "Each slot", dots: "Dots and arrows row", arrows: "Arrow buttons" };
 const STATE_LABELS: Record<string, string> = { hover: "Pointer over", active: "Pressed", focus: "Keyboard focus", on: "On", off: "Off", disabled: "Disabled" };
 
 // F4: every style setting has a one-line hint under it.
@@ -1616,14 +1621,27 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
     "roulette.items": () => {
       const f = fields.find((x) => x.key === "items")!;
       let count = 0;
-      try { count = repeatItems(resolveValue(node.props.items as PropValue | undefined, scope, "items", []), ROULETTE_MAX + 1).length; } catch { count = 0; }
+      let drawn: unknown = undefined;
+      try { drawn = resolveValue(node.props.items as PropValue | undefined, scope, "items", []); } catch { drawn = undefined; }
+      try { count = repeatItems(drawn, ROULETTE_MAX + 1).length; } catch { count = 0; }
+      // Round 2 item 2: a data field (Pick data, Write a template, the chip), a "Rows from" list, and a
+      // sentence when what it reads is not rows.
       return (
-        <div key="items" className="flex flex-col gap-2">
-          <PropField key={`${node.id}:items`} spec={f} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={false} reason={reasonFor("items")} {...pick} />
-          {node.props.mode === "repeat" ? <RouletteTooMany node={node} rows={count} pages={doc.pages} {...(onOps ? { onOps } : {})} /> : null}
-        </div>
+        <RouletteItemsField
+          key="items"
+          node={node}
+          field={<PropField key={`${node.id}:items`} spec={f} node={node} scope={scope} setProp={setProp} sources={sourceNames} describe={describe} inlineLive={false} reason={reasonFor("items")} {...pick} />}
+          sources={sourceNames}
+          labelOf={(name) => { const d = doc.dataSources.find((x) => x.name === name); return d ? sourceLabel(d, describe) : name; }}
+          data={scope.$data as Record<string, unknown> | undefined}
+          drawn={drawn}
+          setProp={setProp}
+          {...(onOps ? { onOps } : {})}
+          tooMany={node.props.mode === "repeat" ? <RouletteTooMany node={node} rows={count} pages={doc.pages} {...(onOps ? { onOps } : {})} /> : null}
+        />
       );
     },
+    "roulette.mode": () => { const f = fields.find((x) => x.key === "mode")!; return <RouletteModeField key="mode" node={node} label={f.label} hint={f.hint} words={(f.optionWords ?? {}) as Record<string, string>} setProp={setProp} />; },
     "icon.scale": () => <ScaleField key="scale" node={node} hint={fields.find((x) => x.key === "scale")?.hint ?? ""} onScale={(v) => onChange({ props: { ...node.props, scale: v, size: null, fill: null } } as unknown as Patch)} />,
   };
   const field = (f: FieldSpec) => {

@@ -6,7 +6,7 @@
 // `surface="float"` puts it on the floating glass (only for sheets drawn over a viewed app).
 // Bottom sheets close with a downward swipe from the grab handle or the header (past 80px, or a fast
 // flick), using the sheet spring; under reduced motion they close with the 120ms crossfade.
-import { useLayoutEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Dialog, VisuallyHidden } from "radix-ui";
 import { AnimatePresence, motion, useDragControls, type PanInfo } from "motion/react";
 import { transitionFor, timed } from "./motion";
@@ -70,6 +70,18 @@ export function Sheet({ open, onOpenChange, title, hideTitle, description, side 
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.y > SWIPE_CLOSE_PX || info.velocity.y > SWIPE_CLOSE_VELOCITY) onOpenChange(false);
   };
+  // A bottom sheet is as tall as its content (up to 85dvh); while open it never shrinks, so a body whose
+  // content gets shorter (a picker's result replacing its grid) does not pull the title down (w210c r2 item 18).
+  const box = useRef<HTMLDivElement>(null);
+  const [floor, setFloor] = useState(0);
+  useEffect(() => {
+    if (!open || !bottom) return setFloor(0);
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setFloor((f) => Math.max(f, Math.round(el.getBoundingClientRect().height))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open, bottom]);
   const hidden = reduced ? { opacity: 0 } : { ...offscreen[resolved], opacity: 1 };
   const shown = reduced ? { opacity: 1 } : { x: 0, y: 0, opacity: 1 };
   const position =
@@ -115,7 +127,9 @@ export function Sheet({ open, onOpenChange, title, hideTitle, description, side 
                 data-side={resolved}
                 data-window="sheet"
                 className={`${surface === "float" ? "glass-float" : "border border-line-strong bg-bg-hi"} fixed z-50 flex flex-col overflow-hidden text-fg shadow-overlay will-change-transform ${position}`}
-                style={resolved === "bottom" ? undefined : { width }}
+                ref={box}
+                data-sheet-floor={bottom && floor ? floor : undefined}
+                style={resolved === "bottom" ? (floor ? { minHeight: `min(${floor}px, 85dvh)` } : undefined) : { width }}
                 initial={hidden}
                 animate={shown}
                 exit={hidden}

@@ -13,6 +13,7 @@ import { libKey } from "./render/resolve";
 import { planLines, thirdUnitSentence } from "./render/lines";
 import { iconRefKind } from "./render/tiles-logic";
 import { copyOverridesOf, COPY_OVERRIDES, repeatsTemplate } from "./render/copy-overrides";
+import { ROULETTE_FULL, ROULETTE_MAX_SLOTS, ROULETTE_TEMPLATE_TAKEN } from "./roulette-rules";
 
 export type ValidateOptions = {
   /** Current data per source: when given, binding paths are checked against it. */
@@ -198,8 +199,10 @@ export function validateNodes(doc: AppDocument, opts: ValidateOptions = {}): Pro
     if (n.children?.length) {
       if (meta && !meta.container) problems.push({ severity: "error", code: "node.not_container", where: where(), message: `A ${meta.title.toLowerCase()} cannot hold other components.` });
       if (n.type === "roulette") {
-        if (repeatsTemplate(n) && n.children.length > 1) problems.push({ severity: "warning", code: "roulette.template", where: where(), message: "A roulette that repeats for each row draws only its first child; the others are kept but not shown.", fix: "Switch Turns through to its slots, or keep one widget." });
-        else if (n.children.length > 50) problems.push({ severity: "error", code: "roulette.children", where: where(), message: "A roulette turns through at most 50 slots.", fix: "Use a list or a table for more." });
+        // A11.4 (gauntlet w210c-r1 item 1): repeat mode holds exactly one template (the builder refuses a second
+        // with this sentence; a document that has one anyway stays valid, drawing the first); slots mode at most 50.
+        if (repeatsTemplate(n) && n.children.length > 1) problems.push({ severity: "warning", code: "roulette.template", where: where(), message: ROULETTE_TEMPLATE_TAKEN, fix: "Remove the extra widgets, or switch Turns through to its slots." });
+        else if (n.children.length > ROULETTE_MAX_SLOTS) problems.push({ severity: "error", code: "roulette.children", where: where(), message: ROULETTE_FULL, fix: "Use a list or a table for more." });
       } else if (meta?.maxChildren !== undefined && n.children.length > meta.maxChildren) problems.push({ severity: "error", code: "repeat.children", where: where(), message: "A repeat draws exactly one child; wrap several in a stack or card." });
     }
     if (n.type === "roulette" && !repeatsTemplate(n) && (n.children?.length ?? 0) === 1) problems.push({ severity: "warning", code: "roulette.one_slot", where: where(), message: "This roulette has one slot, so it never turns.", fix: "Drop a second widget into it, or repeat one for each row." });

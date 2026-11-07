@@ -95,7 +95,7 @@ function ToastCard({ item, phone }: { item: ToastItem; phone: boolean }) {
           {item.action && (
             <button
               type="button"
-              className="mt-2 inline-flex h-8 cursor-pointer items-center type-label text-accent-ink underline underline-offset-4 touch:h-11"
+              className="mt-2 inline-flex h-8 cursor-pointer items-center type-label text-accent-ink underline underline-offset-4 touch:-ml-2 touch:h-11 touch:min-w-11 touch:justify-center touch:px-2"
               onClick={() => {
                 item.action?.onClick();
                 store.dismiss(item.id);
@@ -178,11 +178,36 @@ function useTitleBarAvoidance(ref: RefObject<HTMLElement | null>, active: boolea
   return offset;
 }
 
+/** Gap kept below a top bar (the builder bar) that a phone toast stack would otherwise cover. */
+export const TOAST_TOPBAR_GAP_PX = 8;
+
+/** Phone stacks sit at the top: below any visible `[data-builder-bar]`, so its buttons stay reachable (w210c r2 item 19). */
+function usePhoneTopOffset(active: boolean, count: number): number | undefined {
+  const [top, setTop] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!active) return setTop(undefined);
+    const measure = () => {
+      const bars = [...document.querySelectorAll<HTMLElement>("[data-builder-bar]")].filter((b) => b.offsetParent !== null).map((b) => b.getBoundingClientRect());
+      const bottom = Math.max(0, ...bars.filter((r) => r.height > 0 && r.top < 120).map((r) => r.bottom));
+      setTop(bottom > 0 ? bottom + TOAST_TOPBAR_GAP_PX : undefined);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, { capture: true } as EventListenerOptions);
+    };
+  }, [active, count]);
+  return top;
+}
+
 export function Toaster() {
   const { visible } = useToasts();
   const isPhone = useIsPhone();
   const section = useRef<HTMLElement>(null);
   const bottom = useTitleBarAvoidance(section, !isPhone && visible.length > 0, visible.length);
+  const phoneTop = usePhoneTopOffset(isPhone && visible.length > 0, visible.length);
   const [polite, setPolite] = useState("");
   const [assertive, setAssertive] = useState("");
   const announced = useRef(new Set<string>());
@@ -216,7 +241,7 @@ export function Toaster() {
             ? "pointer-events-none fixed inset-x-4 top-[calc(env(safe-area-inset-top,0px)+8px)] z-[60]"
             : "pointer-events-none fixed right-6 z-[60] w-(--toast-width)"
         }
-        style={isPhone ? undefined : { bottom }}
+        style={isPhone ? (phoneTop !== undefined ? { top: phoneTop } : undefined) : { bottom }}
       >
         <ol className="flex flex-col gap-2">
           <AnimatePresence initial={false}>

@@ -24,6 +24,14 @@ export function repeatsTemplate(node: Pick<ComponentNode, "type" | "props">): bo
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
+/**
+ * Gauntlet w210c-r1 item 6c: keys that would reach an object's prototype when used as a plain object key.
+ * Override maps are read into prototype-free objects and these keys are dropped (and refused by the schema),
+ * so a row named "__proto__" can never change Object.prototype.
+ */
+export const UNSAFE_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+export const isSafeKey = (k: string): boolean => !UNSAFE_KEYS.has(k);
+
 /** The row's own name: the first non-empty name field, or the value itself for a plain text or number row. */
 export function rowName(item: unknown): string | null {
   if (typeof item === "string") return item.trim() ? item.trim().slice(0, 200) : null;
@@ -45,7 +53,9 @@ export function rowName(item: unknown): string | null {
 export function rowKeys(items: readonly unknown[]): string[] {
   const seen = new Map<string, number>();
   return items.map((item, i) => {
-    const base = rowName(item) ?? `#${i}`;
+    const named = rowName(item);
+    // A row literally named like a prototype key gets a plain key of its own (item 6c).
+    const base = named === null ? `#${i}` : isSafeKey(named) ? named : `${named} (row)`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     return n === 1 ? base : `${base} (${n})`;
@@ -55,13 +65,13 @@ export function rowKeys(items: readonly unknown[]): string[] {
 /** The copy overrides a node carries, cleaned: only objects of objects are kept (anything else reads as none). */
 export function copyOverridesOf(node: Pick<ComponentNode, "type" | "props"> | undefined): CopyOverrides {
   const raw = node && repeatsTemplate(node) ? node.props?.[COPY_OVERRIDES] : undefined;
-  if (!isObj(raw)) return {};
-  const out: CopyOverrides = {};
+  if (!isObj(raw)) return Object.create(null) as CopyOverrides;
+  const out = Object.create(null) as CopyOverrides;
   for (const [rowKey, byNode] of Object.entries(raw)) {
-    if (!isObj(byNode)) continue;
-    const row: Record<string, CopyOverride> = {};
+    if (!isSafeKey(rowKey) || !isObj(byNode)) continue;
+    const row = Object.create(null) as Record<string, CopyOverride>;
     for (const [nodeId, raw] of Object.entries(byNode)) {
-      if (!isObj(raw)) continue;
+      if (!isSafeKey(nodeId) || !isObj(raw)) continue;
       const ov = raw as Record<string, unknown>;
       const o: CopyOverride = {};
       if (isObj(ov.props)) o.props = ov.props as Record<string, PropValue>;
@@ -83,7 +93,7 @@ export function hasCopyChange(template: ComponentNode, row: Record<string, CopyO
     for (const c of n.children ?? []) walk(c);
   };
   walk(template);
-  return Object.keys(row).some((id) => ids.has(id));
+  return Object.keys(row).some((id) => isSafeKey(id) && ids.has(id));
 }
 
 function mergeStyle(base: StyleOverride | undefined, over: StyleOverride): StyleOverride {
@@ -114,7 +124,7 @@ export function copyOrigin(node: ComponentNode): { rowKey: string; styled: boole
 export function applyCopyOverride(template: ComponentNode, rowKey: string, row: Record<string, CopyOverride> | undefined): ComponentNode {
   if (!row || !Object.keys(row).length) return template;
   const walk = (n: ComponentNode): ComponentNode => {
-    const ov = row[n.id];
+    const ov = isSafeKey(n.id) && Object.prototype.hasOwnProperty.call(row, n.id) ? row[n.id] : undefined;
     const kids = n.children?.map(walk);
     const kidsChanged = !!kids && kids.some((k, i) => k !== n.children![i]);
     if (!ov && !kidsChanged) return n;

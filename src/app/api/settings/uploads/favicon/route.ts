@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 const OUT = z.object({ path: z.string().regex(/^\/uploads\/[a-z0-9]{20}\.(png|jpg|gif|webp|avif|svg)$/), name: z.string() });
 
-// The favicon fetch (architecture A11.6; operator-tryout-spec N4): { url } in, { path, name } out, or
+// The favicon fetch (architecture A11.6; operator-tryout-spec N4): { url, refresh? } in, { path, name } out, or
 // { error: { code, message } } with a plain sentence. Owners and members with a session, and agents
 // with atrium:edit; viewers and guests are refused before anything leaves the server. The website is
 // read by this server only, through integrations' egress engine (see features/uploads/favicon/fetch.ts).
@@ -25,8 +25,9 @@ export async function POST(req: Request) {
     } catch {
       throw new AtriumError("The request body must be JSON.");
     }
-    const url = raw && typeof raw === "object" ? (raw as { url?: unknown }).url : undefined;
-    const r = await fetchFavicon(p, url);
+    const body = raw && typeof raw === "object" ? (raw as { url?: unknown; refresh?: unknown }) : {};
+    // `refresh: true` skips the 7 day store and fetches again (gauntlet w210c-r1 Fix 6b).
+    const r = await fetchFavicon(p, body.url, { refresh: body.refresh === true });
     return Response.json(OUT.parse({ path: r.path, name: r.name }), { headers: { ...NO_STORE, "x-atrium-favicon": r.cached ? "cached" : "fetched" } });
   } catch (err) {
     if (!(err instanceof AtriumError)) console.error("[uploads] favicon route error", err instanceof Error ? err.message : "unknown");

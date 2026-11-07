@@ -161,7 +161,7 @@ export function Launcher({ firstName, instance, tiles, canCreate, templates, int
           templates={templates}
           integrations={integrations}
           onClose={() => setSheet(null)}
-          onCreated={(slug) => router.push(`/build/${slug}`)}
+          onCreated={(slug) => router.push(`/build/${slug}?new=1`)}
         />
       )}
       {importing && <ImportSheet open onClose={() => setImporting(false)} onImported={(slug) => router.push(`/build/${slug}`)} />}

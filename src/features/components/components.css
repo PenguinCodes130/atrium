@@ -72,7 +72,7 @@
     display: flex !important;
   }
   /* N3: a roulette slot's widget fills its face the same way (render/roulette.tsx). */
-  [data-atrium-canvas] .atr-roulette-face > [data-node], .atr-render-root .atr-roulette-face > [data-node] {
+  [data-atrium-canvas] :is(.atr-roulette-face, .atr-roulette-face-in) > [data-node], .atr-render-root :is(.atr-roulette-face, .atr-roulette-face-in) > [data-node] {
     display: flex !important;
   }
   /* Wave 2.10a: a node with its own CSS keeps its 12px clip (containment beats A11.2's offset plus 4px
@@ -133,32 +133,63 @@
   .atr-grid[data-fixed-rows] > .atr-cell > .atr-node[data-sizing="scroll"][data-focus-scroll]:not([data-focus-scroll="off"]):not([data-scroll-engaged]) > [data-slot="root"] { overflow: hidden; }
   /* The part that scrolls may sit inside the root (a table's rows, render/scroll-area.tsx data-scroll-port). */
   .atr-node[data-sizing="scroll"][data-focus-scroll]:not([data-focus-scroll="off"]):not([data-scroll-engaged]) [data-scroll-port] { overflow: hidden; }
-  .atr-node[data-sizing="scroll"][data-scroll-engaged] > [data-slot="root"] { outline: 1px solid var(--theme-accent); outline-offset: -1px; }
+  /* Round 2 (item 13): the engaged ring is drawn by the node box itself, above its content, so a Repeat's
+     cards never cover it (an outline on the root was drawn under them); the part that scrolls keeps the
+     wheel to itself at its ends (overscroll contain) while engaged. After Esc the keyboard focus ring is the
+     same quiet outline round the whole widget, never a 2px ring across the rows. */
+  .atr-node[data-sizing="scroll"][data-scroll-engaged]::after, .atr-node[data-sizing="scroll"]:not([data-scroll-engaged]):has([data-scroll-port]:focus-visible)::after { content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none; border: 1px solid var(--theme-accent); border-radius: inherit; }
+  .atr-node[data-sizing="scroll"]:not([data-scroll-engaged]):has([data-scroll-port]:focus-visible)::after { border-style: dashed; }
+  .atr-node[data-sizing="scroll"] [data-scroll-port]:focus-visible, .atr-node[data-sizing="scroll"] > [data-slot="root"]:focus-visible { outline: none; }
+  .atr-node[data-sizing="scroll"][data-scroll-engaged] [data-scroll-port] { overscroll-behavior: contain; }
+  /* Where rows continue, the cut edge fades (top and bottom), so a cut row reads as more to scroll, not as
+     a broken one; at rest a small "Click to scroll" cue says so (render/scroll-area.tsx data-more-*). */
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-more-below]:not([data-more-above]) { mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-more-above]:not([data-more-below]) { mask-image: linear-gradient(to top, #000 calc(100% - 28px), transparent); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-more-above][data-more-below] { mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-table-port][data-more-above] { mask-image: linear-gradient(to bottom, #000 var(--atr-head-h, 32px), transparent var(--atr-head-h, 32px), #000 calc(var(--atr-head-h, 32px) + 24px)); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-table-port][data-more-above][data-more-below] { mask-image: linear-gradient(to bottom, #000 var(--atr-head-h, 32px), transparent var(--atr-head-h, 32px), #000 calc(var(--atr-head-h, 32px) + 24px), #000 calc(100% - 28px), transparent); }
+  .atr-scroll-cue { position: absolute; right: 8px; bottom: 4px; z-index: 4; padding: 1px 6px; font-family: var(--theme-font-mono); font-size: 10px; line-height: 16px; color: var(--theme-surface-muted, var(--theme-canvas-text)); background: color-mix(in oklab, var(--theme-surface) 88%, transparent); border-radius: 999px; pointer-events: none; opacity: 0.9; transition: opacity 120ms ease-out; }
+  .atr-scroll-cue[hidden] { display: none; }
+  .atr-node[data-scroll-engaged] > .atr-scroll-cue, .atr-node:hover > .atr-scroll-cue[data-mode="hover"] { opacity: 0; }
+  /* A table's header stays put while its rows scroll under it (item 13). */
+  .atr-node[data-sizing="scroll"][data-type="table"] [data-scroll-port] thead th { position: sticky; top: 0; z-index: 1; background: var(--theme-surface); }
+  /* A table wider than its box at a phone's width fades at the side that continues (item 20). */
+  .atr-node .atr-table-wrap[data-more-right] { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
   /* No browser scrollbar on any component (A11.3): every box inside a component that scrolls still scrolls
      (wheel, keys, touch, assistive technology), with the bar hidden. Scrolling kinds draw their own thumb. */
   .atr-render-root :is(.atr-node, .atr-node *) { scrollbar-width: none; }
   .atr-render-root :is(.atr-node, .atr-node *)::-webkit-scrollbar { display: none; width: 0; height: 0; }
   /* The Atrium thumb (A11.3, A11.5 --theme-scrollbar-*; absent: canvas text at 35%, 6px): hidden at rest,
      shown on hover, focus-within and for 800ms after scrolling; it can be dragged. */
-  .atr-scroll-thumb { position: absolute; top: 0; right: 2px; z-index: 3; display: none; width: var(--theme-scrollbar-width, 6px); min-height: 24px; border-radius: 999px; background: var(--theme-scrollbar-thumb, color-mix(in oklab, var(--theme-canvas-text) 35%, transparent)); opacity: 0; pointer-events: none; touch-action: none; transition: opacity 160ms ease-out; }
+  .atr-scroll-thumb { position: absolute; top: 0; right: 2px; z-index: 3; display: none; width: var(--theme-scrollbar-width, 6px); min-height: 24px; border-radius: 999px; background: var(--theme-scrollbar-thumb, color-mix(in oklab, var(--theme-canvas-text) 35%, transparent)); opacity: 0; pointer-events: none; touch-action: none; transition: opacity 120ms ease-out; }
   .atr-scroll-thumb[data-overflow] { display: block; }
   .atr-node:is(:hover, :focus-within) > .atr-scroll-thumb[data-overflow], .atr-scroll-thumb[data-overflow][data-scrolling] { opacity: 1; pointer-events: auto; cursor: default; }
   /* Wave 2.10c N3 (A11.4): the roulette. One slot shows at a time on a cylinder (transform and opacity only);
      the controls sit under it. Faces stack in one grid cell, so a roulette outside a fixed box is as tall
      as its tallest mounted slot. */
   .atr-roulette { display: flex; flex-direction: column; min-height: 0; gap: calc(6px * var(--atr-k, 1)); outline: none; }
-  .atr-roulette[data-engaged] { outline: 1px solid var(--theme-accent); outline-offset: -1px; }
+  .atr-roulette[data-engaged] { outline: 1px solid var(--theme-accent); outline-offset: -1px; touch-action: none; }
   .atr-roulette:focus-visible { outline: 2px solid var(--theme-accent); outline-offset: 2px; }
+  /* Round 2 (item 1): the roulette is a drop zone; the builder sets data-drop-over while a widget is over it. */
+  /* Builder A marks the roulette's node box ([data-node][data-drop-over], "refused" when it will not take it). */
+  :is(.atr-roulette[data-drop-over], [data-node][data-drop-over] > .atr-roulette) { outline: 2px dashed var(--theme-accent); outline-offset: -2px; background: color-mix(in oklab, var(--theme-accent) 14%, transparent); }
+  :is(.atr-roulette[data-drop-over][data-drop-accepts="false"], .atr-roulette[data-drop-over="refused"], [data-node][data-drop-over="refused"] > .atr-roulette) { outline-color: var(--theme-warn); background: color-mix(in oklab, var(--theme-warn) 12%, transparent); }
+  .atr-roulette-drop { display: flex; flex: 1 1 auto; align-self: stretch; align-items: center; justify-content: center; min-height: 56px; }
+  .atr-roulette-drop > [data-drop-words="over"], :is(.atr-roulette[data-drop-over], [data-node][data-drop-over] > .atr-roulette) .atr-roulette-drop > [data-drop-words="rest"] { display: none; }
+  :is(.atr-roulette[data-drop-over], [data-node][data-drop-over] > .atr-roulette) .atr-roulette-drop > [data-drop-words="over"] { display: inline; color: var(--theme-canvas-text); font-weight: 600; }
   .atr-roulette-stage { position: relative; flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); perspective: 1600px; overflow: clip; }
   .atr-roulette-drum { grid-area: 1 / 1; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); min-height: 0; transform-style: preserve-3d; will-change: transform; }
-  .atr-roulette-face { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-  .atr-roulette-face > .atr-node { flex: 1 1 auto; display: flex; flex-direction: column; }
-  .atr-roulette-face > .atr-node > [data-slot="root"] { flex: 1 1 auto; }
+  /* Round 2 (item 3): each face is clipped to its own box, so a slot taller than the stage never draws its
+     overflow into the front slot from the drum's side (the cut badge says when a slot is cut). */
+  .atr-roulette-face { grid-area: 1 / 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: clip; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .atr-roulette-face > .atr-node, .atr-roulette-face-in > .atr-node { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .atr-roulette-face > .atr-node > [data-slot="root"], .atr-roulette-face-in > .atr-node > [data-slot="root"] { flex: 1 1 auto; }
+  .atr-roulette-face-in { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; transform-origin: 50% 50%; }
   .atr-roulette[data-motion="fade"] .atr-roulette-drum { will-change: auto; }
   .atr-roulette-controls { flex: none; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; }
   .atr-roulette-arrow { appearance: none; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0 6px; border: 1px solid var(--theme-line); border-radius: var(--theme-control-radius, 0px); background: transparent; color: var(--theme-canvas-text); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
   .atr-roulette-arrow:hover { border-color: var(--theme-accent); }
-  .atr-roulette-dots { display: inline-flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: center; }
+  .atr-roulette-dots { display: inline-flex; align-items: center; gap: 2px; flex-wrap: nowrap; justify-content: center; min-width: 0; }
   .atr-roulette-dot { appearance: none; width: 20px; height: 20px; padding: 0; border: 0; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
   .atr-roulette-dot::before { content: ""; width: 7px; height: 7px; border-radius: 999px; border: 1.5px solid var(--theme-canvas-text); opacity: 0.55; box-sizing: border-box; }
   .atr-roulette-dot[aria-current="true"]::before { background: var(--theme-accent); border-color: var(--theme-accent); opacity: 1; width: 9px; height: 9px; }
@@ -166,9 +197,13 @@
   .atr-roulette-refused { gap: 4px; padding: 10px 12px; font-size: 13px; border: 1px dashed var(--theme-warn); }
   .atr-roulette[data-roulette-empty] { align-items: center; justify-content: center; min-height: 80px; padding: 12px; border: 1px dashed var(--theme-line); text-align: center; font-size: 13px; }
   /* A11.2: in edit mode, a box too small for what it holds says so, with Fit (render/scroll-area.tsx CutBadge). */
-  .atr-cut-badge { position: absolute; left: 6px; bottom: 6px; z-index: 4; display: inline-flex; align-items: center; gap: 2px; max-width: calc(100% - 12px); padding: 2px 4px 2px 8px; white-space: nowrap; font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-text); background: var(--theme-surface); border: 1px solid var(--theme-warn); border-radius: var(--theme-control-radius, 0px); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+  /* Round 2 (item 12): drawn in the cell just under the box (CutBadge places it), never over the widget's
+     own controls or under a resize handle, and never cut: no max width, its own stacking order. */
+  .atr-grid[data-fixed-rows] > .atr-cell { position: relative; }
+  .atr-cut-badge { position: absolute; z-index: 20; display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; line-height: 18px; white-space: nowrap; font-family: var(--theme-font-mono); font-size: 11px; color: var(--theme-surface-text); background: var(--theme-surface); border: 1px solid var(--theme-warn); border-radius: var(--theme-control-radius, 0px); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
   .atr-cut-badge[hidden] { display: none; }
-  .atr-cut-fit { appearance: none; border: 0; background: transparent; color: var(--theme-accent); font: inherit; font-weight: 600; text-decoration: underline; padding: 2px 4px; min-height: 24px; cursor: pointer; }
+  .atr-cut-fit { position: relative; appearance: none; border: 0; background: transparent; color: var(--theme-accent); font: inherit; font-weight: 600; text-decoration: underline; padding: 0 4px; min-height: 18px; cursor: pointer; }
+  .atr-cut-fit::after { content: ""; position: absolute; inset: -6px -4px; }
   /* A node carrying its own CSS is still clipped 12px past its box by the guard (its node box), and in the
      viewer its box holds the drawn size (below), so node CSS can never take clicks or room from a
      neighbour (gauntlet w2-r2 Fixes 1, 2 and 9). */
@@ -586,7 +621,7 @@
     .atr-render-root :is(a.atr-bookmark, .atr-bookmark) { min-height: 44px; }
     .atr-render-root a.atr-tile-link { min-height: 44px; }
     .atr-render-root :is(.atr-roulette-arrow, .atr-roulette-dot) { min-height: 44px; min-width: 44px; }
-    .atr-render-root .atr-cut-fit { min-height: 44px; }
+    .atr-render-root .atr-cut-fit::after { inset: -13px -10px; }
   }
 }
 

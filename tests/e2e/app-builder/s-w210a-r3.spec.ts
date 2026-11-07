@@ -170,7 +170,7 @@ test("item 16: the repeat's inspector and the Publish summary name the Card for 
   await ctx.close();
 });
 
-test("H1 (builder side): a Card for each drawn shorter than its cards opens grown in the builder, with no inner scroll", async ({ browser }) => {
+test("H1 (builder side, changed in 2.10c r2 item 7): a Card for each drawn shorter than its cards opens unchanged; Fit grows it with no inner scroll", async ({ browser }) => {
   const rows = ["ACE", "firefly", "minipc-ubuntu", "Pelican", "pve1", "pve2", "pve3", "RP5-2", "RP5-3"].map((name, i) => ({ name, cpu: 7.8 + i }));
   const stat: Node = { id: "c_r3bstataaa", type: "stat", props: { value: { $bind: "{{ $item.cpu }}" }, label: "CPU", unit: "%" }, slot: { x: 0, y: 0, w: 6, h: 14 } };
   const card: Node = { id: "c_r3bcardaaa", type: "card", name: "Card for each row", props: { title: { $bind: "{{ $item.name }}" }, padded: true }, children: [{ id: "c_r3bgridaaa", type: "grid", props: { minRows: 1, gap: 8 }, children: [stat] }] };
@@ -180,12 +180,18 @@ test("H1 (builder side): a Card for each drawn shorter than its cards opens grow
   const page = await ctx.newPage();
   await openBuilder(page, app.slug);
   await expect(page.locator(`[data-canvas-root] [data-node="${rep.id}"] [data-slot="item"]`)).toHaveCount(9);
+  // Wave 2.10c r2 item 7: opening writes nothing; the person's Fit grows it (one step).
+  await page.waitForTimeout(3000);
+  expect(nodeIn(await draft(app.id), rep.id)?.slot?.h, "opening wrote nothing").toBe(30);
+  await page.locator('[data-left-tab="layers"]').click();
+  await page.locator(`[data-layer="${rep.id}"]`).click();
+  await page.locator(`[data-selected-outline="${rep.id}"] [data-fit-selected]`).click();
   const grown = await untilDraft(app.id, (d) => (nodeIn(d, rep.id)?.slot?.h ?? 0) > 30, 8000);
   await page.waitForTimeout(1500);
   const m = await page.locator(`[data-canvas-root] [data-node="${rep.id}"] .atr-repeat`).first().evaluate((r) => ({ client: r.clientHeight, scroll: r.scrollHeight }));
   await page.screenshot({ path: out("h1-builder-open.png") });
   note("h1-builder", { h: nodeIn(grown, rep.id)?.slot?.h, m });
-  expect(nodeIn(grown, rep.id)?.slot?.h ?? 0, "the repeat grew on open").toBeGreaterThan(30);
+  expect(nodeIn(grown, rep.id)?.slot?.h ?? 0, "Fit grew the repeat").toBeGreaterThan(30);
   expect(m.scroll, `cards ${m.scroll}px in ${m.client}px`).toBeLessThanOrEqual(m.client + 1);
   await ctx.close();
 });

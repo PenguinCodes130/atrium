@@ -46,7 +46,15 @@ export type SafeRequest = {
    * credential headers Atrium attached itself (`trustedHeaders`). Anything else is refused.
    */
   userShaped?: { trustedHeaders: string[] };
+  /**
+   * Set for a run that began at a host on your network (a favicon fetch from a LAN service). Every hop and
+   * every socket must then resolve only to private or loopback addresses, so a host whose DNS answers
+   * private to the check and public to the socket cannot steer the server (w210c r2, SFR 2).
+   */
+  privateOnly?: boolean;
 };
+
+export const PRIVATE_ONLY_MESSAGE = "That address left your network partway, so Atrium stopped";
 
 export const PRIVATE_WRITE_MESSAGE = "Requests you shape can only read from addresses on your network";
 
@@ -99,13 +107,25 @@ const publicLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
+/** Like checkedLookup, but refuses any public address: the socket of a privateOnly run stays on your network. */
+const privateLookup: LookupFunction = (hostname, options, callback) => {
+  checkedLookup(hostname, { ...options, all: true }, (err: NodeJS.ErrnoException | null, addrs: string | LookupAddress[]) => {
+    const list = Array.isArray(addrs) ? addrs : [];
+    if (!err && list.some((a) => !isPrivateAddress(a.address))) err = Object.assign(new Error(PRIVATE_ONLY_MESSAGE), { code: "ATRIUM_PUBLIC" });
+    if (err) return (callback as (e: Error | null, a: LookupAddress[]) => void)(err, []);
+    if (options.all) return (callback as (e: Error | null, a: LookupAddress[]) => void)(null, list);
+    const first = list[0]!;
+    (callback as (e: Error | null, a: string, f: number) => void)(null, first.address, first.family);
+  });
+};
+
 const agents = new Map<string, Agent>();
-function agentFor(verifyTls: boolean, socketPath?: string, publicOnly = false): Agent {
-  const k = `${verifyTls}|${socketPath ?? ""}|${publicOnly}`;
+function agentFor(verifyTls: boolean, socketPath?: string, publicOnly = false, privateOnly = false): Agent {
+  const k = `${verifyTls}|${socketPath ?? ""}|${publicOnly}|${privateOnly}`;
   let a = agents.get(k);
   if (!a) {
     a = new Agent({
-      connect: socketPath ? { socketPath } : { lookup: publicOnly ? publicLookup : checkedLookup, rejectUnauthorized: verifyTls },
+      connect: socketPath ? { socketPath } : { lookup: publicOnly ? publicLookup : privateOnly ? privateLookup : checkedLookup, rejectUnauthorized: verifyTls },
       keepAliveTimeout: 4_000,
     });
     agents.set(k, a);
@@ -165,6 +185,9 @@ export async function safeRequest(req: SafeRequest): Promise<RawResponse> {
       let publicOnly = false;
       if (!req.socketPath) {
         const addrs = await resolveChecked(url.hostname);
+        if (req.privateOnly && addrs.some((a) => !isPrivateAddress(a.address))) {
+          throw hostError("permission", `${PRIVATE_ONLY_MESSAGE}.`, `${url.hostname} is not on your network, and this read started on your network.`);
+        }
         if (req.userShaped) {
           const why = privateWriteReason(method, method !== "GET" ? body : undefined, headers, trusted);
           if (why) {
@@ -177,7 +200,7 @@ export async function safeRequest(req: SafeRequest): Promise<RawResponse> {
         method,
         headers,
         body: method !== "GET" ? body : undefined,
-        dispatcher: agentFor(req.verifyTls ?? true, req.socketPath, publicOnly),
+        dispatcher: agentFor(req.verifyTls ?? true, req.socketPath, publicOnly, !publicOnly && !!req.privateOnly),
         signal,
       });
       const resHeaders = flatHeaders(res.headers as Record<string, string | string[] | undefined>);
@@ -220,6 +243,9 @@ export async function safeRequest(req: SafeRequest): Promise<RawResponse> {
     }
     if ((err as { code?: string })?.code === "ATRIUM_PRIVATE" || (err as { cause?: { code?: string } })?.cause?.code === "ATRIUM_PRIVATE") {
       throw hostError("permission", `${PRIVATE_WRITE_MESSAGE}.`, "The address changed to one on your network while connecting, so Atrium stopped.");
+    }
+    if ((err as { code?: string })?.code === "ATRIUM_PUBLIC" || (err as { cause?: { code?: string } })?.cause?.code === "ATRIUM_PUBLIC") {
+      throw hostError("permission", `${PRIVATE_ONLY_MESSAGE}.`, "The address changed to one outside your network while connecting, so Atrium stopped.");
     }
     throw new HostError(toAdapterError(err, timeout.aborted, timeoutMs));
   }

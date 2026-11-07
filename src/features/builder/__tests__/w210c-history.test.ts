@@ -67,10 +67,10 @@ describe("history labels (A11.1)", () => {
     expect(historyLabel(d, [{ op: "node.update", nodeId: a.id, patch: { props: { label: "A", value: { $bind: "{{ cpu }}" } } } }])).toBe("Change Stat data");
     expect(historyLabel(d, [{ op: "node.update", nodeId: a.id, patch: { style: { root: { color: "red" } } } as never }])).toBe("Change Stat style");
     const p = { id: newId("p"), slug: "two", title: "Two", inNav: true, root: { id: newId("c"), type: "grid" as const, props: {}, children: [] } };
-    expect(historyLabel(d, [{ op: "page.add", page: p }])).toBe("Add page Two");
+    expect(historyLabel(d, [{ op: "page.add", page: p }])).toBe('Add page "Two"');
     const d2 = applyOpsToDoc(d, [{ op: "page.add", page: p }]);
     if (!d2.ok) throw new Error("page add");
-    expect(historyLabel(d2.doc, [{ op: "page.remove", pageId: p.id }])).toBe("Remove page Two");
+    expect(historyLabel(d2.doc, [{ op: "page.remove", pageId: p.id }])).toBe('Remove page "Two"');
     expect(historyLabel(d2.doc, [{ op: "page.move", pageId: p.id, index: 0 }])).toBe("Reorder pages");
     expect(historyLabel(d2.doc, [{ op: "app.update", patch: { homePage: p.id } }])).toBe("Set start page");
     expect(historyLabel(d, [{ op: "node.remove", nodeId: a.id }, { op: "source.remove", name: "cpu" }])).toBe("Delete Stat");

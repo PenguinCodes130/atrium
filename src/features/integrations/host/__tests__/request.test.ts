@@ -15,6 +15,7 @@ beforeAll(async () => {
     if (u.pathname === "/to-meta") return redirect(res, "http://169.254.169.254/latest/meta-data/");
     if (u.pathname === "/to-fe80") return redirect(res, "http://[fe80::1]/");
     if (u.pathname === "/to-ec2") return redirect(res, "http://[fd00:ec2::254]/");
+    if (u.pathname === "/to-public-ip") return redirect(res, "http://8.8.8.8/");
     if (u.pathname === "/to-b-to-meta") return redirect(res, `${b.url}/x`);
     if (u.pathname === "/big") { res.writeHead(200); res.end("x".repeat(3 * 1024 * 1024)); return; }
     json(res, 200, { ok: true });
@@ -53,6 +54,16 @@ describe("safeRequest redirects", () => {
 
   it("refuses hosts outside the allow list", async () => {
     await expect(safeRequest({ url: `${a.url}/`, redirect: { mode: "same-host" }, allowedOrigins: ["http://10.77.99.7"] })).rejects.toMatchObject({ adapterError: { code: "permission" } });
+  });
+
+  it("privateOnly reads a loopback host and follows a redirect that stays on your network", async () => {
+    const r = await safeRequest({ url: `${a.url}/to-b`, redirect: { mode: "checked" }, privateOnly: true });
+    expect(JSON.parse(r.body.toString())).toMatchObject({ from: "b" });
+  });
+
+  it("privateOnly refuses a hop that leaves your network, before connecting (w210c r2 SFR 2)", async () => {
+    await expect(safeRequest({ url: `${a.url}/to-public-ip`, redirect: { mode: "checked" }, privateOnly: true })).rejects.toMatchObject({ adapterError: { code: "permission", message: expect.stringContaining("left your network") } });
+    await expect(safeRequest({ url: "http://8.8.8.8/", redirect: { mode: "checked" }, privateOnly: true })).rejects.toMatchObject({ adapterError: { code: "permission" } });
   });
 
   it("caps the body size", async () => {

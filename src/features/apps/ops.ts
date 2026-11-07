@@ -21,7 +21,10 @@ export type OpChecks = {
 
 export type ApplyResult = { ok: true; doc: AppDocument; changed: string[] } | { ok: false; problems: Problem[] };
 
-const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat", "group"]);
+// Wave 2.10c round 2 (Fix List items 1 and 5): a roulette holds its slots (A11.4). This fallback is what the
+// builder applies edits with locally, so without it every drop into a roulette and every undo of a slot delete
+// was refused before it reached the server.
+const CONTAINERS = new Set(["grid", "stack", "card", "tabs", "section", "repeat", "group", "roulette"]);
 
 /** A1.4/A7.4: x and w are multiples of an eighth of a column (snapping off), y and h whole 8px rows. */
 export function isSlot(s: unknown): s is { x: number; y: number; w: number; h: number } {

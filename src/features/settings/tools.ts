@@ -110,11 +110,11 @@ export const settingsTools: ToolDef<any, any>[] = [
   },
   {
     name: "uploads.favicon", title: "Fetch a website's icon", ...edit, effect: "none",
-    description: "Fetches a website's icon on the server (link rel icon, apple-touch-icon, manifest icons, then /favicon.ico; the best raster at most 256 px or a sanitised SVG, at most 1 MB) and stores it as an image upload. Returns its /uploads/ path for an icon prop. The same origin within 7 days answers from the store without fetching. Link-local and cloud metadata addresses are refused.",
-    input: z.object({ url: z.string().max(2048) }),
+    description: "Fetches a website's icon on the server (link rel icon, apple-touch-icon, manifest icons, then /favicon.ico; the best raster at most 256 px or a sanitised SVG, at most 1 MB) and stores it as an image upload. Returns its /uploads/ path for an icon prop. The same address within 7 days answers from the store without fetching; refresh: true fetches again. Link-local and cloud metadata addresses are refused.",
+    input: z.object({ url: z.string().max(2048), refresh: z.boolean().optional() }),
     output: z.object({ path: z.string(), name: z.string() }),
-    async handler({ principal }, i: { url: string }) {
-      const r = await fetchFavicon(principal, i.url);
+    async handler({ principal }, i: { url: string; refresh?: boolean }) {
+      const r = await fetchFavicon(principal, i.url, { refresh: i.refresh === true });
       return { path: r.path, name: r.name };
     },
   },

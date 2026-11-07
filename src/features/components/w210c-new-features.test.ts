@@ -76,7 +76,8 @@ describe("N1 sizing and Focus to scroll (A11.2, A11.3)", () => {
     expect(css).toMatch(/\.atr-render-root :is\(\.atr-node, \.atr-node \*\) \{ scrollbar-width: none; \}/);
     expect(css).toMatch(/::-webkit-scrollbar \{ display: none;/);
     expect(css).toMatch(/\[data-sizing="scroll"\]\[data-focus-scroll\]:not\(\[data-focus-scroll="off"\]\):not\(\[data-scroll-engaged\]\) > \[data-slot="root"\] \{ overflow: hidden; \}/);
-    expect(css).toMatch(/\[data-scroll-engaged\] > \[data-slot="root"\] \{ outline: 1px solid var\(--theme-accent\)/);
+    // Round 2 (item 13): the ring is the node box's own ::after, drawn above the content.
+    expect(css).toMatch(/\[data-scroll-engaged\]::after[^{]*\{[^}]*border: 1px solid var\(--theme-accent\)/);
     expect(css).toMatch(/\.atr-scroll-thumb \{[^}]*background: var\(--theme-scrollbar-thumb, color-mix\(in oklab, var\(--theme-canvas-text\) 35%, transparent\)\)[^}]*opacity: 0;/);
     expect(css).toMatch(/width: var\(--theme-scrollbar-width, 6px\)/);
     // Still only scrolling kinds scroll (A11.2).
@@ -88,11 +89,11 @@ describe("N1 sizing and Focus to scroll (A11.2, A11.3)", () => {
     expect(html).toContain("data-scroll-thumb");
     expect(html).not.toContain("data-content-cut");
     const stat: ComponentNode = { id: "c_nstataaaaa", type: "stat", props: { value: 3 } };
+    // Round 2 (item 12): the badge itself is drawn in the grid cell once measured (a portal); the server
+    // markup holds its anchor in edit mode only.
     const edit = render(stat, ctx({}, "edit"));
-    expect(edit).toContain("atr-cut-badge");
-    expect(edit).toContain("Content is cut");
-    expect(edit).toMatch(/class="atr-cut-badge"[^>]*hidden/);
-    expect(render(stat, ctx({}, "view"))).not.toContain("atr-cut-badge");
+    expect(edit).toContain("data-cut-anchor");
+    expect(render(stat, ctx({}, "view"))).not.toContain("data-cut-anchor");
   });
 });
 
@@ -125,7 +126,7 @@ describe("N3 roulette (A11.4)", () => {
     expect(mountedFaces(0, 2, 1).map((f) => f.slot)).toEqual([0, 1]);
     expect(mountedFaces(0, 1)).toEqual([{ k: 0, slot: 0 }]);
     expect(mountedFaces(0, 0)).toEqual([]);
-    expect(drumRadius(100)).toBeCloseTo(50 / Math.tan((20 * Math.PI) / 180));
+    expect(drumRadius(100)).toBeCloseTo(50 / Math.tan((18 * Math.PI) / 180)); // round 2: 36 deg apart
     const html = render(roul({ mode: "slots" }, slots(10)), ctx({}));
     expect((html.match(/data-face="/g) ?? []).length).toBe(3);
     expect(html).toContain("Slot 1");

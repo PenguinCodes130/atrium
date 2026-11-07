@@ -13,6 +13,10 @@
 // offers "Make a dark set", and an auto theme's dark set is edited with the same fields as the light set
 // (Editing: Light set / Dark set). B4 and B5 show in the preview because it draws the app's own nav and
 // full-size controls (themes/ui/theme-sample.tsx).
+// Wave 2.10c r2 (gauntlet w210c-r1): Fix 15 a Scrollbar control (colour, 4/6/8 px) under Shape and space
+// for the scroll kinds' drawn thumb, and the Custom CSS box lists what the canvas sanitiser removes, with
+// its reason, as the component CSS box does; Fix 21 `onCreated` lets the builder's Theme panel open an
+// unsaved copy that is stored only on Save.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { Theme, ThemeTokens } from "@/core/contracts";
@@ -33,7 +37,13 @@ import { UsedBy } from "./used-by";
 import { UseOnApp } from "./use-on-app";
 
 type Use = { appId: string; slug: string; name: string; draft: boolean; published: boolean };
-export type EditorProps = { id: string; rev: number; theme: Theme; invalid: number; usedBy: Use[]; savedCss?: string; /** r2 low L8: an unsaved new theme, stored on the first Save. */ isNew?: boolean };
+export type EditorProps = {
+  id: string; rev: number; theme: Theme; invalid: number; usedBy: Use[]; savedCss?: string;
+  /** r2 low L8: an unsaved new theme, stored on the first Save. */
+  isNew?: boolean;
+  /** Wave 2.10c r2 Fix 21: with `isNew`, called after the first Save stores the theme (instead of opening it in Settings). */
+  onCreated?(c: { id: string; name: string; rev: number }): void;
+};
 
 type GroupKey = "surfaces" | "colours" | "type" | "shape" | "motion" | "chrome" | "dark" | "advanced";
 const GROUP_OF_CONTRAST: Record<string, GroupKey> = { "color.surfaceText": "colours", "color.surfaceMuted": "colours", "color.canvasText": "colours", "color.accentText": "colours" };
@@ -72,7 +82,7 @@ function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), obj);
 }
 
-export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, usedBy: initialUse, savedCss, isNew = false }: EditorProps) {
+export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, usedBy: initialUse, savedCss, isNew = false, onCreated }: EditorProps) {
   const router = useRouter();
   const [theme, setTheme] = useState<Theme>(initial);
   const [rev, setRev] = useState(initialRev);
@@ -174,10 +184,11 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
     setSaveError(null);
     try {
       if (isNew) {
-        const c = await api<{ id: string; name: string }>("/api/settings/themes", { body: { theme } });
+        const c = await api<{ id: string; name: string; rev: number }>("/api/settings/themes", { body: { theme } });
         toast({ kind: "success", title: `Saved ${c.name}` });
         refreshThemePicker();
-        router.replace(`/settings/themes/${c.id}`);
+        if (onCreated) onCreated({ id: c.id, name: c.name, rev: c.rev });
+        else router.replace(`/settings/themes/${c.id}`);
         return;
       }
       const r = await api<{ rev: number; name: string; usedBy: Use[] }>(`/api/settings/themes/${id}`, { method: "PUT", body: { theme, rev } });
@@ -334,6 +345,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             <NumberField key="space.padPx" path="space.padPx" value={t.space.padPx} error={fieldErr["space.padPx"]} onValid={(v) => set("tokens.space.padPx", v)} onError={(m) => err("space.padPx", m)} inForce={inForce("pad", t)} />
             {sampled("space.density", "Density", ["comfortable", "compact"] as const, { comfortable: "Comfortable", compact: "Compact" }, (v) => <DensitySample density={v} />, (v) => setDensity(v))}
             <p className="type-caption text-fg-2 sm:col-span-2" data-density-hint>Compact tightens card padding, gaps, title bars, nav items and service tiles to two thirds and makes buttons 32 px tall. Touch screens keep 44 px controls. Boxes sized at Comfortable keep their height until you use Fit in the builder.</p>
+            <ScrollbarField value={t.scrollbar} canvasText={t.color.canvasText} error={fieldErr["scrollbar.thumb"]} onChange={(v) => set("tokens.scrollbar", v)} onError={(m) => err("scrollbar.thumb", m)} />
           </>)}
           {group("motion", "Motion", <>
             {sampled("motion.enter", "Entrance", ["none", "fade", "rise", "sweep"] as const, { none: "None", fade: "Fade", rise: "Rise", sweep: "Sweep" }, (v) => <EntranceSample enter={v} />)}
@@ -390,6 +402,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
               <span className="type-caption text-fg-2">It can never style the Atrium shell, dialogs or toasts. The preview shows the saved CSS.</span>
               {fieldErr.customCss && <span role="alert" className="type-caption text-bad">{fieldErr.customCss}</span>}
             </label>
+            <CssRemovedList css={theme.customCss ?? ""} />
             <FontsField fonts={theme.fonts ?? []} onChange={(f) => set("fonts", f.length ? f : undefined)} />
           </>)}
         </div>
@@ -807,4 +820,79 @@ function PublishedApps({ apps, busy, onUpdateDrafts, onClose }: { apps: Use[]; b
 
 function same(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** The default thumb when a theme sets none: canvas text at 35% (components.css draws the same). */
+function defaultThumb(canvasText: string): string {
+  const hex = swatchHex(canvasText);
+  return hex ? `${hex}59` : "#8a8a8a59";
+}
+
+/** A small drawn track with the thumb at the chosen width and colour. */
+function ScrollbarSample({ width, colour }: { width: 4 | 6 | 8; colour: string }) {
+  return (
+    <span aria-hidden className="relative block h-7 w-10 border border-line bg-bg-hi" data-scrollbar-sample={width}>
+      <span className="absolute inset-y-1 left-1.5 right-4 flex flex-col justify-between">
+        <span className="h-px bg-line-strong" /><span className="h-px bg-line-strong" /><span className="h-px bg-line-strong" />
+      </span>
+      <span className="absolute top-1 right-1 h-3 rounded-full" style={{ width, background: isThemeColor(colour) ? colour : "transparent" }} />
+    </span>
+  );
+}
+
+/**
+ * Wave 2.10c r2 Fix 15 (A11.3, A11.5): the scroll kinds' drawn thumb. Absent, it follows the canvas text
+ * at 35% and is 6 px; changing either field gives the theme its own scrollbar; "Use the default" removes it.
+ */
+function ScrollbarField({ value, canvasText, error, onChange, onError }: { value: ThemeTokens["scrollbar"]; canvasText: string; error?: string; onChange(v: ThemeTokens["scrollbar"]): void; onError(m: string | null): void }) {
+  const thumb = value?.thumb ?? defaultThumb(canvasText);
+  const width = value?.widthPx ?? 6;
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-4 sm:col-span-2" data-scrollbar-field data-scrollbar-own={value ? "true" : "false"}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className={`m-0 ${LABEL_CLASS}`}>Scrollbar</h4>
+        {value ? <Button variant="quiet" onClick={() => { onError(null); onChange(undefined); }} data-scrollbar-default>Use the default</Button> : <span className="type-caption text-fg-2" data-scrollbar-default-note>Default: the canvas text at 35%, 6 px</span>}
+      </div>
+      <p className="m-0 type-caption text-fg-2">The thumb tables, lists and other scrolling widgets draw while you scroll them or point at them.</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <ColourField path="scrollbar.thumb" label="Scrollbar colour" value={thumb} error={error} onValid={(v) => onChange({ thumb: v, widthPx: width })} onError={onError} />
+        <ChoiceField<4 | 6 | 8> label="Scrollbar width" name="scrollbar.widthPx" value={width} options={[4, 6, 8] as const} labels={{ 4: "4 px", 6: "6 px", 8: "8 px" }} sample={(w) => <ScrollbarSample width={w} colour={thumb} />} onChange={(w) => onChange({ thumb, widthPx: w })} />
+      </div>
+    </div>
+  );
+}
+
+type CssReport = { removed: { text: string; reason: string }[]; tokenHint: boolean };
+
+/**
+ * Wave 2.10c r2 Fix 15: what the canvas sanitiser removes from the Custom CSS, each with its reason, checked
+ * on the server a moment after typing stops (the sanitiser is server-only). Nothing is stored.
+ */
+function CssRemovedList({ css }: { css: string }) {
+  const [report, setReport] = useState<CssReport | null>(null);
+  useEffect(() => {
+    if (!css.trim()) {
+      setReport(null);
+      return;
+    }
+    let live = true;
+    const t = window.setTimeout(() => {
+      api<CssReport>("/api/settings/themes/check-css", { body: { css } })
+        .then((r) => { if (live) setReport(r); })
+        .catch(() => { if (live) setReport(null); });
+    }, 350);
+    return () => { live = false; window.clearTimeout(t); };
+  }, [css]);
+  if (!report || report.removed.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 sm:col-span-2" role="status" data-css-removed>
+      <p className="m-0 type-label text-fg">{report.removed.length === 1 ? "1 part of this CSS is removed:" : `${report.removed.length} parts of this CSS are removed:`}</p>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {report.removed.map((r, i) => (
+          <li key={i} className="border-l-4 border-l-warn bg-bg-sunk px-2 py-1 font-mono text-[12px]">Removed: {r.text}: {r.reason}</li>
+        ))}
+      </ul>
+      {report.tokenHint && <p className="m-0 type-caption text-fg-2" data-css-token-hint>To set a --theme-* token for the whole canvas, put it under :scope {"{ }"} instead of :root, html or body.</p>}
+    </div>
+  );
 }

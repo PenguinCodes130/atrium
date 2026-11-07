@@ -14,6 +14,7 @@
 // CutBadge: in edit mode, a box that is not a scrolling kind and is too small for its content shows
 // "Content is cut · Fit" (A11.2: more than 0.5 px). Fit asks the builder through FIT_EVENT.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type FocusScroll = "click" | "hover" | "off";
 export const FOCUS_SCROLL_DEFAULT: FocusScroll = "click";
@@ -59,12 +60,27 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
   const thumbRef = useRef<HTMLSpanElement>(null);
   const [geo, setGeo] = useState<{ top: number; height: number; offset: number } | null>(null);
   const [scrolling, setScrolling] = useState(false);
+  // Round 2 (item 13): rows hidden below or above, for the edge fade and the rest cue.
+  const [hidden, setHidden] = useState(0);
+  // Item 13: the root element changes when rows arrive (a Repeat first draws "Nothing to show"), so the
+  // chrome follows the box's current root, not the one it saw first (its thumb never showed).
+  const [rootEl, setRootEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const box = thumbRef.current?.parentElement;
+    if (!box) return;
+    const pick = () => setRootEl(box.querySelector<HTMLElement>(':scope > [data-slot="root"]'));
+    pick();
+    if (typeof MutationObserver === "undefined") return;
+    const mo = new MutationObserver(pick);
+    mo.observe(box, { childList: true });
+    return () => mo.disconnect();
+  }, []);
 
   useEffect(() => {
     const thumb = thumbRef.current;
     const box = thumb?.parentElement;
-    const root = box?.querySelector<HTMLElement>(':scope > [data-slot="root"]');
-    if (!thumb || !box || !root) return;
+    const root = rootEl;
+    if (!thumb || !box || !root || root.parentElement !== box) return;
     let engaged = mode === "off";
     let linger: ReturnType<typeof setTimeout> | undefined;
     // The box that scrolls: the root itself, or the part inside it that holds the rows (a table's body).
@@ -92,10 +108,16 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
       if (next === port && port.hasAttribute("data-scroll-port")) return;
       port.removeEventListener("scroll", onScroll);
       port.removeAttribute("data-scroll-port");
+      port.removeAttribute("data-more-below");
+      port.removeAttribute("data-more-above");
+      port.removeAttribute("data-table-port");
       port = next;
       port.setAttribute("data-scroll-port", "");
+      if (port.querySelector(":scope > table > thead, :scope > thead")) port.setAttribute("data-table-port", "");
       port.addEventListener("scroll", onScroll, { passive: true });
     };
+    const watched = new WeakSet<HTMLElement>();
+    const sideways = (w: HTMLElement) => w.toggleAttribute("data-more-right", w.scrollWidth - w.clientWidth > 1 && w.scrollLeft < w.scrollWidth - w.clientWidth - 1);
     const measure = () => {
       choosePort();
       const g = thumbGeometry(port.scrollTop, port.scrollHeight, port.clientHeight);
@@ -106,6 +128,23 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
       }
       const offset = port.getBoundingClientRect().top - box.getBoundingClientRect().top + (parseFloat(getComputedStyle(port).borderTopWidth) || 0);
       setGeo(g ? { ...g, offset } : null);
+      // The edge fade where rows continue, kept clear of a table's pinned header (its height as a variable).
+      const max = port.scrollHeight - port.clientHeight;
+      const below = max > 1 && port.scrollTop < max - 1;
+      const above = max > 1 && port.scrollTop > 1;
+      port.toggleAttribute("data-more-below", below);
+      port.toggleAttribute("data-more-above", above);
+      const head = port.hasAttribute("data-table-port") ? port.querySelector<HTMLElement>("thead") : null;
+      if (head) port.style.setProperty("--atr-head-h", `${Math.round(head.getBoundingClientRect().height)}px`);
+      setHidden(below || above ? Math.max(1, Math.round(max)) : 0);
+      // A table wider than its box (a phone): the side that continues fades (item 20).
+      for (const w of Array.from(root.querySelectorAll<HTMLElement>(".atr-table-wrap"))) {
+        sideways(w);
+        if (!watched.has(w)) {
+          watched.add(w);
+          w.addEventListener("scroll", () => sideways(w), { passive: true });
+        }
+      }
     };
     const onDocDown = (e: PointerEvent) => {
       const t = e.target as Node | null;
@@ -167,7 +206,7 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
       box.removeAttribute("data-scroll-engaged");
       box.removeAttribute("data-focus-scroll");
     };
-  }, [mode, label]);
+  }, [mode, label, rootEl]);
 
   // Dragging the drawn thumb scrolls like a native one.
   const onThumbDown = (e: React.PointerEvent<HTMLSpanElement>) => {
@@ -190,6 +229,7 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
   };
 
   return (
+    <>
     <span
       ref={thumbRef}
       aria-hidden
@@ -200,6 +240,11 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
       style={geo ? { top: geo.offset + geo.top, height: geo.height } : undefined}
       onPointerDown={onThumbDown}
     />
+    {/* At rest, a widget with hidden rows says how to reach them (item 13); gone once it is engaged. */}
+    <span aria-hidden className="atr-scroll-cue" data-scroll-cue data-mode={mode} hidden={!hidden || mode === "off"}>
+      {mode === "hover" ? "Point to scroll" : "Click to scroll"}
+    </span>
+    </>
   );
 }
 
@@ -246,19 +291,39 @@ export function contentCutPx(node: Element | null | undefined): number {
   return Math.max(0, byBoxes);
 }
 
+/** Where the badge sits, in the cell's px: just under the box, clear of its resize handles (item 12). */
+export const BADGE_GAP_PX = 12;
+export const BADGE_INSET_PX = 14;
+/** Below this box width the badge says "Cut · Fit", so it stays whole beside a small box. */
+export const BADGE_SHORT_BELOW_PX = 100;
+
+/**
+ * Gauntlet w210c-r1 item 12: the badge is drawn in the grid cell, just under the box (portalled there, so
+ * the node's clip never cuts it and it never covers the widget's own controls, like a roulette's arrows),
+ * left-aligned clear of the corner handles, always whole and clickable; in a narrow box it reads "Cut · Fit".
+ */
 export function CutBadge({ nodeId }: { nodeId: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [cut, setCut] = useState(0);
+  const [place, setPlace] = useState<{ cell: HTMLElement; top: number; left: number; short: boolean } | null>(null);
   useEffect(() => {
     const box = ref.current?.parentElement;
     if (!box) return;
     // Only a box with a drawn size can be too small: one directly in a fixed-row grid cell.
-    if (!box.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]")) return;
+    const cell = box.parentElement;
+    if (!cell?.parentElement?.matches(".atr-grid[data-fixed-rows]")) return;
     const root = box.querySelector(':scope > [data-slot="root"]');
     let raf = 0;
     const check = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => setCut(contentCutPx(box)));
+      raf = requestAnimationFrame(() => {
+        setCut(contentCutPx(box));
+        const b = box as HTMLElement;
+        const top = b.offsetTop + b.offsetHeight + BADGE_GAP_PX;
+        const left = b.offsetLeft + BADGE_INSET_PX;
+        const short = b.offsetWidth < BADGE_SHORT_BELOW_PX;
+        setPlace((p) => (p && p.cell === cell && p.top === top && p.left === left && p.short === short ? p : { cell, top, left, short }));
+      });
     };
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
     ro?.observe(box);
@@ -267,7 +332,8 @@ export function CutBadge({ nodeId }: { nodeId: string }) {
       for (const k of Array.from(root.children)) ro?.observe(k);
     }
     const mo = typeof MutationObserver === "undefined" ? null : new MutationObserver(check);
-    if (root) mo?.observe(root, { childList: true, subtree: true, characterData: true });
+    // The whole box: its root is replaced when data arrives (an empty state, then the widget).
+    mo?.observe(box, { childList: true, subtree: true, characterData: true });
     check();
     return () => {
       cancelAnimationFrame(raf);
@@ -278,14 +344,24 @@ export function CutBadge({ nodeId }: { nodeId: string }) {
   const fit = () => {
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(FIT_EVENT, { detail: { nodeId } }));
   };
-  return (
-    <span ref={ref} className="atr-cut-badge" data-content-cut={cut > CUT_THRESHOLD_PX ? Math.ceil(cut) : undefined} role={cut > CUT_THRESHOLD_PX ? "note" : undefined} hidden={!(cut > CUT_THRESHOLD_PX)}>
-      <span>Content is cut</span>
+  const on = cut > CUT_THRESHOLD_PX;
+  const badge = (
+    <span
+      className="atr-cut-badge"
+      data-cut-badge={nodeId}
+      data-content-cut={on ? Math.ceil(cut) : undefined}
+      data-short={place?.short ? "" : undefined}
+      role={on ? "note" : undefined}
+      hidden={!on || !place}
+      style={place ? { top: place.top, left: place.left } : undefined}
+    >
+      <span>{place?.short ? "Cut" : "Content is cut"}</span>
       <span aria-hidden> · </span>
       <button
         type="button"
         className="atr-cut-fit"
         data-cut-fit
+        aria-label={place?.short ? "Content is cut. Fit" : undefined}
         // The builder selects on a capturing click and stops it there, so Fit is asked on pointer down (and
         // on Enter or Space); the click then selects the node as usual, which shows the inspector's Fit too.
         onPointerDown={fit}
@@ -294,5 +370,12 @@ export function CutBadge({ nodeId }: { nodeId: string }) {
         Fit
       </button>
     </span>
+  );
+  // The anchor stays in the node box (so the badge knows its box); the badge itself goes to the cell.
+  return (
+    <>
+      <span ref={ref} hidden data-cut-anchor />
+      {place ? createPortal(badge, place.cell) : null}
+    </>
   );
 }

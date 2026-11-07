@@ -6,10 +6,11 @@ const FALLBACK = "Atrium could not fetch that icon. Try again.";
 
 export type FetchedFavicon = { path: string; name: string };
 
-export async function fetchFavicon(url: string, opts: { signal?: AbortSignal } = {}): Promise<FetchedFavicon> {
+/** `refresh: true` skips the server's 7 day store and fetches the site again. */
+export async function fetchFavicon(url: string, opts: { signal?: AbortSignal; refresh?: boolean } = {}): Promise<FetchedFavicon> {
   let res: Response;
   try {
-    res = await fetch(ROUTE, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: url.trim() }), signal: opts.signal, credentials: "same-origin" });
+    res = await fetch(ROUTE, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: url.trim(), ...(opts.refresh ? { refresh: true } : {}) }), signal: opts.signal, credentials: "same-origin" });
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") throw err;
     throw new Error(FALLBACK);
