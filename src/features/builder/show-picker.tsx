@@ -137,6 +137,8 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   const lineMode = kind === "line";
   const fits = fitsFor(type, target.prop);
   const fitsTitle = lineMode ? "a chart line" : kind === "status" ? "a status badge" : `a ${(META[fits as keyof typeof META]?.title ?? fits).toLowerCase()}`;
+  // Wave 2.10c r3 (first-timer low): the preview names the widget being set ("the gauge"), not its data kind.
+  const ownWord = (META[type as keyof typeof META]?.title ?? type).toLowerCase();
   const [q, setQ] = useState("");
   const [typed, setTyped] = useState("");
   useEffect(() => { const t = window.setTimeout(() => setTyped(q.trim()), 200); return () => window.clearTimeout(t); }, [q]);
@@ -165,7 +167,8 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
   const items: (CatalogueItem & { fit: boolean })[] = useMemo(() => {
     if (!res) return [];
     // The catalogue ranks by the component type; a single field (a stat's value, a tile's stat) refines it here.
-    return res.items.map((it, i) => ({ ...it, fit: lineMode || kind === "status" || kind === "value" ? itemFits(type, target.prop, it) : !!res.fits[i] }));
+    // Wave 2.10c r3 (first-timer low): a roulette's rows take a list, so a list fits it, listed first.
+    return res.items.map((it, i) => ({ ...it, fit: lineMode || kind === "status" || kind === "value" || (kind === "items" && type === "roulette") ? itemFits(type, target.prop, it) : !!res.fits[i] }));
   }, [res, type, target.prop]);
   const thingsOfService = useMemo(() => {
     if (!service || typed || !res) return [];
@@ -591,7 +594,7 @@ export function ShowPicker({ target, doc, bindable, data, apply, onClose, onByHa
           <aside className={`flex min-w-0 flex-col gap-2 border border-line p-3 md:sticky md:top-0 md:self-start max-md:order-first ${previewing ? "" : "max-md:hidden"}`} aria-label="Preview" data-show-preview data-show-preview-for={previewing?.key ?? ""}>
             <h3 className="type-label m-0">Preview</h3>
             {!previewing ? (
-              <p className="type-caption m-0 text-fg-2" data-show-preview-empty>Point at a choice, or move to it with Tab, to see it in {lineMode ? "the chart" : `the ${fitsTitle.replace(/^an? /, "")}`} here with its live value. Nothing changes on the page until you press Use.</p>
+              <p className="type-caption m-0 text-fg-2" data-show-preview-empty>Point at a choice, or move to it with Tab, to see it in {lineMode ? "the chart" : `the ${ownWord}`} here with its live value. Nothing changes on the page until you press Use.</p>
             ) : (
               <>
                 <div className="flex min-w-0 flex-col" aria-live="polite">

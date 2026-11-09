@@ -29,7 +29,7 @@ import { settingValues } from "@/db/schema/settings";
 import { uploads } from "@/db/schema/uploads";
 import { isPrivateAddress } from "@/features/integrations/host/address";
 import { HostError } from "@/features/integrations/host/errors";
-import { PRIVATE_WRITE_MESSAGE, resolveChecked, safeRequest, type RawResponse, type SafeRequest } from "@/features/integrations/host/request";
+import { PRIVATE_ONLY_MESSAGE, PRIVATE_WRITE_MESSAGE, resolveChecked, safeRequest, type RawResponse, type SafeRequest } from "@/features/integrations/host/request";
 import { canUpload, checkFile, readUpload, storeChecked, UploadRefused } from "../store";
 import { looksLikeHtml, sniffRaster } from "../sniff";
 import { decodeDataUrl, icoToPng, imageSize, isIco } from "./image";
@@ -65,6 +65,7 @@ const STATUS: Record<FaviconMessageKey, [number, string]> = {
   forbidden: [403, "forbidden"],
   refused: [403, "favicon_refused"],
   privateFromPublic: [403, "favicon_refused"],
+  publicFromPrivate: [403, "favicon_refused"],
   mixedAnswer: [403, "favicon_refused"],
   none: [422, "favicon_none"],
   tooLarge: [422, "favicon_none"],
@@ -168,7 +169,8 @@ export function reasonOf(err: unknown): FaviconMessageKey {
   if (err instanceof FaviconRefused) return err.reason;
   if (!(err instanceof HostError)) return "unreachable";
   const { code, message } = err.adapterError;
-  if (code === "permission") return message.startsWith(PRIVATE_WRITE_MESSAGE) ? "privateFromPublic" : "refused";
+  // w210c r3 (item 12 note): a LAN run refused for leaving the network has its own sentence.
+  if (code === "permission") return message.startsWith(PRIVATE_WRITE_MESSAGE) ? "privateFromPublic" : message.startsWith(PRIVATE_ONLY_MESSAGE) ? "publicFromPrivate" : "refused";
   if (code === "timeout") return "timeout";
   if (code === "tls") return "certificate";
   if (code === "config") return /http and https/.test(message) ? "scheme" : /credentials/i.test(message) ? "credentials" : "typeAddress";
@@ -178,7 +180,7 @@ export function reasonOf(err: unknown): FaviconMessageKey {
 }
 
 /** Failure reasons, most important first: a refusal always wins, so a blocked address is never hidden. */
-const PRIORITY: FaviconMessageKey[] = ["refused", "mixedAnswer", "privateFromPublic", "timeout", "tooLarge", "tooManyPx", "pageTooLarge", "none"];
+const PRIORITY: FaviconMessageKey[] = ["refused", "mixedAnswer", "privateFromPublic", "publicFromPrivate", "timeout", "tooLarge", "tooManyPx", "pageTooLarge", "none"];
 
 type Run = {
   deadline: number;
@@ -332,7 +334,7 @@ async function fetchOne(p: Principal, start: URL, run: Run, resolve: (h: string)
         if (mres.status >= 200 && mres.status < 300) list = [...list, ...parseManifest(mres.body.toString("utf8"), mres.url)];
       } catch (err) {
         const why = reasonOf(err);
-        if (why === "refused" || why === "privateFromPublic" || why === "timeout") reasons.add(why);
+        if (why === "refused" || why === "privateFromPublic" || why === "publicFromPrivate" || why === "timeout") reasons.add(why);
       }
     }
     if (list.some((c) => c.oversized)) reasons.add("tooManyPx");

@@ -42,6 +42,9 @@ export type SheetProps = {
   showClose?: boolean;
 };
 
+/** A bottom sheet is at most this share of the window's height. */
+export const BOTTOM_SHEET_MAX = 0.85;
+
 /** Swipe distance (px) or downward speed (px/s) that closes a bottom sheet. */
 export const SWIPE_CLOSE_PX = 80;
 export const SWIPE_CLOSE_VELOCITY = 500;
@@ -70,8 +73,44 @@ export function Sheet({ open, onOpenChange, title, hideTitle, description, side 
   const onDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.y > SWIPE_CLOSE_PX || info.velocity.y > SWIPE_CLOSE_VELOCITY) onOpenChange(false);
   };
-  // A bottom sheet is as tall as its content (up to 85dvh); while open it never shrinks, so a body whose
-  // content gets shorter (a picker's result replacing its grid) does not pull the title down (w210c r2 item 18).
+  // A bottom sheet is as tall as its content (up to 85% of the window); while open it never shrinks, so a body
+  // whose content gets shorter (a picker's result replacing its grid) does not pull the title down (w210c r2
+  // item 18).
+  // w210c r3 item 10: a bottom sheet lifts above the on-screen keyboard only while a text field has focus.
+  // The global rule (globals.css) lifts it by `--keyboard-inset`, which ShellGlobals updates only on viewport
+  // resizes; on the phone builder that value was left at 420px with no keyboard and no focused field, so the
+  // sheet opened 297px tall with its foot 420px above the screen's bottom (a 190px scroll area mid-screen)
+  // until a field took focus and a resize reset it. Here the inset is read from the visual viewport, and it
+  // counts only while <html> carries `data-typing` (a text field has focus). The cap is pixels from the
+  // window (85%), which inline style puts over the global rule.
+  const [fit, setFit] = useState<{ cap: number; kb: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !bottom) return;
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+    const measure = () => {
+      const typing = root.hasAttribute("data-typing");
+      const kb = typing && vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+      setFit({ cap: Math.max(0, Math.round(window.innerHeight * BOTTOM_SHEET_MAX) - kb), kb });
+    };
+    measure();
+    // data-typing is set and cleared on focus changes; re-measure once it has landed.
+    const later = () => setTimeout(measure, 0);
+    const watch = new MutationObserver(measure);
+    watch.observe(root, { attributes: true, attributeFilter: ["data-typing"] });
+    window.addEventListener("resize", measure);
+    vv?.addEventListener("resize", measure);
+    document.addEventListener("focusin", later);
+    document.addEventListener("focusout", later);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener("resize", measure);
+      vv?.removeEventListener("resize", measure);
+      document.removeEventListener("focusin", later);
+      document.removeEventListener("focusout", later);
+    };
+  }, [open, bottom]);
+  const cap = fit?.cap ?? null;
   const box = useRef<HTMLDivElement>(null);
   const [floor, setFloor] = useState(0);
   useEffect(() => {
@@ -86,7 +125,7 @@ export function Sheet({ open, onOpenChange, title, hideTitle, description, side 
   const shown = reduced ? { opacity: 1 } : { x: 0, y: 0, opacity: 1 };
   const position =
     resolved === "bottom"
-      ? "inset-x-0 bottom-0 max-h-[85dvh] border-x-0 border-b-0 pb-safe"
+      ? "inset-x-0 top-auto bottom-0 max-h-[85svh] border-x-0 border-b-0 pb-safe"
       : resolved === "right"
         ? "inset-y-0 right-0 h-dvh max-w-[100vw] border-y-0 border-r-0"
         : "inset-y-0 left-0 h-dvh max-w-[100vw] border-y-0 border-l-0";
@@ -129,7 +168,7 @@ export function Sheet({ open, onOpenChange, title, hideTitle, description, side 
                 className={`${surface === "float" ? "glass-float" : "border border-line-strong bg-bg-hi"} fixed z-50 flex flex-col overflow-hidden text-fg shadow-overlay will-change-transform ${position}`}
                 ref={box}
                 data-sheet-floor={bottom && floor ? floor : undefined}
-                style={resolved === "bottom" ? (floor ? { minHeight: `min(${floor}px, 85dvh)` } : undefined) : { width }}
+                style={resolved === "bottom" ? { ...(fit ? { maxHeight: fit.cap, bottom: fit.kb } : {}), ...(floor ? { minHeight: cap ? Math.min(floor, cap) : `min(${floor}px, 85svh)` } : {}) } : { width }}
                 initial={hidden}
                 animate={shown}
                 exit={hidden}

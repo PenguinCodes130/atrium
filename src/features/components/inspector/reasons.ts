@@ -88,7 +88,8 @@ export function fieldReason(type: string, key: string, props: Record<string, unk
     case "divider.spacing":
       return env.parentType === "grid" ? "In a grid the box sets the space around the line; this shows in a stack or card" : null;
     case "card.subtitle":
-      return typeof props.subtitle === "string" && props.subtitle.trim() && !(typeof props.title === "string" && props.title.trim()) ? "Needs a Title" : null;
+      // Round 3 (first-timer low): a Title that is live data (bound, as in Card for each) counts as a title.
+      return typeof props.subtitle === "string" && props.subtitle.trim() && !(typeof props.title === "string" && props.title.trim()) && !(props.title && typeof props.title === "object" && "$bind" in props.title && String((props.title as { $bind: unknown }).$bind).trim()) ? "Needs a Title" : null;
     case "card.padded":
     case "group.columns":
     case "group.fixedHeight":

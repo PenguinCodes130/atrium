@@ -17,7 +17,7 @@
 //     become "3 of 9"; every roulette is a drop zone the builder can find (roulette-rules.ts).
 //   - Render budget: only the visible slot and its two neighbours are mounted (and so read data); the rest
 //     are not, and show the page's last value at once when they come round.
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { animate, motion, useMotionValue, useTransform, type MotionValue } from "motion/react";
 import type { ComponentNode, RenderContext } from "@/core/contracts";
 import { transitionFor, useReducedMotion } from "@/features/shell";
@@ -55,6 +55,40 @@ function FaceIn({ rot, k, children }: { rot: MotionValue<number>; k: number; chi
   const scale = useTransform(rot, (r) => faceLook(r - k * ROULETTE_STEP_DEG).scale);
   return <motion.div className="atr-roulette-face-in" data-face-in style={{ opacity, scale }}>{children}</motion.div>;
 }
+/**
+ * Round 3 item 3 (A11.2: a roulette is `scale` sizing): the slot's widget is laid out at its own natural height
+ * (never squeezed, so nothing inside it is cut) and, when that is taller than the slot, scaled down to fit it,
+ * keeping its aspect, from the top centre. Transform only: the widget's own layout never changes, so the
+ * builder's Fit still reads its natural size and can grow the roulette to show it at full size.
+ */
+export function slotScale(slotPx: number, naturalPx: number): number {
+  if (!(slotPx > 0) || !(naturalPx > 0)) return 1;
+  const s = slotPx / naturalPx;
+  return s >= 0.999 ? 1 : Math.max(0.05, s);
+}
+function SlotFit({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box || typeof ResizeObserver === "undefined") return;
+    const check = () => {
+      const kid = box.firstElementChild as HTMLElement | null;
+      const s = kid ? slotScale(box.clientHeight, kid.offsetHeight) : 1;
+      box.style.transform = s === 1 ? "" : `scale(${s})`;
+      if (s === 1) box.removeAttribute("data-slot-scaled");
+      else box.setAttribute("data-slot-scaled", s.toFixed(3));
+    };
+    const ro = new ResizeObserver(check);
+    ro.observe(box);
+    const watchKid = () => { const k = box.firstElementChild; if (k) ro.observe(k); check(); };
+    watchKid();
+    const mo = new MutationObserver(watchKid);
+    mo.observe(box, { childList: true });
+    return () => { ro.disconnect(); mo.disconnect(); };
+  }, []);
+  return <div ref={ref} className="atr-roulette-fit" data-slot-fit>{children}</div>;
+}
+
 /** A11.4: reduced motion crossfades in 200 ms. */
 export const ROULETTE_FADE_MS = 200;
 /** A wheel event this large is one mouse notch, one slot; smaller (trackpad) travel adds up to this per slot. */
@@ -98,6 +132,12 @@ export function swipeSlots(dx: number, dy: number, minPx = SWIPE_PX): number {
   const ay = Math.abs(dy);
   if (Math.max(ax, ay) < minPx) return 0;
   return ay >= ax ? (dy < 0 ? 1 : -1) : dx < 0 ? 1 : -1;
+}
+
+/** The slot a roulette of `n` slots opens on (pure, unit-tested): `startAt` counts from 0 and is held to 0 to n - 1. */
+export function startSlot(startAt: unknown, n: number): number {
+  const v = typeof startAt === "number" && Number.isFinite(startAt) ? Math.max(0, Math.floor(startAt)) : 0;
+  return n > 0 ? Math.min(v, n - 1) : v;
 }
 
 export type Advance = { scroll: boolean; arrows: boolean; dots: boolean };
@@ -158,7 +198,9 @@ export function RouletteView({ node, resolved, ctx }: P) {
   const n = mode === "repeat" ? (template ? rows.length : 0) : Math.min(ROULETTE_MAX, node.children?.length ?? 0);
   const tooMany = mode === "repeat" && rows.length > ROULETTE_MAX;
 
-  const start = typeof resolved.startAt === "number" && Number.isFinite(resolved.startAt) ? Math.max(0, Math.floor(resolved.startAt)) : 0;
+  // Round 3 item 9: the stored slot counts from 0 (the inspector shows it from 1); past the last slot it opens on
+  // the last one, never wrapping round to an earlier slot.
+  const start = startSlot(resolved.startAt, n);
   const [pos, setPos] = useState(start);
   const [dir, setDir] = useState<1 | -1>(1);
   const cur = n ? mod(pos, n) : 0;
@@ -198,18 +240,26 @@ export function RouletteView({ node, resolved, ctx }: P) {
   // Faces mounted after the first render fade in (a far dot jump crossfades too, item 20).
   const [ready, setReady] = useState(false);
   useEffect(() => setReady(true), []);
+  // Round 3 item 4: whether it is engaged lives in a ref the listeners read, so Esc (onKey) releases the wheel
+  // too; the listeners used to keep their own copy, which Esc never cleared.
+  const engagedRef = useRef(false);
+  const setOn = useCallback((v: boolean) => { engagedRef.current = v; setEngaged(v); }, []);
   useEffect(() => {
     const root = rootEl;
     if (!root) return;
-    let on = false;
     let acc = 0;
     let touch: { id: number; x: number; y: number } | null = null;
-    const set = (v: boolean) => { on = v; setEngaged(v); };
-    const onDocDown = (e: PointerEvent) => set(!!e.target && root.contains(e.target as Node));
+    const set = setOn;
+    // A press inside engages it (and takes focus, so keys and Esc reach it); one outside releases it.
+    const onDocDown = (e: PointerEvent) => {
+      const inside = !!e.target && root.contains(e.target as Node);
+      set(inside);
+      if (inside && !edit && document.activeElement !== root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+    };
     const onFocusIn = () => set(true);
     const onFocusOut = (e: FocusEvent) => { if (!e.relatedTarget || !root.contains(e.relatedTarget as Node)) set(false); };
     const onWheel = (e: WheelEvent) => {
-      if (!on || !adv.scroll || n < 2) return; // the page scrolls
+      if (!engagedRef.current || !adv.scroll || n < 2) return; // the page scrolls
       e.preventDefault();
       const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * root.clientHeight : e.deltaY;
       const w = wheelSlots(d, acc);
@@ -219,7 +269,7 @@ export function RouletteView({ node, resolved, ctx }: P) {
     // Touch (item 11): once a tap has engaged it, a swipe along it turns it (touch-action is none while
     // engaged, components.css, so the page does not scroll under the finger); before that the page scrolls.
     const onTouchDown = (e: PointerEvent) => {
-      if (e.pointerType !== "touch" || !on || n < 2) return;
+      if (e.pointerType !== "touch" || !engagedRef.current || n < 2) return;
       touch = { id: e.pointerId, x: e.clientX, y: e.clientY };
     };
     const onTouchUp = (e: PointerEvent) => {
@@ -245,7 +295,7 @@ export function RouletteView({ node, resolved, ctx }: P) {
       root.removeEventListener("focusout", onFocusOut);
       root.removeEventListener("wheel", onWheel);
     };
-  }, [adv.scroll, n, rootEl]);
+  }, [adv.scroll, n, rootEl, setOn, edit]);
   // Item 3: the stage is measured whenever it appears (a callback ref), not only on the first render: a
   // repeat-mode roulette first draws "Nothing to show" until its rows arrive, and its radius stayed 0.
   const stageObs = useRef<ResizeObserver | null>(null);
@@ -288,25 +338,42 @@ export function RouletteView({ node, resolved, ctx }: P) {
     return () => window.removeEventListener(ROULETTE_SHOW_EVENT, on);
   }, [node.id]);
   // The timer: off by default; never in the builder, never while hovered or focused, or the page is hidden.
+  // Round 3 (first-timer low): never for a viewer who asked for reduced motion; the arrows, dots and wheel
+  // still turn it.
   useEffect(() => {
-    if (!timer || edit || paused || n < 2) return;
+    if (!timer || edit || paused || n < 2 || reducedPref) return;
     const h = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       goRef.current(1);
     }, timer * 1000);
     return () => clearInterval(h);
-  }, [timer, edit, paused, n]);
+  }, [timer, edit, paused, n, reducedPref]);
 
   // The drum's angle as one motion value: the drum turns on it and each face reads its own look from it.
   const rot = useMotionValue(pos * ROULETTE_STEP_DEG);
-  useEffect(() => {
-    const a = animate(rot, pos * ROULETTE_STEP_DEG, transitionFor("settle", false));
+  // Round 3 item 7: the far jump is applied while rendering, so the faces mounted for it (FaceIn reads the
+  // angle as it mounts) and the drum are drawn at the new angle in the very first frame; idempotent.
+  {
+    const to = pos * ROULETTE_STEP_DEG;
+    const from = rot.get();
+    if (!reduced && Math.abs(to - from) > 1.5 * ROULETTE_STEP_DEG) rot.jump(to - Math.sign(to - from) * ROULETTE_STEP_DEG);
+  }
+  // A layout effect, so the jump below lands before the browser paints the newly mounted faces (one frame
+  // at the old angle showed them as see-through neighbours).
+  useLayoutEffect(() => {
+    // Round 3 item 7: a far dot jump or a fast wheel run never spins past unmounted (empty) faces: the drum
+    // starts one step short of the target, where the target's mounted neighbour sits, and turns that one step.
+    const to = pos * ROULETTE_STEP_DEG;
+    const from = rot.get();
+    // jump, not set: set would hand the spring the jump as a huge starting velocity.
+    if (!reduced && Math.abs(to - from) > 1.5 * ROULETTE_STEP_DEG) rot.jump(to - Math.sign(to - from) * ROULETTE_STEP_DEG);
+    const a = animate(rot, to, transitionFor("settle", false));
     return () => a.stop();
-  }, [pos, rot]);
+  }, [pos, rot, reduced]);
   const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget && (e.target as Element).closest("input, textarea, select, [contenteditable]")) return;
     if (e.key === "Escape") {
-      if (engaged) { setEngaged(false); e.stopPropagation(); }
+      if (engagedRef.current) { setOn(false); e.stopPropagation(); }
       return;
     }
     if (n < 2) return;
@@ -352,15 +419,19 @@ export function RouletteView({ node, resolved, ctx }: P) {
   const faces = (() => {
     const set = mountedFaces(settled, n, dir);
     if (!set.some((f) => f.k === pos)) set.push({ k: pos, slot: cur });
-    return set.length > 3 ? mountedFaces(pos, n, dir) : set.sort((a, b) => a.k - b.k);
+    const out = set.length > 3 ? mountedFaces(pos, n, dir) : set.sort((a, b) => a.k - b.k);
+    // Round 3 item 7: under the crossfade the slot that was showing stays until the new one is fully in, so a
+    // far jump crosses from it instead of fading in from an empty card.
+    if (reduced && settled !== pos && !out.some((f) => f.k === settled)) out.push({ k: settled, slot: mod(settled, n) });
+    return out;
   })();
   const radius = drumRadius(height);
   const draw = (slot: number) => {
-    if (mode === "slots") return env.renderChild(node.children![slot]!, { key: node.children![slot]!.id });
+    if (mode === "slots") return <SlotFit>{env.renderChild(node.children![slot]!, { key: node.children![slot]!.id })}</SlotFit>;
     const key = keys[slot]!;
     const row = overrides[key];
     const changed = hasCopyChange(template!, row);
-    return env.renderChild(changed ? applyCopyOverride(template!, key, row) : template!, { key: template!.id, scope: guest ? {} : { $item: rows[slot], $index: slot, [ITEM_FORMATS]: formats }, path: env.path ? `${env.path}.${slot}` : String(slot) });
+    return <SlotFit>{env.renderChild(changed ? applyCopyOverride(template!, key, row) : template!, { key: template!.id, scope: guest ? {} : { $item: rows[slot], $index: slot, [ITEM_FORMATS]: formats }, path: env.path ? `${env.path}.${slot}` : String(slot) })}</SlotFit>;
   };
   const faceAttrs = (slot: number) => ({
     "data-slot-index": slot,
@@ -398,7 +469,9 @@ export function RouletteView({ node, resolved, ctx }: P) {
           <div className="atr-roulette-drum" data-roulette-drum>
             {faces.map((f) => (
               // Motion animates the opacity itself (the page's reduced-motion CSS turns CSS transitions off).
-              <motion.div key={f.k} className="atr-roulette-face" data-face={f.k} initial={ready ? { opacity: 0 } : false} animate={{ opacity: f.slot === cur ? 1 : 0 }} transition={{ duration: ROULETTE_FADE_MS / 1000, ease: "linear" }} {...faceAttrs(f.slot)}>
+              // Round 3 item 7: a true crossfade: the incoming slot fades in on top while the one it covers stays
+              // fully drawn, and only then goes, so the card never dims mid-change.
+              <motion.div key={f.k} className="atr-roulette-face" data-face={f.k} style={{ zIndex: f.slot === cur ? 1 : 0 }} initial={ready ? { opacity: 0 } : false} animate={{ opacity: f.slot === cur ? 1 : 0 }} transition={f.slot === cur ? { duration: ROULETTE_FADE_MS / 1000, ease: "linear" } : { duration: 0, delay: ROULETTE_FADE_MS / 1000 }} {...faceAttrs(f.slot)}>
                 {draw(f.slot)}
               </motion.div>
             ))}

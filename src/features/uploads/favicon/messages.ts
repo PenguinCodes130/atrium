@@ -18,6 +18,7 @@ export const FAVICON_MESSAGES = {
   forbidden: "Only owners and members can fetch website icons. An agent also needs the atrium:edit scope.",
   refused: "Atrium will not fetch from that address. It is, or redirects to, a link-local or cloud metadata address.",
   privateFromPublic: "That website pointed Atrium at an address on your network, which a public website is not allowed to do.",
+  publicFromPrivate: "That address is on your network but sent Atrium to an address outside it, which Atrium does not follow for icons.",
   mixedAnswer: "That website's address also points at a machine on your network, so Atrium will not read it.",
   none: "That website has no icon Atrium can use. Pick one from the grid, or upload one.",
   tooLarge: "That website's icon is larger than 1 MB. Pick one from the grid, or upload one.",

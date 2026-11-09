@@ -241,8 +241,8 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
     <FontSelect key={path} label={label} name={path} value={String(getPath(t, path))} onChange={(v) => set(`tokens.${path}`, v)} uploaded={uploadedFamilies} monoOnly={path === "type.mono"} />
   );
   // F10 sweep: a choice whose every option shows a small drawn sample.
-  const sampled = <T extends string | number>(path: string, label: string, options: readonly T[], labels: Partial<Record<string, string>> | undefined, sample: (v: T) => ReactNode, onChange?: (v: T) => void) => (
-    <ChoiceField key={path} label={label} value={getPath(t, path) as T} options={options} labels={labels} sample={sample} onChange={onChange ?? ((v) => set(`tokens.${path}`, v))} name={path} />
+  const sampled = <T extends string | number>(path: string, label: string, options: readonly T[], labels: Partial<Record<string, string>> | undefined, sample: (v: T) => ReactNode, onChange?: (v: T) => void, wide?: boolean) => (
+    <ChoiceField key={path} label={label} value={getPath(t, path) as T} options={options} labels={labels} sample={sample} onChange={onChange ?? ((v) => set(`tokens.${path}`, v))} name={path} wide={wide} />
   );
   const headingFamily = fontStack(t.type.display, uploadedFamilies, "display");
   // F11: Play re-mounts the preview's sample widgets so the chosen entrance runs on them once.
@@ -343,7 +343,7 @@ export function ThemeEditor({ id, rev: initialRev, theme: initial, invalid, used
             <ControlRadiusField key={`shape.controlRadiusPx-${t.space.density}`} density={t.space.density} value={t.shape.controlRadiusPx} error={fieldErr["shape.controlRadiusPx"]} onValid={(v) => set("tokens.shape.controlRadiusPx", v)} onError={(m) => err("shape.controlRadiusPx", m)} />
             <NumberField key="space.gapPx" path="space.gapPx" value={t.space.gapPx} error={fieldErr["space.gapPx"]} onValid={(v) => set("tokens.space.gapPx", v)} onError={(m) => err("space.gapPx", m)} inForce={inForce("gap", t)} />
             <NumberField key="space.padPx" path="space.padPx" value={t.space.padPx} error={fieldErr["space.padPx"]} onValid={(v) => set("tokens.space.padPx", v)} onError={(m) => err("space.padPx", m)} inForce={inForce("pad", t)} />
-            {sampled("space.density", "Density", ["comfortable", "compact"] as const, { comfortable: "Comfortable", compact: "Compact" }, (v) => <DensitySample density={v} />, (v) => setDensity(v))}
+            {sampled("space.density", "Density", ["comfortable", "compact"] as const, { comfortable: "Comfortable", compact: "Compact" }, (v) => <DensitySample density={v} />, (v) => setDensity(v), true)}
             <p className="type-caption text-fg-2 sm:col-span-2" data-density-hint>Compact tightens card padding, gaps, title bars, nav items and service tiles to two thirds and makes buttons 32 px tall. Touch screens keep 44 px controls. Boxes sized at Comfortable keep their height until you use Fit in the builder.</p>
             <ScrollbarField value={t.scrollbar} canvasText={t.color.canvasText} error={fieldErr["scrollbar.thumb"]} onChange={(v) => set("tokens.scrollbar", v)} onError={(m) => err("scrollbar.thumb", m)} />
           </>)}
@@ -597,10 +597,12 @@ function ControlRadiusField({ value, density, error, onValid, onError }: { value
   );
 }
 
-function ChoiceField<T extends string | number>({ label, name, value, options, labels, onChange, sample }: { label: string; name: string; value: T; options: readonly T[]; labels?: Partial<Record<string, string>>; onChange(v: T): void; sample?: (v: T) => ReactNode }) {
+function ChoiceField<T extends string | number>({ label, name, value, options, labels, onChange, sample, wide }: { label: string; name: string; value: T; options: readonly T[]; labels?: Partial<Record<string, string>>; onChange(v: T): void; sample?: (v: T) => ReactNode; wide?: boolean }) {
   const text = (o: T) => labels?.[String(o)] ?? String(o);
-  // Sampled choices with four or more options take the whole row, so their samples and labels fit.
-  return <ChoiceGroup<T> label={label} name={name} value={value} onChange={onChange} columns={sample ? options.length : undefined} className={sample && options.length >= 4 ? "sm:col-span-2" : undefined} options={options.map((o) => ({ value: o, label: sample ? <Sampled sample={sample(o)}>{text(o)}</Sampled> : text(o) }))} />;
+  // Sampled choices with four or more options take the whole row, so their samples and labels fit; so does
+  // one with a long word (`wide`: Density's "Comfortable" was cut to "omfortabl" in the builder's narrow
+  // editor, w210c r3 item 15).
+  return <ChoiceGroup<T> label={label} name={name} value={value} onChange={onChange} columns={sample ? options.length : undefined} className={sample && (wide || options.length >= 4) ? "sm:col-span-2" : undefined} options={options.map((o) => ({ value: o, label: sample ? <Sampled sample={sample(o)}>{text(o)}</Sampled> : text(o) }))} />;
 }
 
 /** A theme colour moved toward another by `k` (0 to 1), as #rrggbb; null when either is not a colour. */

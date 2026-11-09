@@ -134,6 +134,7 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
       const above = max > 1 && port.scrollTop > 1;
       port.toggleAttribute("data-more-below", below);
       port.toggleAttribute("data-more-above", above);
+      innerFade(port, below || above);
       const head = port.hasAttribute("data-table-port") ? port.querySelector<HTMLElement>("thead") : null;
       if (head) port.style.setProperty("--atr-head-h", `${Math.round(head.getBoundingClientRect().height)}px`);
       setHidden(below || above ? Math.max(1, Math.round(max)) : 0);
@@ -248,6 +249,35 @@ export function ScrollChrome({ mode, label }: { mode: FocusScroll; label?: strin
   );
 }
 
+/** Whether a box draws a frame of its own (a border, a shadow or a fill): fading the box itself would dissolve it. */
+function framed(el: HTMLElement): boolean {
+  const cs = getComputedStyle(el);
+  const bw = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const fill = cs.backgroundColor && !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor);
+  return bw > 0 || (cs.boxShadow && cs.boxShadow !== "none") || !!fill || cs.backgroundImage !== "none";
+}
+
+/**
+ * Round 3 item 8: a framed scroll box (a list's card) keeps its border, corners and shadow; the edge fade goes on
+ * what scrolls inside it instead. Each child gets where the visible window starts and ends in its own px
+ * (`--atr-fade-t`, `--atr-fade-b`), so its mask fades exactly at the box's inner edges (components.css).
+ */
+function innerFade(port: HTMLElement, on: boolean) {
+  const inner = on && !port.hasAttribute("data-table-port") && framed(port);
+  port.toggleAttribute("data-fade-inner", inner);
+  if (!inner) return;
+  const pr = port.getBoundingClientRect();
+  const cs = getComputedStyle(port);
+  const z = port.offsetHeight > 0 ? pr.height / port.offsetHeight || 1 : 1;
+  const viewTop = pr.top + (parseFloat(cs.borderTopWidth) || 0) * z;
+  const viewBottom = viewTop + port.clientHeight * z;
+  for (const k of Array.from(port.children) as HTMLElement[]) {
+    const kr = k.getBoundingClientRect();
+    k.style.setProperty("--atr-fade-t", `${Math.round((viewTop - kr.top) / z)}px`);
+    k.style.setProperty("--atr-fade-b", `${Math.round((viewBottom - kr.top) / z)}px`);
+  }
+}
+
 /** The lowest edge of laid-out content inside `root` (screen px), not counting out-of-flow marks or nested grid boxes. */
 function contentBottom(root: Element): number | null {
   let bottom: number | null = null;
@@ -257,6 +287,9 @@ function contentBottom(root: Element): number | null {
       if (cs.display === "none" || cs.position === "absolute" || cs.position === "fixed") continue;
       const r = k.getBoundingClientRect();
       if (r.width > 0 || r.height > 0) bottom = bottom === null ? r.bottom : Math.max(bottom, r.bottom);
+      // Round 3 item 13: a drawing is one leaf. Its shapes' boxes include strokes the svg clips itself (a
+      // gauge's dial circles reach past their svg), so walking into it would call a whole gauge cut.
+      if (k.tagName.toLowerCase() === "svg") continue;
       // A nested component in a fixed-row grid owns its own box (its own badge says when it is cut).
       if (k.matches("[data-node]") && k.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]")) continue;
       if (cs.overflowY === "auto" || cs.overflowY === "scroll") continue;
@@ -267,9 +300,31 @@ function contentBottom(root: Element): number | null {
   return bottom;
 }
 
+/**
+ * Round 3 item 1: what a roulette needs, in layout px: the slot in front at its own natural size (a child scaled
+ * down to fit its slot is measured unscaled: offsetHeight ignores transforms), plus the turn controls, the gap
+ * between them and the root's padding and border; the same sum as the builder's `rouletteNeedPx`. The turned
+ * faces never count (they reach past the box in 3D by design). Null when there is no slot in front.
+ */
+export function rouletteNeedLayoutPx(node: Element): number | null {
+  const root = node.querySelector(':scope > [data-slot="root"]') as HTMLElement | null;
+  const front = root?.querySelector('[data-roulette-drum] > [data-face]:not([aria-hidden="true"]) [data-node]') as HTMLElement | null;
+  if (!root || !front) return null;
+  const slot = front.offsetHeight + contentCutPx(front);
+  const controls = root.querySelector(":scope > .atr-roulette-controls") as HTMLElement | null;
+  const cs = getComputedStyle(root);
+  const gap = parseFloat(cs.rowGap) || 0;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  return slot + (controls ? controls.offsetHeight + gap : 0) + pad;
+}
+
 /** How many layout px of content a node box hides below its root (0 when everything shows). Browser only. */
 export function contentCutPx(node: Element | null | undefined): number {
   if (!node) return 0;
+  if (node.matches('[data-type="roulette"]')) {
+    const need = rouletteNeedLayoutPx(node);
+    return need === null ? 0 : Math.max(0, need - (node as HTMLElement).offsetHeight);
+  }
   const root = node.querySelector(':scope > [data-slot="root"]') ?? node;
   const r = root.getBoundingClientRect();
   const h = node as HTMLElement;
@@ -344,28 +399,32 @@ export function CutBadge({ nodeId }: { nodeId: string }) {
   const fit = () => {
     if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(FIT_EVENT, { detail: { nodeId } }));
   };
+  // A roulette scales its slot down rather than cutting it (item 3): its badge says so.
+  const shrunk = !!ref.current?.parentElement?.matches('[data-type="roulette"]');
   const on = cut > CUT_THRESHOLD_PX;
   const badge = (
     <span
       className="atr-cut-badge"
       data-cut-badge={nodeId}
+      // Round 3 item 1: the badge sits in the grid cell, outside its node's box, so the canvas would take a press
+      // on it for the grid (a marquee, then selecting the grid). The canvas leaves its own controls alone.
+      data-canvas-control
       data-content-cut={on ? Math.ceil(cut) : undefined}
       data-short={place?.short ? "" : undefined}
       role={on ? "note" : undefined}
       hidden={!on || !place}
       style={place ? { top: place.top, left: place.left } : undefined}
     >
-      <span>{place?.short ? "Cut" : "Content is cut"}</span>
+      <span>{place?.short ? (shrunk ? "Shrunk" : "Cut") : shrunk ? "Shrunk to fit" : "Content is cut"}</span>
       <span aria-hidden> · </span>
       <button
         type="button"
         className="atr-cut-fit"
         data-cut-fit
-        aria-label={place?.short ? "Content is cut. Fit" : undefined}
-        // The builder selects on a capturing click and stops it there, so Fit is asked on pointer down (and
-        // on Enter or Space); the click then selects the node as usual, which shows the inspector's Fit too.
-        onPointerDown={fit}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fit(); }}
+        aria-label={place?.short ? (shrunk ? "Shrunk to fit. Fit" : "Content is cut. Fit") : undefined}
+        title={shrunk ? "Make the box tall enough to show its slot at full size" : "Make the box tall enough to show all its content"}
+        // One path for a click, a tap, Enter and Space (round 3 item 1: pointer down never reached the Fit).
+        onClick={(e) => { e.stopPropagation(); fit(); }}
       >
         Fit
       </button>

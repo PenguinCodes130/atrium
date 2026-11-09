@@ -117,6 +117,13 @@ const menuItem = "flex h-8 cursor-pointer select-none items-center px-2 text-lef
  * step within its parent, and a menu with Rename, Duplicate and Delete) show on hover, always on the
  * selected row, and always on touch screens. Double-click a name to rename it: Enter saves, Esc cancels.
  */
+/** Wave 2.10c r3 item 5: where a Layers drag over a row lands: inside a container (below its top quarter), else before it. */
+function dropZone(r: LayerRow, el: HTMLElement, y: number): "into" | "before" {
+  if (!r.container) return "before";
+  const b = el.getBoundingClientRect();
+  return y > b.top + b.height / 4 || !r.parentId ? "into" : "before";
+}
+
 export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, onMoveInto, stepButtons, device = "desktop", onHide, onRename, onDuplicate, onDelete, covered, selectedIds }: {
   page: PageDoc; selectedId: string | null; agentNodes: Set<string>; onSelect(id: string, opts?: { shift: boolean }): void; onMove(nodeId: string, parentId: string, index: number): void;
   /** Wave 2.10c r2 item 1: the row menu's "Move into" a container (a card, a roulette, the page). */ onMoveInto?(nodeId: string, parentId: string): void;
@@ -128,6 +135,7 @@ export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, on
 }) {
   const rows = useMemo<LayerRow[]>(() => [...walk(page)].map((l) => ({ id: l.node.id, label: nodeLabel(l.node), depth: l.path.length, parentId: l.parent?.id ?? null, index: l.index, container: !!l.node.children, type: l.node.type, hidden: device === "mobile" ? l.node.responsive?.mobile?.hidden === true : l.node.hidden === true, named: l.node.name ?? "" })), [page, device]);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; zone: "into" | "before" } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   if (rows.length <= 1) {
     return (
@@ -143,6 +151,7 @@ export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, on
         const sel = r.id === selectedId || !!selectedIds?.has(r.id);
         const count = r.parentId ? siblingCount(rows, r.parentId) : 0;
         const act = stepButtons ? `${ACT} !h-11 !w-11` : ACT;
+        const drop = over?.id === r.id && dragging && dragging !== r.id ? over.zone : null;
         return (
           <li
             key={r.id}
@@ -150,19 +159,28 @@ export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, on
             aria-selected={sel}
             draggable={r.parentId !== null && editing !== r.id}
             onDragStart={(e) => { setDragging(r.id); e.dataTransfer.setData("text/x-atrium-layer", r.id); e.dataTransfer.effectAllowed = "move"; }}
-            onDragEnd={() => setDragging(null)}
-            onDragOver={(e) => { if (dragging && dragging !== r.id) e.preventDefault(); }}
+            onDragEnd={() => { setDragging(null); setOver(null); }}
+            onDragOver={(e) => {
+              if (!dragging || dragging === r.id) return;
+              e.preventDefault();
+              const z = dropZone(r, e.currentTarget as HTMLElement, e.clientY);
+              setOver((o) => (o?.id === r.id && o.zone === z ? o : { id: r.id, zone: z }));
+            }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((o) => (o?.id === r.id ? null : o)); }}
             onDrop={(e) => {
               e.preventDefault();
               const id = e.dataTransfer.getData("text/x-atrium-layer") || dragging;
               setDragging(null);
+              setOver(null);
               if (!id || id === r.id) return;
-              // Dropping on a container's right half re-parents into it; anywhere else places it before the row.
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              if (r.container && e.clientX > rect.left + rect.width / 2) onMove(id, r.id, Number.MAX_SAFE_INTEGER);
+              // Wave 2.10c r3 item 5: on a container's row, anywhere below its top quarter puts the widget inside
+              // it (as its next slot or child), whatever the side; its top quarter (and any other row) places it
+              // before the row. The row says which while the drag is over it.
+              if (dropZone(r, e.currentTarget as HTMLElement, e.clientY) === "into") onMove(id, r.id, Number.MAX_SAFE_INTEGER);
               else if (r.parentId) onMove(id, r.parentId, r.index);
             }}
-            className={`group flex min-h-8 cursor-pointer items-center gap-1 border border-transparent pr-1 type-label touch:min-h-11 ${sel ? "border-line-strong bg-bg-sunk" : "hover:bg-bg-sunk"}`}
+            className={`group relative flex min-h-8 cursor-pointer items-center gap-1 border pr-1 type-label touch:min-h-11 ${drop === "into" ? "border-accent-ink bg-accent-ink/10" : sel ? "border-line-strong bg-bg-sunk" : "border-transparent hover:bg-bg-sunk"} ${drop === "before" ? "shadow-[inset_0_2px_0_0_var(--accent-ink)]" : ""}`}
+            data-layer-drop={drop ?? undefined}
             style={{ paddingLeft: 8 + r.depth * 14 }}
             onClick={(e) => onSelect(r.id, { shift: e.shiftKey })}
             data-layer={r.id}
@@ -181,6 +199,7 @@ export function LayersPanel({ page, selectedId, agentNodes, onSelect, onMove, on
                 {r.label}
               </span>
             )}
+            {drop === "into" && <span className="flex-none bg-accent-ink px-1 type-caption text-bg" data-layer-drop-hint>Into {r.label}</span>}
             {agentNodes.has(r.id) && <span className="bg-fg px-1 font-mono text-[10px] text-bg" data-agent-tag>agent</span>}
             {covered?.has(r.id) && <span className="flex-none border border-[color:var(--warn-ink)] px-1 font-mono text-[10px] text-[color:var(--warn-ink)]" title="Fully under another widget, so nobody can see or click it. Move it, or move it up in Layers." data-covered-tag>covered</span>}
             {r.parentId && editing !== r.id && (onHide || onDelete) && (

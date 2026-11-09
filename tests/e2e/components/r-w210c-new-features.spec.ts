@@ -359,7 +359,8 @@ test("N1: in the builder, a box too small for its content says Content is cut, w
   const asked = await page.evaluate(() => new Promise<string>((resolve) => {
     window.addEventListener("atrium:fit-node", (e) => resolve((e as CustomEvent<{ nodeId: string }>).detail.nodeId), { once: true });
     setTimeout(() => resolve(""), 3000);
-    (document.querySelector('[data-canvas-root] [data-cut-badge="c_nacutxaaaa"] [data-cut-fit]') as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    // Wave 2.10c round 3 item 1: Fit is asked on click (one path for click, tap, Enter, Space), no longer on pointer down.
+    (document.querySelector('[data-canvas-root] [data-cut-badge="c_nacutxaaaa"] [data-cut-fit]') as HTMLElement).click();
   }));
   expect(asked).toBe(text.id);
   await page.waitForTimeout(1200);

@@ -181,14 +181,29 @@ function useTitleBarAvoidance(ref: RefObject<HTMLElement | null>, active: boolea
 /** Gap kept below a top bar (the builder bar) that a phone toast stack would otherwise cover. */
 export const TOAST_TOPBAR_GAP_PX = 8;
 
-/** Phone stacks sit at the top: below any visible `[data-builder-bar]`, so its buttons stay reachable (w210c r2 item 19). */
+/** Only bars that start this near the top count as top bars a phone toast stack goes below. */
+export const TOAST_TOPBAR_BAND_PX = 280;
+
+/**
+ * The top bars a phone toast must not cover: the builder bar and, on a phone builder, the row under it
+ * that holds the view tabs, Undo, Redo and Pages (the parent of `[data-narrow-tabs]`; w210c r3 item 10,
+ * round 2 looked only for the builder bar). Rows that start below the top band are not top bars.
+ */
+export function phoneTopBarsBottom(rects: { top: number; bottom: number; height: number }[], band = TOAST_TOPBAR_BAND_PX): number {
+  return Math.max(0, ...rects.filter((r) => r.height > 0 && r.top < band).map((r) => r.bottom));
+}
+
+/** Phone stacks sit at the top: below the builder bar and the phone builder's tab row, so their buttons stay reachable. */
 function usePhoneTopOffset(active: boolean, count: number): number | undefined {
   const [top, setTop] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!active) return setTop(undefined);
     const measure = () => {
-      const bars = [...document.querySelectorAll<HTMLElement>("[data-builder-bar]")].filter((b) => b.offsetParent !== null).map((b) => b.getBoundingClientRect());
-      const bottom = Math.max(0, ...bars.filter((r) => r.height > 0 && r.top < 120).map((r) => r.bottom));
+      const els = [
+        ...document.querySelectorAll<HTMLElement>("[data-builder-bar]"),
+        ...[...document.querySelectorAll<HTMLElement>("[data-narrow-tabs]")].map((t) => t.parentElement ?? t),
+      ].filter((b) => b.offsetParent !== null);
+      const bottom = phoneTopBarsBottom(els.map((b) => b.getBoundingClientRect()));
       setTop(bottom > 0 ? bottom + TOAST_TOPBAR_GAP_PX : undefined);
     };
     measure();

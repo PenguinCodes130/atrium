@@ -12,9 +12,16 @@ import type { ThemePreference } from "./preferences";
 import { USERS_AND_SECURITY_HREF, USERS_AND_SECURITY_LABEL } from "./nav";
 
 /**
+ * Browser keys that name what a person did and are cleared on sign-out with the `atrium:last*` family
+ * (w210c r3 item 12, security): `atrium.siteIcons` is the icon picker's list of fetched website icons,
+ * whose names carry the hosts typed into From website.
+ */
+export const SIGN_OUT_KEYS = ["atrium.siteIcons"] as const;
+
+/**
  * Forgets what this browser kept of apps for offline use (app-builder gauntlet w2-r2 item 1, security):
  * the app workers' caches (`atrium-app:*`, and legacy `atrium-app-*`), the app workers themselves (scopes under /a/), and the last
- * values published pages saved (`atrium:last*`). Runs before the sign-out request, so it also works on a
+ * values published pages saved (`atrium:last*`), and the keys in SIGN_OUT_KEYS. Runs before the sign-out request, so it also works on a
  * plain-HTTP LAN address where browsers ignore the server's Clear-Site-Data. Never throws.
  */
 export async function forgetOfflineApps(): Promise<void> {
@@ -22,7 +29,7 @@ export async function forgetOfflineApps(): Promise<void> {
     const keys: string[] = [];
     for (let i = 0; i < window.localStorage.length; i++) {
       const k = window.localStorage.key(i);
-      if (k && k.startsWith("atrium:last")) keys.push(k);
+      if (k && (k.startsWith("atrium:last") || (SIGN_OUT_KEYS as readonly string[]).includes(k))) keys.push(k);
     }
     for (const k of keys) window.localStorage.removeItem(k);
   } catch {

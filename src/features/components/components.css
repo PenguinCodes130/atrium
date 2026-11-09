@@ -72,7 +72,7 @@
     display: flex !important;
   }
   /* N3: a roulette slot's widget fills its face the same way (render/roulette.tsx). */
-  [data-atrium-canvas] :is(.atr-roulette-face, .atr-roulette-face-in) > [data-node], .atr-render-root :is(.atr-roulette-face, .atr-roulette-face-in) > [data-node] {
+  [data-atrium-canvas] :is(.atr-roulette-face, .atr-roulette-face-in, .atr-roulette-fit) > [data-node], .atr-render-root :is(.atr-roulette-face, .atr-roulette-face-in, .atr-roulette-fit) > [data-node] {
     display: flex !important;
   }
   /* Wave 2.10a: a node with its own CSS keeps its 12px clip (containment beats A11.2's offset plus 4px
@@ -137,7 +137,7 @@
      cards never cover it (an outline on the root was drawn under them); the part that scrolls keeps the
      wheel to itself at its ends (overscroll contain) while engaged. After Esc the keyboard focus ring is the
      same quiet outline round the whole widget, never a 2px ring across the rows. */
-  .atr-node[data-sizing="scroll"][data-scroll-engaged]::after, .atr-node[data-sizing="scroll"]:not([data-scroll-engaged]):has([data-scroll-port]:focus-visible)::after { content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none; border: 1px solid var(--theme-accent); border-radius: inherit; }
+  .atr-node[data-sizing="scroll"][data-scroll-engaged]::after, .atr-node[data-sizing="scroll"]:not([data-scroll-engaged]):has([data-scroll-port]:focus-visible)::after { content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none; border: 1px solid var(--theme-accent); border-radius: var(--theme-radius, 0px); }
   .atr-node[data-sizing="scroll"]:not([data-scroll-engaged]):has([data-scroll-port]:focus-visible)::after { border-style: dashed; }
   .atr-node[data-sizing="scroll"] [data-scroll-port]:focus-visible, .atr-node[data-sizing="scroll"] > [data-slot="root"]:focus-visible { outline: none; }
   .atr-node[data-sizing="scroll"][data-scroll-engaged] [data-scroll-port] { overscroll-behavior: contain; }
@@ -148,11 +148,17 @@
   .atr-node[data-sizing="scroll"] [data-scroll-port][data-more-above][data-more-below] { mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
   .atr-node[data-sizing="scroll"] [data-scroll-port][data-table-port][data-more-above] { mask-image: linear-gradient(to bottom, #000 var(--atr-head-h, 32px), transparent var(--atr-head-h, 32px), #000 calc(var(--atr-head-h, 32px) + 24px)); }
   .atr-node[data-sizing="scroll"] [data-scroll-port][data-table-port][data-more-above][data-more-below] { mask-image: linear-gradient(to bottom, #000 var(--atr-head-h, 32px), transparent var(--atr-head-h, 32px), #000 calc(var(--atr-head-h, 32px) + 24px), #000 calc(100% - 28px), transparent); }
+  /* Round 3 item 8: a framed box (a list's card) is never faded itself, or its border, corners and shadow
+     dissolve; what scrolls inside it fades at the box's inner edges instead (scroll-area.tsx innerFade). */
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-fade-inner] { mask-image: none !important; }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-fade-inner][data-more-below]:not([data-more-above]) > * { mask-image: linear-gradient(to bottom, #000 calc(var(--atr-fade-b, 100%) - 28px), transparent var(--atr-fade-b, 100%)); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-fade-inner][data-more-above]:not([data-more-below]) > * { mask-image: linear-gradient(to bottom, transparent var(--atr-fade-t, 0px), #000 calc(var(--atr-fade-t, 0px) + 28px)); }
+  .atr-node[data-sizing="scroll"] [data-scroll-port][data-fade-inner][data-more-above][data-more-below] > * { mask-image: linear-gradient(to bottom, transparent var(--atr-fade-t, 0px), #000 calc(var(--atr-fade-t, 0px) + 28px), #000 calc(var(--atr-fade-b, 100%) - 28px), transparent var(--atr-fade-b, 100%)); }
   .atr-scroll-cue { position: absolute; right: 8px; bottom: 4px; z-index: 4; padding: 1px 6px; font-family: var(--theme-font-mono); font-size: 10px; line-height: 16px; color: var(--theme-surface-muted, var(--theme-canvas-text)); background: color-mix(in oklab, var(--theme-surface) 88%, transparent); border-radius: 999px; pointer-events: none; opacity: 0.9; transition: opacity 120ms ease-out; }
   .atr-scroll-cue[hidden] { display: none; }
   .atr-node[data-scroll-engaged] > .atr-scroll-cue, .atr-node:hover > .atr-scroll-cue[data-mode="hover"] { opacity: 0; }
   /* A table's header stays put while its rows scroll under it (item 13). */
-  .atr-node[data-sizing="scroll"][data-type="table"] [data-scroll-port] thead th { position: sticky; top: 0; z-index: 1; background: var(--theme-surface); }
+  .atr-node[data-sizing="scroll"][data-type="table"] [data-scroll-port] thead th { position: sticky; top: 0; z-index: 1; background: var(--theme-surface); box-shadow: inset 0 -1px 0 var(--theme-line); }
   /* A table wider than its box at a phone's width fades at the side that continues (item 20). */
   .atr-node .atr-table-wrap[data-more-right] { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
   /* No browser scrollbar on any component (A11.3): every box inside a component that scrolls still scrolls
@@ -185,6 +191,13 @@
   .atr-roulette-face > .atr-node, .atr-roulette-face-in > .atr-node { flex: 1 1 auto; display: flex; flex-direction: column; }
   .atr-roulette-face > .atr-node > [data-slot="root"], .atr-roulette-face-in > .atr-node > [data-slot="root"] { flex: 1 1 auto; }
   .atr-roulette-face-in { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; transform-origin: 50% 50%; }
+  /* Round 3 item 3 (A11.2 scale): the slot's widget at its natural height, never squeezed; render/roulette.tsx
+     SlotFit scales it down from the top centre when it is taller than the slot. */
+  .atr-roulette-fit { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; min-width: 0; transform-origin: 50% 0; }
+  .atr-roulette-fit > .atr-node { flex: 1 0 auto; display: flex; flex-direction: column; }
+  .atr-roulette-fit > .atr-node > [data-slot="root"] { flex: 1 0 auto; }
+  /* Round 3 item 13: an untitled widget in a slot draws no empty title bar strip. */
+  [data-canvas-titlebars="on"] .atr-roulette-fit > .atr-node > [data-slot="root"] > .atr-titlebar:has(> .atr-titlebar-path[data-titlebar-text=""]) { display: none; }
   .atr-roulette[data-motion="fade"] .atr-roulette-drum { will-change: auto; }
   .atr-roulette-controls { flex: none; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; }
   .atr-roulette-arrow { appearance: none; display: inline-flex; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0 6px; border: 1px solid var(--theme-line); border-radius: var(--theme-control-radius, 0px); background: transparent; color: var(--theme-canvas-text); font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
@@ -622,6 +635,8 @@
     .atr-render-root a.atr-tile-link { min-height: 44px; }
     .atr-render-root :is(.atr-roulette-arrow, .atr-roulette-dot) { min-height: 44px; min-width: 44px; }
     .atr-render-root .atr-cut-fit::after { inset: -13px -10px; }
+    /* Round 3 item 13: the badge's Fit is itself a 44 px target on touch (negative margins keep the badge's line). */
+    :is([data-canvas-root], .atr-render-root) .atr-cut-fit { min-width: 44px; min-height: 44px; margin: -13px 0 -13px -4px; }
   }
 }
 

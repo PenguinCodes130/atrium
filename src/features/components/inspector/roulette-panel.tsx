@@ -2,11 +2,11 @@
 // Wave 2.10c N3: the roulette's own inspector fields (A11.4). The timer is a menu (Off, 3 s to 1 h), the
 // ways to turn it are three switches, and a repeat over more than 50 rows offers a list or a table in its
 // place (one draft step: the roulette is replaced by a list or table reading the same rows, in its slot).
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ComponentNode, DraftOp, PropValue } from "@/core/contracts";
 import { isBinding, sourcesInTemplate } from "../bindings";
 import { newId } from "../ids";
-import { advanceOf, ROULETTE_MAX, timerOf } from "../render/roulette";
+import { advanceOf, ROULETTE_MAX, startSlot, timerOf } from "../render/roulette";
 import { SwitchRow } from "./inspector";
 
 const inputCls = "w-full border border-line-strong bg-bg-hi px-2 py-1.5 type-body text-fg min-h-9 touch:min-h-11";
@@ -45,9 +45,13 @@ export function RouletteTimerField({ node, label, hint, reason, setProp }: { nod
   );
 }
 
+/** Round 3 item 13: the sentence when nothing can turn the roulette (every way off and no timer). */
+export const ROULETTE_STUCK = "Nothing turns this roulette now; viewers see only its first slot. Switch one of these on, or set Turn on its own.";
+
 export function RouletteAdvanceField({ node, label, hint, reason, setProp }: { node: ComponentNode; label: string; hint: string; reason?: string | null; setProp(k: string, v: PropValue | null): void }) {
   const a = advanceOf(node.props.advance);
   const set = (k: keyof typeof a, on: boolean) => setProp("advance", { ...a, [k]: on });
+  const stuck = !a.scroll && !a.arrows && !a.dots && timerOf(node.props.timerSec) === null;
   return (
     <div className="flex flex-col gap-1" data-field="advance" data-roulette-advance>
       <span className={labelCls} data-field-label>{label}</span>
@@ -55,7 +59,49 @@ export function RouletteAdvanceField({ node, label, hint, reason, setProp }: { n
       <SwitchRow label="The wheel, after a click on it" checked={a.scroll} onCheckedChange={(c) => set("scroll", c)} />
       <SwitchRow label="Arrow buttons and keys" checked={a.arrows} onCheckedChange={(c) => set("arrows", c)} />
       <SwitchRow label="Dots, one per slot" checked={a.dots} onCheckedChange={(c) => set("dots", c)} />
+      {stuck ? <span className="type-caption text-fg-2" role="status" data-roulette-stuck>{ROULETTE_STUCK}</span> : null}
     </div>
+  );
+}
+
+/**
+ * Round 3 item 9: "Shows first" counts from 1, like the dots ("Show 2 of 3"); it is stored from 0. A number
+ * past the last slot is held to the last one and says why; in repeat mode the rows decide the count.
+ */
+export function RouletteStartField({ node, label, hint, reason, setProp }: { node: ComponentNode; label: string; hint: string; /** Why the setting shows no effect here, said in the hint's place (Wave 2.10b F4). */ reason?: string | null; setProp(k: string, v: PropValue | null): void }) {
+  const repeat = node.props.mode === "repeat";
+  const slots = repeat ? ROULETTE_MAX : Math.max(1, Math.min(ROULETTE_MAX, node.children?.length ?? 0));
+  const stored = typeof node.props.startAt === "number" ? node.props.startAt : 0;
+  const shown = startSlot(stored, slots) + 1;
+  const [text, setText] = useState(String(shown));
+  const [said, setSaid] = useState<string | null>(null);
+  useEffect(() => { setText(String(shown)); }, [shown]);
+  const commit = (raw: string) => {
+    const v = Math.floor(Number(raw));
+    if (raw.trim() === "" || !Number.isFinite(v) || v < 1) { setSaid("Counts from 1: 1 is the first slot."); setProp("startAt", null); setText("1"); return; }
+    const held = Math.min(v, slots);
+    setSaid(held !== v ? (repeat ? `A roulette turns through at most ${ROULETTE_MAX} rows, so it opens on row ${held}.` : `This roulette has ${slots} ${slots === 1 ? "slot" : "slots"}, so it opens on slot ${held}.`) : null);
+    setProp("startAt", held > 1 ? held - 1 : null);
+    setText(String(held));
+  };
+  return (
+    <label className="flex flex-col gap-1" data-field="startAt">
+      <span className={labelCls} data-field-label>{label}</span>
+      <input
+        type="number"
+        className={inputCls}
+        min={1}
+        max={slots}
+        step={1}
+        inputMode="numeric"
+        value={text}
+        onChange={(e) => { setText(e.target.value); const v = Math.floor(Number(e.target.value)); if (e.target.value !== "" && Number.isFinite(v) && v >= 1 && v <= slots) { setSaid(null); setProp("startAt", v > 1 ? v - 1 : null); } }}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
+        data-roulette-start
+      />
+      {(said ?? reason) ? <span className="type-caption text-fg-2" role="status" data-field-reason>{said ?? reason}</span> : <span className="type-caption text-fg-3" data-field-hint>{hint}</span>}
+    </label>
   );
 }
 
@@ -181,6 +227,32 @@ export function RouletteItemsField({ node, field, sources, labelOf, data, drawn,
   const repeat = node.props.mode === "repeat";
   const sentence = repeat ? rouletteItemsSentence(node.props.items, drawn, sources) : null;
   const cur = isBinding(node.props.items) ? node.props.items.$bind : "";
+  const empty = !(node.children ?? []).length;
+  // Round 3 item 6: the source the rows come from, when the field reads one of this app's data.
+  const fromSource = (() => { try { return sourcesInTemplate(cur).find((u) => sources.includes(u)) ?? null; } catch { return null; } })();
+  const addReady = useCallback(() => {
+    if (!onOps || !fromSource || (node.children ?? []).length) return;
+    onOps([{ op: "node.add", parentId: node.id, node: rowTemplateNode(data?.[fromSource] as Sample) }]);
+  }, [onOps, fromSource, node.children, node.id, data]);
+  // Pick data (or a typed template) that binds the rows of an empty repeat roulette also adds the ready widget,
+  // as "Rows from" does, once its data has arrived (or after a short wait, with the row's name).
+  const before = useRef(cur);
+  const pending = useRef<number | null>(null);
+  useEffect(() => {
+    const was = before.current;
+    before.current = cur;
+    if (was === cur || !repeat || !empty || !fromSource || sentence) return;
+    pending.current = Date.now();
+  }, [cur, repeat, empty, fromSource, sentence]);
+  useEffect(() => {
+    if (pending.current === null) return;
+    if (!repeat || !empty || !fromSource) { pending.current = null; return; }
+    const sample = data?.[fromSource] as Sample;
+    const ready = !!sample && (sample.kind === "table" || sample.kind === "status");
+    const wait = ready ? 0 : Math.max(0, 2500 - (Date.now() - pending.current));
+    const h = setTimeout(() => { if (pending.current === null) return; pending.current = null; addReady(); }, wait);
+    return () => clearTimeout(h);
+  }, [cur, data, repeat, empty, fromSource, addReady]);
   const pick = (name: string) => {
     if (!name) return;
     const sample = data?.[name] as Sample;
@@ -210,6 +282,11 @@ export function RouletteItemsField({ node, field, sources, labelOf, data, drawn,
           </select>
           <span className="type-caption text-fg-3">{(node.children ?? []).length ? "Its widget shows once for each row." : "Adds a ready widget for each row; change it after."}</span>
         </label>
+      ) : null}
+      {repeat && empty && fromSource && !sentence && onOps ? (
+        <button type="button" className="self-start type-caption text-accent-ink underline underline-offset-2 min-h-9 touch:min-h-11" onClick={addReady} data-roulette-add-ready>
+          {`Add a ready widget for each row of ${labelOf(fromSource)}`}
+        </button>
       ) : null}
       {sentence ? <p role="alert" className="type-caption m-0 text-[color:var(--warn)]" data-roulette-items-wrong>{sentence}</p> : null}
       {tooMany}

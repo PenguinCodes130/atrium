@@ -28,36 +28,53 @@ export function IconGlyph({ icon, size = 20 }: { icon: string; size?: number }) 
 }
 
 /**
- * Round 2 (item 20): an icon taken from a website keeps its site's words ("github.com icon, from the
- * website") in this browser, so the field does not call it "Your picture". Only words, never the site.
+ * Round 3 item 12 (security): an icon taken from a website is named from its upload's own server-side name
+ * ("github.com icon", kept with the upload by POST /api/settings/uploads/favicon), read from this Atrium's
+ * upload list, so the browser keeps nothing about which sites were fetched. Round 2's browser-wide
+ * `atrium.siteIcons` store is gone; an old copy is removed when this module loads.
  */
-const SITE_ICON_KEY = "atrium.siteIcons";
-export function rememberSiteIcon(path: string, name: string): void {
-  try {
-    const cur = JSON.parse(localStorage.getItem(SITE_ICON_KEY) ?? "{}") as Record<string, string>;
-    const next: Record<string, string> = Object.create(null);
-    for (const [k, v] of Object.entries(cur).slice(-49)) if (typeof v === "string" && k.startsWith("/uploads/")) next[k] = v;
-    if (path.startsWith("/uploads/")) next[path] = name.slice(0, 80);
-    localStorage.setItem(SITE_ICON_KEY, JSON.stringify(next));
-  } catch {
-    // Private mode or storage off: the field just says "Your picture".
-  }
+const LEGACY_SITE_ICON_KEY = "atrium.siteIcons";
+if (typeof window !== "undefined") {
+  try { window.localStorage.removeItem(LEGACY_SITE_ICON_KEY); } catch { /* storage off */ }
 }
+/** Upload names seen in this page only (memory, gone on reload or sign-out). */
+const uploadNames = new Map<string, string>();
+let uploadList: Promise<void> | null = null;
+function loadUploadNames(): Promise<void> {
+  uploadList ??= fetch("/api/settings/uploads?kind=image", { credentials: "same-origin", cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : { items: [] }))
+    .then((j: { items?: { path?: unknown; name?: unknown }[] }) => {
+      for (const it of j.items ?? []) if (typeof it.path === "string" && typeof it.name === "string") uploadNames.set(it.path, it.name);
+    })
+    .catch(() => { uploadList = null; });
+  return uploadList;
+}
+/** Keeps a just-fetched icon's name for this page (no storage). */
+export function rememberSiteIcon(path: string, name: string): void {
+  if (path.startsWith("/uploads/") && name) uploadNames.set(path, name.slice(0, 80));
+}
+/** A website icon's words from its upload name ("<host> icon"), or null for any other picture. */
 export function siteIconName(path: string): string | null {
-  try {
-    const cur = JSON.parse(localStorage.getItem(SITE_ICON_KEY) ?? "{}") as Record<string, unknown>;
-    const v = Object.prototype.hasOwnProperty.call(cur, path) ? cur[path] : undefined;
-    return typeof v === "string" && v ? v : null;
-  } catch {
-    return null;
-  }
+  const v = uploadNames.get(path);
+  return v && /^[A-Za-z0-9.:[\]-]+ icon$/.test(v) ? v : null;
+}
+/** The name of an uploaded picture, read from this Atrium's upload list once per page. */
+function useUploadNames(path: string | null): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!path || uploadNames.has(path)) return;
+    let live = true;
+    void loadUploadNames().then(() => { if (live) setTick((t) => t + 1); });
+    return () => { live = false; };
+  }, [path]);
+  return tick;
 }
 
 /** The words for an icon reference: its name, "Your picture" (or its website's name), or the package's glyph. */
 export function iconRefWords(icon: string): string {
   const k = iconRefKind(icon);
   if (k.kind === "upload") {
-    const site = typeof window !== "undefined" ? siteIconName(k.path) : null;
+    const site = siteIconName(k.path);
     return site ? `${site}, from the website` : "Your picture";
   }
   if (k.kind === "builtin") return icon.startsWith("pkg:") ? `${iconWords(k.name)} (service)` : iconWords(k.name);
@@ -174,7 +191,7 @@ export function FromWebsite({ onUse, initialUrl }: { onUse(path: string): void; 
           {state.kind === "loading" ? <p className="type-caption m-0 text-fg-2">Fetching the icon, at most 5 seconds.</p> : null}
           {state.kind === "ready" ? <p className="type-body m-0 truncate text-fg" data-favicon-name>{state.name}</p> : null}
           {state.kind === "failed" ? (
-            <p className="type-caption m-0 text-[color:var(--bad)]" role="alert" data-favicon-error>
+            <p className={`type-caption m-0 ${/no icon/i.test(state.message) ? "text-fg-2" : "text-[color:var(--bad)]"}`} role="alert" data-favicon-error>
               {state.message} The icons below still work.
             </p>
           ) : null}
@@ -381,6 +398,8 @@ export function IconPicker({ open, onOpenChange, value, onPick, noneLabel, onNon
 export function IconPickField({ label, value, onSet, path, optional, hint, reason, siteUrl }: { label: string; value: unknown; onSet(v: string | null): void; path: string; optional?: boolean; hint?: string; reason?: string | null; /** N4: a tile's own address, whose icon is offered first. */ siteUrl?: string }) {
   const [open, setOpen] = useState(false);
   const icon = typeof value === "string" ? value : "";
+  const ref = icon ? iconRefKind(icon) : null;
+  useUploadNames(ref?.kind === "upload" ? ref.path : null);
   return (
     <div className="flex flex-col gap-1" data-icon-field={path}>
       <span className="type-label text-fg-2" data-field-label>

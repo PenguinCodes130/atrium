@@ -97,7 +97,7 @@ export const FIELD_WORDS: { [T in BuiltInType]: TypeWords<T> } = {
       items: { label: "One slot for each row of", hint: "A list or table, at most 50 rows; the widget inside shows once per row" },
       timerSec: { label: "Turn on its own", hint: "Off, or every few seconds up to an hour; it waits while the pointer is over it" },
       advance: { label: "Turn by", hint: "The wheel after a click on it, the arrow buttons and keys, the dots" },
-      startAt: { label: "Shows first", hint: "The slot shown when the page opens, counting from 0" },
+      startAt: { label: "Shows first", hint: "The slot shown when the page opens: 1 is the first, as the dots count" },
       empty: { label: "When there is nothing", hint: "Text shown when the list is empty" },
       copyOverrides: { label: "Changed copies", hint: "Changes made with This copy only; each copy without one draws as every copy" },
     },

@@ -37,6 +37,7 @@ export function rowsFor(px: number): number {
 }
 
 const CLIPS = new Set(["auto", "scroll", "hidden", "clip"]);
+const SCROLLS_X = new Set(["auto", "scroll"]);
 
 type Walk = { bottom: number | null; hidden: number };
 
@@ -135,7 +136,11 @@ export function rouletteNeedPx(node: Element): number | null {
   const z = zoomOf(node);
   const e = measureExtent(front);
   if (!e) return null;
-  const slot = e.contentBottom === null ? e.height / z : Math.max(e.height / z, (e.contentBottom - e.top) / z + e.scrollTop + e.padBottom) + Math.max(0, e.innerHidden);
+  // Wave 2.10c r3 item 3: the slot's widget fills its face (its box follows the roulette), so its own box
+  // height is never what it needs: that grew the roulette on every pass. What it needs is its content: the
+  // lowest box inside it, in its own px (zoomOf(front) also undoes the face's scale-down), plus its padding.
+  const zf = zoomOf(front) || z;
+  const slot = e.contentBottom === null ? e.height / zf : (e.contentBottom - e.top) / zf + e.scrollTop + e.padBottom + Math.max(0, e.innerHidden);
   const controls = root.querySelector(":scope > .atr-roulette-controls");
   const cs = getComputedStyle(root);
   const gap = parseFloat(cs.rowGap) || 0;
@@ -178,7 +183,7 @@ export function minFitRows(node: Element, rows: number): number {
 }
 
 /**
- * Round 2 item 14: what a node hides at the side (layout px), the most any box in it that clips or scrolls
+ * Round 2 item 14: what a node hides at the side (layout px), the most any box in it that scrolls
  * sideways hides (a table's columns behind a horizontal scroll), 0 when everything shows. Out-of-flow boxes
  * (screen-reader labels, badges) and one-pixel rounding are not content.
  */
@@ -188,7 +193,10 @@ export function overflowXOf(node: Element | null | undefined): number {
   for (const e of [node, ...Array.from(node.querySelectorAll("*"))] as HTMLElement[]) {
     if (!(e instanceof HTMLElement)) continue;
     const cs = getComputedStyle(e);
-    if (!CLIPS.has(cs.overflowX) || cs.position === "absolute" || cs.position === "fixed" || cs.display === "none") continue;
+    // Wave 2.10c r3 item 1: only a box that scrolls sideways hides content there (a table's columns). One that
+    // clips (`hidden`, `clip`) is a truncated line on purpose, like the builder's "Choose a data source" link
+    // in a narrow box: counting it made the badge's Fit widen a gauge instead of fitting its height.
+    if (!SCROLLS_X.has(cs.overflowX) || cs.position === "absolute" || cs.position === "fixed" || cs.display === "none") continue;
     worst = Math.max(worst, e.scrollWidth - e.clientWidth);
   }
   return worst > 1 ? worst : 0;

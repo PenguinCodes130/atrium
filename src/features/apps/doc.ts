@@ -144,7 +144,8 @@ export function nodeLabel(node: ComponentNode): string {
   if (name) return `${base} ${name}`;
   if (node.title?.trim()) return `${base} ${node.title.trim().slice(0, 40)}`; // A8.5
   const label = node.props.label ?? node.props.text ?? node.props.title;
-  return typeof label === "string" && label.trim() ? `${base} ${label.trim().slice(0, 40)}` : base;
+  // Wave 2.10c r3 (C's item 2 note): a per-row template ("{{ $item.name }}") is not a name; the line names the type.
+  return typeof label === "string" && label.trim() && !label.includes("{{") ? `${base} ${label.trim().slice(0, 40)}` : base;
 }
 
 export function clone<T>(v: T): T {

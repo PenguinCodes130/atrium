@@ -8,7 +8,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { DropdownMenu } from "radix-ui";
 import type { AppDocument, ComponentNode, DraftOp, GridSlot, LibraryComponent, PageDoc, Principal, Problem, PropValue, RenderContext, ShapedData, Theme } from "@/core/contracts";
-import { Button, glowKeyframes, durations, REDUCED_GLOW_RING_MS, Sheet, springs, toast, transitionFor, useReducedMotion } from "@/features/shell";
+import { Button, glowKeyframes, Tip, durations, REDUCED_GLOW_RING_MS, Sheet, springs, toast, transitionFor, useReducedMotion } from "@/features/shell";
 import { findNode, findPage, newId, nodeLabel, orderedPages, slugify } from "@/features/apps/doc";
 import { AppFrame } from "./app-frame";
 import { DraftClient, type SendResult } from "./draft-client";
@@ -30,7 +30,7 @@ import { AppLookSheet } from "./app-look";
 import { ThemePanel } from "./theme-panel";
 import { SelectMenu } from "@/features/settings/ui/controls";
 import { SOURCE_CHOICE_EVENT, takeSourceChoice } from "@/features/components/render/render-node";
-import { FIT_EVENT } from "@/features/components/render/scroll-area";
+import { contentCutPx, CUT_THRESHOLD_PX, FIT_EVENT } from "@/features/components/render/scroll-area";
 import { failingSources, repeatAround, wholeProp } from "./data-pick";
 import { DataPicker, type BindableIntegration, type PickTarget } from "./data-picker";
 import { ShowPicker, type ShowTarget } from "./show-picker";
@@ -77,7 +77,7 @@ const DROP_CONTAINERS = new Set(["card", "stack", "section", "tabs", "repeat", "
 function showRouletteSlot(rouletteId: string, index: number): void {
   if (typeof window !== "undefined") window.setTimeout(() => window.dispatchEvent(new CustomEvent(ROULETTE_SHOW_EVENT, { detail: { nodeId: rouletteId, index } })), 120);
 }
-type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[]; /** F7: equal-spacing marks and the gap to the nearest neighbour, in canvas px. */ spacing?: SpacingMark[]; gap?: { px: number; axis: "x" | "y" } | null; /** F7: the faint columns (Snap on, even while Alt holds the pull off). */ columns?: boolean };
+type Ghost = { gridId: string; slot: GridSlot; rect: { left: number; top: number; width: number; height: number }; box: GridBox; origin: { left: number; top: number }; snap?: boolean; guides?: Guide[]; /** The other selected widgets where a group move puts them. */ group?: GridSlot[]; /** F7: equal-spacing marks and the gap to the nearest neighbour, in canvas px. */ spacing?: SpacingMark[]; gap?: { px: number; axis: "x" | "y" } | null; /** F7: the faint columns (Snap on, even while Alt holds the pull off). */ columns?: boolean; /** Wave 2.10c r3 item 14: why a resize stops (a Text grows to fit its words). */ note?: string };
 /** One button on a selected widget's toolbar: a 10px stroked icon, a 44px hit area on touch screens. */
 function BarButton({ label, title, onClick, disabled, pressed, danger, children, ...data }: { label: string; title: string; onClick(): void; disabled?: boolean; pressed?: boolean; danger?: boolean; children: React.ReactNode } & Record<`data-${string}`, unknown>) {
   return (
@@ -1084,6 +1084,20 @@ export function BuilderScreen(props: BuilderProps) {
     const startX = e.clientX;
     const startY = e.clientY;
     let last = start;
+    // Wave 2.10c r3 item 14: a Text, Heading or Link (fit, no fixed height) cannot be shorter than its words; the
+    // drag stops there and says why while it is held, not only after (the critic saw the height ignored).
+    const flow = TEXT_FLOW.has(selected.type) && sizingOf(selected.type, getComponentDef, selected) === "fit" && selected.props.fixedHeight !== true;
+    const flowEl = flow ? canvasRef.current.querySelector(`[data-node="${CSS.escape(nodeId)}"]`) : null;
+    const flowMin = flowEl ? minFitRows(flowEl, start.h) : 1;
+    const flowNote = `${kindWord(selected)} grows to fit its words, so it cannot be shorter. Turn on a fixed height in Layout to set it.`;
+    // Wave 2.10c r3 item 1: a size set by hand wins over the growth an earlier edit started (an insert a moment
+    // ago, a widget just put into this roulette): those watches stop, or the box grew straight back after the
+    // drag (a Clock dragged to 1 row came back at 15, a roulette at 19 of 28, so its badge never showed).
+    const resizedEl = canvasRef.current.querySelector(`[data-node="${CSS.escape(nodeId)}"]`);
+    for (const id of [...growWatch.current.keys()]) {
+      const w = id === nodeId ? resizedEl : canvasRef.current.querySelector(`[data-node="${CSS.escape(id)}"]`);
+      if (id === nodeId || (resizedEl && w && resizedEl.contains(w))) growWatch.current.delete(id);
+    }
     setResizing(true);
     setHoverId(null);
     setGhost({ gridId, slot: start, rect: slotRect(box, start), box, origin });
@@ -1093,7 +1107,12 @@ export function BuilderScreen(props: BuilderProps) {
       last = resizeSlot(start, edges, ev.clientX - startX, ev.clientY - startY, box, FINE);
       let guides: Guide[] | undefined;
       if (snapNow) ({ slot: last, guides } = guidedResize(last, edges, gridNode, box, nodeId));
-      setGhost({ gridId, slot: last, rect: slotRect(box, last), box, origin, snap: snapNow, columns: snapRef.current, ...(guides ? { guides } : {}), gap: gapOf(last, gridNode, box, nodeId) });
+      let note: string | undefined;
+      if (flow && last.h < flowMin) {
+        last = { ...last, h: flowMin, ...(edges.n ? { y: start.y + start.h - flowMin } : {}) };
+        note = flowNote;
+      }
+      setGhost({ gridId, slot: last, rect: slotRect(box, last), box, origin, snap: snapNow, columns: snapRef.current, ...(guides ? { guides } : {}), gap: gapOf(last, gridNode, box, nodeId), ...(note ? { note } : {}) });
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -1175,7 +1194,10 @@ export function BuilderScreen(props: BuilderProps) {
     for (const el of canvasRef.current?.querySelectorAll<HTMLElement>(".atr-grid[data-fixed-rows] > .atr-cell > [data-node]") ?? []) {
       const id = el.getAttribute("data-node")!;
       if (onlyId && id !== onlyId) continue;
-      const rows = overflowRows(el);
+      // Wave 2.10c r3 item 1: a Fit pressed for one widget grows at least what its badge says is cut (components'
+      // contentCutPx), so the badge and its Fit never disagree: a press on "Content is cut · Fit" always clears it.
+      const badgeCut = onlyId ? contentCutPx(el) : 0;
+      const rows = Math.max(overflowRows(el), el.parentElement?.parentElement?.matches(".atr-grid[data-fixed-rows]") && badgeCut > CUT_THRESHOLD_PX ? Math.ceil(badgeCut / 8) : 0);
       const gridId = findNode(cur, id)?.parent?.id;
       if (!rows || !gridId) continue;
       byGrid.set(gridId, { ...byGrid.get(gridId), [id]: rows });
@@ -1205,7 +1227,11 @@ export function BuilderScreen(props: BuilderProps) {
   useEffect(() => {
     const on = (e: Event) => {
       const id = (e as CustomEvent<{ nodeId?: string }>).detail?.nodeId;
-      if (id && findNode(client.current!.doc, id)) fitOneRef.current(id);
+      const at = id ? findNode(client.current!.doc, id) : null;
+      if (!id || !at) return;
+      const r = fitOneRef.current(id);
+      // Wave 2.10c r3 item 1 (C's request): a badge press is never silent; if nothing needed to grow, say so.
+      if (!r.rows && !r.widened) toast({ kind: "info", title: `${kindWord(at.node)} already shows all its content`, description: r.hiddenX > 0 ? "Some columns are hidden at the side; widen it in Layout." : undefined });
     };
     window.addEventListener(FIT_EVENT, on);
     return () => window.removeEventListener(FIT_EVENT, on);
@@ -1227,7 +1253,7 @@ export function BuilderScreen(props: BuilderProps) {
           const blocked = (parent.children ?? []).some((k) => { if (k.id === id) return false; const o = slotOn(k, device, gridColumns(parent)); return !!o && overlaps(wide, o); });
           const op = blocked ? null : slotOp(cur, id, wide, device);
           if (op) {
-            apply([op], { announce: `${nodeLabel(at.node)} widened to the whole row so its columns show. Undo with Ctrl+Z.` });
+            apply([op], { announce: `${nodeLabel(at.node)} widened to the whole row so its columns show. Undo with Ctrl+Z.`, label: `Fit ${stepName(at.node)}` });
             growWatch.current.set(id, { until: Date.now() + WATCH_MS, entry: client.current!.lastEntryId, grown: 0, force: true });
             for (const ms of [60, 300, 900]) window.setTimeout(() => setGrowTick((t) => t + 1), ms);
             return { rows: 0, widened: true, hiddenX };
@@ -1280,8 +1306,14 @@ export function BuilderScreen(props: BuilderProps) {
         // Auto-grow is for fit components on the full builder (a group whose height the person kept reflows
         // instead, components' `fixedHeight`); a pressed Fit (force) grows the one it named.
         const forced = !!w.force && nid === id;
-        if (!at?.parent || at.parent.type !== "grid" || (!forced && (narrow || sizingOf(at.node.type, getComponentDef, at.node) !== "fit" || at.node.props.fixedHeight === true))) continue;
-        const need = overflowRowsOf(el);
+        // Wave 2.10c r3 item 3: a roulette is `scale` sizing, but a widget put into it (or a change to one of its
+        // slots) grows it to hold the slot in front plus its arrows and dots (rouletteNeedPx), in that edit's step.
+        const roulette = at?.node.type === "roulette";
+        if (!at?.parent || at.parent.type !== "grid" || (!forced && (narrow || (!roulette && sizingOf(at.node.type, getComponentDef, at.node) !== "fit") || at.node.props.fixedHeight === true))) continue;
+        // Item 3: a roulette grows until its badge ("Shrunk to fit", components' contentCutPx: the front slot at its
+        // natural size plus the controls) has nothing left to say, so a fresh roulette never shows it.
+        const cutPx = roulette ? contentCutPx(el) : 0;
+        const need = Math.max(overflowRowsOf(el), cutPx > CUT_THRESHOLD_PX ? Math.ceil(cutPx / 8) : 0);
         // Growing did not shrink what it hides (content that follows its box): stop, never run away. Round 2
         // item 1: data that arrives after a growth (a reading that wraps) looks the same once, so a box is
         // only given up after three passes in a row that did not shrink it.
@@ -2178,6 +2210,11 @@ export function BuilderScreen(props: BuilderProps) {
                   <div aria-hidden className="pointer-events-none absolute border-2 border-dashed border-accent-ink bg-[color-mix(in_srgb,var(--accent)_25%,transparent)] will-change-transform" style={{ left: 0, top: 0, transform: `translate(${ghost.origin.left + ghost.rect.left}px, ${ghost.origin.top + ghost.rect.top}px)`, width: ghost.rect.width, height: Math.max(8, ghost.rect.height - (ghost.box.cellPad ?? 0)) }} data-drop-ghost={`${ghost.slot.x},${ghost.slot.y}`} data-ghost-slot={`${ghost.slot.x},${ghost.slot.y},${ghost.slot.w},${ghost.slot.h}`} />
                 </>
               )}
+              {resizing && ghost?.note && (
+                <div role="status" className="pointer-events-none absolute z-20 max-w-xs border border-line-strong bg-bg-hi px-2 py-1 type-caption text-fg shadow-window-sm" style={{ left: ghost.origin.left + ghost.rect.left, top: ghost.origin.top + ghost.rect.top + ghost.rect.height + 6 }} data-resize-note>
+                  {ghost.note}
+                </div>
+              )}
               {/* Files dropped on the canvas while they upload (spec 3.1, 4 Loading). */}
               {uploading.map((u) => (
                 <div key={u.key} className="pointer-events-none absolute flex items-center justify-center border-2 border-dashed border-accent-ink bg-bg-hi/80 font-mono text-[12px]" style={u.rect} role="status" data-upload-placeholder={u.pct}>
@@ -2369,12 +2406,19 @@ function HistoryButtons({ undo, redo, onStep, narrow }: { undo: string | null; r
   const tip = (dir: "undo" | "redo", label: string | null) => (label ? `${dir === "undo" ? "Undo" : "Redo"} ${label}` : dir === "undo" ? "Nothing to undo" : "Nothing to redo");
   return (
     <div role="group" aria-label="History" className="flex flex-none" data-history>
-      <button type="button" className={cls} disabled={!undo} onClick={() => onStep("undo")} title={tip("undo", undo)} aria-label={tip("undo", undo)} aria-keyshortcuts="Control+Z Meta+Z" data-history-undo>
-        <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M5.5 3.5 2.5 6.5l3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
-      </button>
-      <button type="button" className={narrow ? `${cls} border-l` : `${cls} -ml-px`} disabled={!redo} onClick={() => onStep("redo")} title={tip("redo", redo)} aria-label={tip("redo", redo)} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" data-history-redo>
-        <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M10.5 3.5l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M13 6.5H6.5a3.5 3.5 0 0 0 0 7H9" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
-      </button>
+      {/* Wave 2.10c r3 item 14: the step's name in the shell's drawn tooltip (hover and focus);
+          the title stays as the fallback. A disabled button gets no pointer events, so its "Nothing to undo" is
+          the title's only. */}
+      <Tip label={tip("undo", undo)} side="bottom">
+        <button type="button" className={cls} disabled={!undo} onClick={() => onStep("undo")} title={tip("undo", undo)} aria-label={tip("undo", undo)} aria-keyshortcuts="Control+Z Meta+Z" data-history-undo>
+          <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M5.5 3.5 2.5 6.5l3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M3 6.5h6.5a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
+        </button>
+      </Tip>
+      <Tip label={tip("redo", redo)} side="bottom">
+        <button type="button" className={narrow ? `${cls} border-l` : `${cls} -ml-px`} disabled={!redo} onClick={() => onStep("redo")} title={tip("redo", redo)} aria-label={tip("redo", redo)} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" data-history-redo>
+          <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden><path d="M10.5 3.5l3 3-3 3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /><path d="M13 6.5H6.5a3.5 3.5 0 0 0 0 7H9" fill="none" stroke="currentColor" strokeWidth="1.4" /></svg>
+        </button>
+      </Tip>
     </div>
   );
 }

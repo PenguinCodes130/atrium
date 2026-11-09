@@ -26,7 +26,7 @@ import { createPortal } from "react-dom";
 import { repeatItems, type PageScope } from "../render/resolve";
 import { repeatsTemplate } from "../render/copy-overrides";
 import { ROULETTE_MAX } from "../render/roulette";
-import { RouletteAdvanceField, RouletteItemsField, RouletteModeField, RouletteTimerField, RouletteTooMany } from "./roulette-panel";
+import { RouletteAdvanceField, RouletteItemsField, RouletteModeField, RouletteStartField, RouletteTimerField, RouletteTooMany } from "./roulette-panel";
 import { Chevron, MoreFold } from "./more";
 import { chipFrom, chipLine, chipValue, chipWords, dataSentence, fieldAfterRoot, isGeneratedSourceName, lastReadWords, unknownRootSentence, unknownSourceSentence, type BindingDescriber, type SourceWords } from "./binding-words";
 import { MediaField } from "@/features/uploads/client";
@@ -406,7 +406,7 @@ function StringsInput({ id, className, value, onChange }: { id: string; classNam
   );
 }
 
-function LiteralField({ spec, value, onChange, reason, fallback }: { spec: FieldSpec; value: PropValue | undefined; onChange(v: PropValue | null): void; reason?: string | null; /** The type's default, what the widget draws while this is unset. */ fallback?: PropValue | undefined }) {
+function LiteralField({ spec, value, onChange, reason, fallback, onTextDone }: { spec: FieldSpec; value: PropValue | undefined; onChange(v: PropValue | null): void; reason?: string | null; /** The type's default, what the widget draws while this is unset. */ fallback?: PropValue | undefined; /** A text field's value when it loses focus. */ onTextDone?(v: string): void }) {
   const id = useId();
   const f = spec.field;
   const label = (
@@ -507,9 +507,9 @@ function LiteralField({ spec, value, onChange, reason, fallback }: { spec: Field
         <div className="flex flex-col gap-1">
           {label}
           {f.long ? (
-            <textarea id={id} rows={3} className={inputCls} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value)} />
+            <textarea id={id} rows={3} className={inputCls} value={typeof value === "string" ? value : ""} onChange={(e) => onChange(e.target.value)} onBlur={(e) => onTextDone?.(e.target.value)} />
           ) : (
-            <input id={id} className={inputCls} value={typeof value === "string" || typeof value === "number" ? String(value) : ""} onChange={(e) => onChange(e.target.value)} />
+            <input id={id} className={inputCls} value={typeof value === "string" || typeof value === "number" ? String(value) : ""} onChange={(e) => onChange(e.target.value)} onBlur={(e) => onTextDone?.(e.target.value)} />
           )}
           {help}
         </div>
@@ -670,7 +670,7 @@ function PropField({ spec, node, scope, setProp, sources, onPick, describe, inli
   const looksBound = spec.bindable && typeof value === "string" && value.trim().startsWith("{{");
   return (
     <div className="flex flex-col gap-1" data-field={spec.key}>
-      <LiteralField spec={spec} value={value} fallback={metaFor(node.type)?.defaults[spec.key]} onChange={(v) => setProp(spec.key, v)} reason={reason ?? null} />
+      <LiteralField spec={spec} value={value} fallback={metaFor(node.type)?.defaults[spec.key]} onChange={(v) => setProp(spec.key, v)} reason={reason ?? null} onTextDone={(v) => { if (spec.bindable && typedRowTemplate(v)) setProp(spec.key, { $bind: v }); }} />
       {looksBound ? (
         <p role="note" className="type-caption m-0 flex flex-wrap items-center gap-x-2 text-fg-2" data-looks-bound={spec.key}>
           This looks like live data.
@@ -682,6 +682,15 @@ function PropField({ spec, node, scope, setProp, sources, onPick, describe, inli
       {inlineLive && spec.bindable && !looksBound ? <LiveDataLinks spec={spec} value={value} setProp={setProp} {...(onPick ? { onPick } : {})} /> : null}
     </div>
   );
+}
+
+/**
+ * Round 3 item 2: text typed with a row's value in double braces (`{{ $item.name }}`, `{{ $index }}`), as the
+ * row hint suggests, is live data for each row: when the field loses focus it becomes a template, so every copy
+ * (a repeat's, a roulette's) reads its own row instead of printing the braces.
+ */
+export function typedRowTemplate(v: string): boolean {
+  return /\{\{[^{}]*\$(item|index)\b[^{}]*\}\}/.test(v);
 }
 
 /** "Pick data" and "Live data" for one literal field: under the field, or (data widgets) under More settings. */
@@ -1617,6 +1626,7 @@ export function InspectorPanels({ node, doc, onChange, ctx, onOps, onConnectData
     ),
     // N3: the roulette's timer menu, its three ways to turn, and a list or table offered past 50 rows.
     "roulette.timerSec": () => { const f = fields.find((x) => x.key === "timerSec")!; return <RouletteTimerField key="timerSec" node={node} label={f.label} hint={f.hint} reason={reasonFor("timerSec")} setProp={setProp} />; },
+    "roulette.startAt": () => { const f = fields.find((x) => x.key === "startAt")!; return <RouletteStartField key="startAt" node={node} label={f.label} hint={f.hint} reason={reasonFor("startAt")} setProp={setProp} />; },
     "roulette.advance": () => { const f = fields.find((x) => x.key === "advance")!; return <RouletteAdvanceField key="advance" node={node} label={f.label} hint={f.hint} reason={reasonFor("advance")} setProp={setProp} />; },
     "roulette.items": () => {
       const f = fields.find((x) => x.key === "items")!;

@@ -100,6 +100,22 @@ export function ThemeSample({ theme, scopedCss, scope, height, label, scheme, pl
                       ))}
                     </tbody>
                   </table>
+                  {/* w210c r3 item 11: a short list that scrolls in an app, with the theme's scrollbar thumb drawn
+                      at rest (in an app it shows on hover and while scrolling), so Scrollbar colour and width
+                      show here as they are chosen. */}
+                  <div className="relative overflow-hidden text-[11px]" style={{ height: 46, paddingRight: 14 }} data-sample-scroll>
+                    {[["sda", "41%"], ["sdb", "63%"], ["sdc", "12%"], ["sdd", "88%"], ["nvme0", "27%"]].map(([n, v]) => (
+                      <div key={n} className="flex justify-between" style={{ borderBottom: "1px solid var(--theme-line)" }}>
+                        <span>{n}</span>
+                        <span>{v}</span>
+                      </div>
+                    ))}
+                    <span
+                      aria-hidden
+                      data-sample-thumb
+                      style={{ position: "absolute", top: 2, right: 2, height: 22, width: "var(--theme-scrollbar-width, 6px)", borderRadius: 999, background: "var(--theme-scrollbar-thumb, color-mix(in oklab, var(--theme-canvas-text) 35%, transparent))" }}
+                    />
+                  </div>
                 </div>
               </section>
               <section className="atr-card canvas-surface min-w-0" data-sample-card>

@@ -422,7 +422,9 @@ function CopyScopeBar({ node, doc, copy, apply }: { node: ComponentNode; doc: Ap
       {changed && <Button variant="secondary" onClick={() => { const ops = resetCopyOps(doc, copy.repeatId, copy.rowKey); if (ops.length) apply(ops, { label: "Reset this copy" }); }} data-copy-reset>Reset this copy</Button>}
       {copy.mode === "one" && (
         <>
-          <EveryCopy what="css">CSS for this component applies to every copy, so its box is locked here. To style only this copy, target <code className="font-mono text-fg">{`[data-row-key="${copy.rowKey.replace(/["\\]/g, "")}"]`}</code> in the theme&apos;s CSS, or choose Every copy.</EveryCopy>
+          <EveryCopy what="css">CSS here would change every copy, so this box is locked while This copy only is on. Choose Every copy to write CSS for all of them.</EveryCopy>
+          {/* Wave 2.10c r3 (first-timer low): the selector for one copy is for people who write theme CSS, so it sits behind a fold. */}
+          <details className="type-caption text-fg-2" data-copy-css-advanced><summary className="cursor-pointer">Style only this copy with theme CSS</summary>In the theme&apos;s CSS, target <code className="font-mono text-fg">{`[data-row-key="${copy.rowKey.replace(/["\\]/g, "")}"]`}</code>.</details>
           {/* Node ids are plain identifiers (c_ and letters); the lock is a style rule on components' CSS box. */}
           {/^[A-Za-z0-9_-]+$/.test(node.id) ? <style data-copy-css-lock>{`[data-inspector="${node.id}"] [data-css-box] textarea{pointer-events:none;opacity:.45}`}</style> : null}
         </>
